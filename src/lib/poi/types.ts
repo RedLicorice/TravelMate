@@ -16,6 +16,9 @@ export type Poi = Place & {
 	durationMin: number;
 	/** Raw OSM opening_hours string when the source has one. */
 	openingHours: string | null;
+	/** Worth knowing before turning up, when OSM happens to know it. */
+	website: string | null;
+	phone: string | null;
 	osmId: string | null;
 };
 

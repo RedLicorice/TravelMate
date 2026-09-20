@@ -108,6 +108,9 @@ export function toPoi(f: PhotonFeature): Poi {
 		category,
 		durationMin: durationFor(category),
 		openingHours: p.extra?.opening_hours ?? null,
+		// OSM tags these inconsistently; both spellings are common.
+		website: p.extra?.website ?? p.extra?.['contact:website'] ?? null,
+		phone: p.extra?.phone ?? p.extra?.['contact:phone'] ?? null,
 		osmId: p.osm_type && p.osm_id ? `${p.osm_type}/${p.osm_id}` : null
 	};
 }

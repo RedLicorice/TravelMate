@@ -3,7 +3,7 @@
 	import { page } from '$app/state';
 	import { base } from '$app/paths';
 	import { cityBBox, getTrip, updateCityBBox, type TripRow } from '$lib/trip/repo';
-	import { addPoi, listPois, removePoi, type PoiRow } from '$lib/trip/pois';
+	import { addPoi, DuplicatePoiError, listPois, type PoiRow } from '$lib/trip/pois';
 	import { poi as provider, type City, type Poi } from '$lib/poi';
 	import { haversineKm } from '$lib/plan/geo';
 	import LeafletMap from '$lib/Map.svelte';
@@ -18,6 +18,7 @@
 	let status = $state<'idle' | 'searching' | 'done'>('idle');
 	let error = $state<string | null>(null);
 	let selectedId = $state<string | null>(null);
+	let justAdded = $state<string | null>(null);
 
 	let timer: ReturnType<typeof setTimeout>;
 	let inflight: AbortController | null = null;
@@ -67,8 +68,17 @@
 				: { lat: 51.5074, lng: -0.1278 }
 	);
 
+	/**
+	 * Already on the trip? Matched on OSM id when both have one, since the same
+	 * place can come back with slightly different coordinates from a different
+	 * query. Coordinates are the fallback for hand-added stops.
+	 */
 	const isSaved = (p: Poi) =>
-		saved.some((s) => Math.abs(s.lat - p.lat) < 1e-6 && Math.abs(s.lng - p.lng) < 1e-6);
+		saved.some((s) =>
+			s.osm_id && p.osmId
+				? s.osm_id === p.osmId
+				: Math.abs(s.lat - p.lat) < 1e-6 && Math.abs(s.lng - p.lng) < 1e-6
+		);
 
 	const kmFromHotel = (p: { lat: number; lng: number }) =>
 		trip ? haversineKm({ lat: trip.hotel_lat, lng: trip.hotel_lng }, p).toFixed(1) : '?';
@@ -98,19 +108,20 @@
 	}
 
 	async function add(p: Poi) {
+		if (isSaved(p)) return;
 		try {
 			saved = [...saved, await addPoi(tripId, p)];
+			justAdded = p.name;
+			setTimeout(() => (justAdded = null), 1600);
 		} catch (e) {
-			error = (e as Error).message;
-		}
-	}
-
-	async function drop(row: PoiRow) {
-		try {
-			await removePoi(row.id);
-			saved = saved.filter((s) => s.id !== row.id);
-		} catch (e) {
-			error = (e as Error).message;
+			if (e instanceof DuplicatePoiError) {
+				// The index caught what the UI check missed: refresh so the row
+				// shows as added rather than leaving a button that does nothing.
+				saved = await listPois(tripId);
+				error = e.message;
+			} else {
+				error = (e as Error).message;
+			}
 		}
 	}
 
@@ -163,7 +174,11 @@
 			<input bind:value={query} oninput={onInput} placeholder="Museums, parks, a name…" aria-label="Search places" />
 		</div>
 
-		{#if error}<p class="tm-hint tm-hint--error">{error}</p>{/if}
+		{#if error}
+			<p class="tm-hint tm-hint--error">{error}</p>
+		{:else if justAdded}
+			<p class="tm-hint" style="color: var(--tm-ok-ink)">Added {justAdded} to the wishlist.</p>
+		{/if}
 	</div>
 
 	{#if view === 'list'}
@@ -183,27 +198,17 @@
 						</p>
 					</div>
 					{#if isSaved(r)}
-						<button class="tm-add" aria-pressed="true" aria-label="Added" disabled>✓</button>
+						<!-- Shown rather than hidden: a place vanishing from results reads
+						     as a search bug, not as "you already have this". -->
+						<button class="tm-add" aria-pressed="true" aria-label="Already on this trip" disabled>
+							✓
+						</button>
 					{:else}
 						<button class="tm-add" aria-label="Add {r.name}" onclick={() => add(r)}>+</button>
 					{/if}
 				</div>
 			{/each}
 
-			{#if saved.length}
-				<p class="sec mt-5 mb-1" style="font: 600 var(--tm-text-xs)/1 var(--tm-font); letter-spacing:.1em; text-transform:uppercase; color: var(--tm-text-faint)">
-					In this trip
-				</p>
-				{#each saved as s (s.id)}
-					<div class="tm-result">
-						<div>
-							<p class="tm-result__name">{s.name}</p>
-							<p class="tm-result__meta">{s.category ?? 'place'} · {s.duration_min} min</p>
-						</div>
-						<button class="tm-add" aria-label="Remove {s.name}" onclick={() => drop(s)}>−</button>
-					</div>
-				{/each}
-			{/if}
 		</div>
 	{:else if trip}
 		<div class="relative flex-1">
@@ -221,16 +226,28 @@
 						<span class="tm-chip tm-chip--peach">{selected.durationMin} min</span>
 						{#if selected.openingHours}<span class="tm-chip">{selected.openingHours}</span>{/if}
 					</div>
-					<button class="tm-btn tm-btn--primary tm-btn--block" onclick={() => { add(selected!); selectedId = null; }}>
-						Add to trip
-					</button>
+					{#if isSaved(selected)}
+						<button class="tm-btn tm-btn--secondary tm-btn--block" disabled>Already on this trip</button>
+					{:else}
+						<button
+							class="tm-btn tm-btn--primary tm-btn--block"
+							onclick={() => {
+								add(selected!);
+								selectedId = null;
+							}}
+						>
+							Add to trip
+						</button>
+					{/if}
 				</div>
 			{/if}
 		</div>
 	{/if}
 
 	<div class="flex items-center justify-between px-4 py-3" style="border-top: 1px solid var(--tm-border)">
-		<span class="tm-chip tm-chip--peach">{saved.length} in wishlist</span>
+		<a href="{base}/trip/{tripId}" class="tm-chip tm-chip--peach" style="text-decoration: none">
+			{saved.length} in wishlist
+		</a>
 		<span class="tm-attrib">{provider.attribution}</span>
 	</div>
 </main>

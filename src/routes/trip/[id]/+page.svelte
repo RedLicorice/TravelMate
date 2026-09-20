@@ -37,7 +37,6 @@
 	/** Unassigned stops are their own layer on the map, not a day. */
 	let showUnassigned = $state(true);
 	let seeded = false;
-	let whyId = $state<string | null>(null);
 	let shareUrl = $state<string | null>(null);
 	let copied = $state(false);
 	let bbox = $state<ReturnType<typeof cityBBox>>(null);
@@ -431,11 +430,12 @@
 				{:else}
 					{#each pois as p (p.id)}
 						{@const assigned = dayOf.has(p.id)}
-						<div class="tm-result" style="align-items: flex-start">
-							<button
-								style="background:none;border:none;padding:0;text-align:left;cursor:pointer;color:inherit;font:inherit;display:flex;gap:10px;align-items:flex-start"
-								onclick={() => (whyId = whyId === p.id ? null : p.id)}
-							>
+						<a
+							href="{base}/trip/{tripId}/poi/{p.id}"
+							class="tm-result"
+							style="align-items: center; text-decoration: none; color: inherit"
+						>
+							<span style="display: flex; gap: 10px; align-items: flex-start">
 								<span
 									style="width:12px;height:12px;border-radius:50%;margin-top:4px;flex:none;background:{colorOf(p.id)}"
 								></span>
@@ -447,21 +447,17 @@
 										{#if assigned}
 											· {dayLabel(days[dayOf.get(p.id)!].date, row.timezone)}
 										{:else}
-											· not scheduled
+											· {REASON_TEXT[reasonOf.get(p.id) ?? 'not-planned-yet']}
 										{/if}
 									</span>
-									{#if !assigned && whyId === p.id}
-										<span class="mt-2 block">
-											<span class="tm-chip tm-chip--warn">
-												{REASON_TEXT[reasonOf.get(p.id) ?? 'not-planned-yet']}
-											</span>
-										</span>
-									{/if}
 								</span>
-							</button>
-						</div>
+							</span>
+							<span style="color: var(--tm-text-faint)">›</span>
+						</a>
 					{/each}
-					<p class="tm-hint mt-3">Tap anything grey to find out why it is not on the plan.</p>
+					<p class="tm-hint mt-3">
+						Tap any place for busyness, booking and how long to stay.
+					</p>
 				{/if}
 			</div>
 		{:else}

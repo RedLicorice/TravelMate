@@ -49,6 +49,16 @@ const CURVES: Record<string, [number, number, number][]> = {
 
 const BASELINE = 0.2; // a tourist city is never actually empty
 
+/** The busy windows known for a category, busiest first. Empty when unknown. */
+export function busyWindows(category: string | null): { from: number; to: number; level: number }[] {
+	return (CURVES[category ?? ''] ?? [])
+		.map(([from, to, level]) => ({ from, to, level }))
+		.sort((a, b) => b.level - a.level);
+}
+
+/** 14 -> '14:00'. Curves are whole hours. */
+export const hourLabel = (h: number) => `${String(h).padStart(2, '0')}:00`;
+
 const hourIn = (at: Date, tz: string) =>
 	Number(
 		new Intl.DateTimeFormat('en-GB', { timeZone: tz, hour: '2-digit', hour12: false }).format(at)

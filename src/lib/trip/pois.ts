@@ -12,6 +12,8 @@ export type PoiRow = {
 	duration_min: number;
 	opening_hours: string | null;
 	osm_id: string | null;
+	website: string | null;
+	phone: string | null;
 	notes: string | null;
 	day_index: number | null;
 	order_index: number | null;
@@ -51,8 +53,42 @@ export async function addPoi(tripId: string, poi: Poi): Promise<PoiRow> {
 			category: poi.category,
 			duration_min: poi.durationMin,
 			opening_hours: poi.openingHours,
-			osm_id: poi.osmId
+			osm_id: poi.osmId,
+			website: poi.website,
+			phone: poi.phone
 		})
+		.select('*')
+		.single();
+	// 23505 is the per-trip uniqueness index doing its job -- two taps in quick
+	// succession, or the same place reached from both the list and the map.
+	if (error) {
+		if (error.code === '23505') throw new DuplicatePoiError(poi.name);
+		throw new Error(error.message);
+	}
+	return data;
+}
+
+export class DuplicatePoiError extends Error {
+	constructor(name: string) {
+		super(`${name} is already on this trip.`);
+		this.name = 'DuplicatePoiError';
+	}
+}
+
+export async function getPoi(id: string): Promise<PoiRow | null> {
+	const { data, error } = await supabase.from('pois').select('*').eq('id', id).maybeSingle();
+	if (error) throw new Error(error.message);
+	return data;
+}
+
+export async function updatePoi(
+	id: string,
+	patch: { duration_min?: number; notes?: string | null; name?: string }
+): Promise<PoiRow> {
+	const { data, error } = await supabase
+		.from('pois')
+		.update(patch)
+		.eq('id', id)
 		.select('*')
 		.single();
 	if (error) throw new Error(error.message);
