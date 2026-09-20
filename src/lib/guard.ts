@@ -10,6 +10,9 @@ export function redirectTarget(pathname: string, hasUser: boolean, base = ''): s
 	const route = base && pathname.startsWith(base) ? pathname.slice(base.length) || '/' : pathname;
 
 	if (route.startsWith('/shared/')) return null; // public by design
+	// The recovery token in the URL is what creates the session, so this page
+	// must render before one exists.
+	if (route === '/reset') return null;
 	if (!hasUser) return route === '/login' ? null : '/login';
 	return route === '/login' ? '/' : null;
 }

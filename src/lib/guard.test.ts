@@ -65,3 +65,12 @@ describe('safeNext', () => {
 		expect(safeNext('   ')).toBeNull();
 	});
 });
+
+describe('reset route', () => {
+	it('is reachable before a session exists', () => {
+		// The recovery token in the URL is what creates the session; bouncing to
+		// /login first would discard it.
+		expect(redirectTarget('/reset', false)).toBeNull();
+		expect(redirectTarget('/TravelMate/reset', false, '/TravelMate')).toBeNull();
+	});
+});
