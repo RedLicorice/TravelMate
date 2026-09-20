@@ -192,7 +192,7 @@ build, or CI. Third-party API keys never reach the client at all — see Routing
 ## Planner
 
 `src/lib/planner.ts`. Pure: no network, no Supabase, no Svelte imports. Testable
-in isolation, and fast enough to re-run on every drag rather than maintaining
+in isolation, and fast enough to recompute on every drag rather than maintaining
 incremental state.
 
 ```ts
@@ -232,6 +232,25 @@ gives a last day ending at 08:00, which schedules nothing — correctly.
 Bag drop is mandatory, not optional routing: you cannot drag a suitcase around
 the Colosseum. Setting `bag_drop_min` to 0 removes it for travellers with only a
 carry-on.
+
+### Two entry points
+
+Steps 1-2 decide what goes where. Steps 3-5 derive everything else from that
+decision. They are triggered separately:
+
+| Trigger | Runs |
+| --- | --- |
+| Replan control | steps 1-5 — full reshuffle, with undo |
+| Drag a card, edit a duration, change modes or day window | steps 3-5 only |
+
+On a drag, steps 1-2 must **not** run. The user has just stated the assignment
+and the order; re-clustering would undo their drag the moment they made it.
+
+Derivation recomputes wholesale rather than patching. Moving one card changes
+every later arrival in that day, the two legs either side of where it left, the
+two either side of where it landed, and the warnings on both days — the
+incremental version touches nearly everything anyway and adds stale-state bugs
+for it. A day holds at most a dozen stops, so a full recompute is microseconds.
 
 ### Steps
 
@@ -437,8 +456,8 @@ app has no crowd signal.
 
 ### Resolution happens before planning, not inside it
 
-The planner is pure and synchronous — it re-runs on every drag — and providers
-are async. So the chain resolves first and hands the planner plain data:
+The planner is pure and synchronous — its derivation half re-runs on every
+drag — and providers are async. So the chain resolves first and hands the planner plain data:
 
 ```ts
 const curves = await resolveCrowd(pois, days)   // async, cached, chained
