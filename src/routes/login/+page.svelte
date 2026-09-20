@@ -1,7 +1,11 @@
 <script lang="ts">
+	import { page } from '$app/state';
 	import { signIn } from '$lib/session.svelte';
+	import { safeNext } from '$lib/guard';
 
 	let email = $state('');
+	/** Where to land after the link is clicked, when they arrived from one. */
+	const next = $derived(safeNext(page.url.searchParams.get('next')));
 	let status = $state<'idle' | 'sending' | 'sent'>('idle');
 	let error = $state<string | null>(null);
 
@@ -9,7 +13,7 @@
 		event.preventDefault();
 		status = 'sending';
 		error = null;
-		const result = await signIn(email);
+		const result = await signIn(email, next);
 		if (result.error) {
 			error = result.error;
 			status = 'idle';
@@ -59,7 +63,7 @@
 		<p
 			style="font: 400 var(--tm-text-sm)/1.45 var(--tm-font); color: var(--tm-text-faint); text-align: center"
 		>
-			No password. We email you a link.
+			No password. We email you a link.{#if next} You'll come straight back here.{/if}
 		</p>
 	{/if}
 </main>

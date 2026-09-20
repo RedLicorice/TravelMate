@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { redirectTarget } from './guard';
+import { redirectTarget, safeNext } from './guard';
 
 describe('redirectTarget', () => {
 	it('sends a signed-out visitor to login', () => {
@@ -29,5 +29,39 @@ describe('redirectTarget', () => {
 		expect(redirectTarget('/TravelMate/login', true, '/TravelMate')).toBe('/');
 		expect(redirectTarget('/TravelMate/shared/abc', false, '/TravelMate')).toBeNull();
 		expect(redirectTarget('/TravelMate/', false, '/TravelMate')).toBe('/login');
+	});
+});
+
+describe('safeNext', () => {
+	it('accepts an ordinary same-origin path', () => {
+		expect(safeNext('/shared/abc-123')).toBe('/shared/abc-123');
+		expect(safeNext('/trip/1/add')).toBe('/trip/1/add');
+	});
+
+	it('rejects an absolute URL', () => {
+		// Otherwise a link to our own domain lands someone on another one,
+		// with the address bar they started from still in their head.
+		expect(safeNext('https://evil.example/steal')).toBeNull();
+		expect(safeNext('http://evil.example')).toBeNull();
+	});
+
+	it('rejects protocol-relative forms', () => {
+		expect(safeNext('//evil.example')).toBeNull();
+		expect(safeNext('/\\evil.example')).toBeNull();
+	});
+
+	it('rejects a scheme smuggled mid-string', () => {
+		expect(safeNext('/x?u=javascript://evil')).toBeNull();
+	});
+
+	it('rejects anything not rooted at /', () => {
+		expect(safeNext('trip/1')).toBeNull();
+		expect(safeNext('../admin')).toBeNull();
+	});
+
+	it('treats absent and blank as no destination', () => {
+		expect(safeNext(null)).toBeNull();
+		expect(safeNext(undefined)).toBeNull();
+		expect(safeNext('   ')).toBeNull();
 	});
 });

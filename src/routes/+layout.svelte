@@ -5,7 +5,7 @@
 	import { page } from '$app/state';
 	import { base } from '$app/paths';
 	import { session, watchSession } from '$lib/session.svelte';
-	import { redirectTarget } from '$lib/guard';
+	import { redirectTarget, safeNext } from '$lib/guard';
 	import { registerSW } from 'virtual:pwa-register';
 
 	let { children } = $props();
@@ -21,7 +21,11 @@
 	$effect(() => {
 		if (!session.ready) return;
 		const target = redirectTarget(page.url.pathname, !!session.user, base);
-		if (target) goto(base + target, { replaceState: true });
+		if (!target) return;
+		// Someone already signed in who lands on /login?next=... wanted the page
+		// in `next`, not the trip list.
+		const intended = target === '/' ? (safeNext(page.url.searchParams.get('next')) ?? '/') : target;
+		goto(base + intended, { replaceState: true });
 	});
 </script>
 

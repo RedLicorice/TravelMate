@@ -142,7 +142,20 @@
 				</button>
 			</div>
 		{:else}
-			<p class="tm-hint">Sign in to join this trip and add places of your own.</p>
+			<div class="tm-card" style="background: var(--tm-peach-soft); border-color: transparent">
+				<p class="tm-card__title" style="color: var(--tm-peach-ink)">Travelling too?</p>
+				<p class="tm-card__meta" style="color: var(--tm-peach-ink)">
+					Sign in and you can join this trip, add places of your own, and the plan will take your
+					meal times into account alongside everyone else's.
+				</p>
+				<a
+					href="{base}/login?next=/shared/{page.params.token}"
+					class="tm-btn tm-btn--primary tm-btn--block mt-3"
+					style="text-decoration: none"
+				>
+					Sign in to join
+				</a>
+			</div>
 		{/if}
 		<p class="tm-attrib mt-4">© OpenStreetMap contributors</p>
 	{/if}

@@ -13,3 +13,21 @@ export function redirectTarget(pathname: string, hasUser: boolean, base = ''): s
 	if (!hasUser) return route === '/login' ? null : '/login';
 	return route === '/login' ? '/' : null;
 }
+
+/**
+ * A post-login destination taken from the URL, or null when it is not safe.
+ *
+ * Only same-origin absolute paths. Anything protocol-relative ("//evil.com"),
+ * absolute ("https://evil.com") or backslash-smuggled would otherwise turn the
+ * login screen into an open redirect: send someone a link to our own domain
+ * and land them on yours, still trusting the address bar they started from.
+ */
+export function safeNext(raw: string | null | undefined): string | null {
+	if (!raw) return null;
+	const value = raw.trim();
+	if (!value.startsWith('/')) return null;
+	// '//host' and '/\host' are both protocol-relative to a browser.
+	if (value.startsWith('//') || value.startsWith('/\\')) return null;
+	if (value.includes('://')) return null;
+	return value;
+}
