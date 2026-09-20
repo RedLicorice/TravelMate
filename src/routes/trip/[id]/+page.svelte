@@ -16,6 +16,7 @@
 	import { tripDays, type Day } from '$lib/trip/days';
 	import { replan, schedule, REASON_TEXT, type PlanResult, type UnplacedReason } from '$lib/plan/planner';
 	import { isMeal, tightest, type MealWindows } from '$lib/plan/meals';
+	import { resolveCurves, type CrowdCurves } from '$lib/plan/crowd';
 	import { avatarDataUri } from '$lib/avatar';
 	import { displayName, loadTripProfiles, type Profile } from '$lib/profile.svelte';
 	import type { Mode } from '$lib/plan/modes';
@@ -41,6 +42,7 @@
 	let copied = $state(false);
 	let bbox = $state<ReturnType<typeof cityBBox>>(null);
 	let people = $state<Profile[]>([]);
+	let curves = $state<CrowdCurves | undefined>(undefined);
 
 	onMount(async () => {
 		try {
@@ -70,6 +72,27 @@
 
 	const days = $derived<Day[]>(row ? tripDays(toTrip(row)) : []);
 
+	/**
+	 * Busyness is resolved here, before the planner runs, and handed in as a
+	 * plain table. The planner stays synchronous because it re-runs on every
+	 * drag and hundreds of times inside 2-opt.
+	 */
+	async function refreshCurves() {
+		if (!row || !days.length) return;
+		curves = await resolveCurves(
+			pois.map((p) => ({ id: p.id, category: p.category })),
+			days,
+			row.timezone
+		);
+	}
+
+	$effect(() => {
+		// Re-resolve when the stops or the dates change, not on every render.
+		void pois.length;
+		void days.length;
+		refreshCurves();
+	});
+
 	$effect(() => {
 		if (!seeded && days.length) {
 			visible = new Set(days.map((_, i) => i));
@@ -91,7 +114,8 @@
 					days,
 					allowedModes: row.allowed_modes as Mode[],
 					timezone: row.timezone,
-					mealWindows: agreed.windows
+					mealWindows: agreed.windows,
+					curves
 				})
 			: null
 	);
@@ -133,7 +157,8 @@
 				days,
 				allowedModes: row.allowed_modes as Mode[],
 				timezone: row.timezone,
-				mealWindows: agreed.windows
+				mealWindows: agreed.windows,
+				curves
 			});
 			const assignments = next.days.flatMap((d) =>
 				d.stops.filter((s) => s.poiId).map((s, i) => ({ id: s.poiId!, dayIndex: d.index, orderIndex: i }))

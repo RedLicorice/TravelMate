@@ -7,7 +7,13 @@
 	import { getPoi, listPois, removePoi, toPlanPoi, updatePoi, type PoiRow } from '$lib/trip/pois';
 	import { tripDays } from '$lib/trip/days';
 	import { schedule, REASON_TEXT, type PlannedStop } from '$lib/plan/planner';
-	import { busyWindows, categoryCrowd, hourLabel } from '$lib/plan/crowd';
+	import {
+		busyWindows,
+		categoryBusyness,
+		hourLabel,
+		resolveCurves,
+		type CrowdCurves
+	} from '$lib/plan/crowd';
 	import { isMeal, tightest } from '$lib/plan/meals';
 	import { haversineKm } from '$lib/plan/geo';
 	import { loadTripProfiles } from '$lib/profile.svelte';
@@ -25,6 +31,7 @@
 	let error = $state<string | null>(null);
 	let saving = $state(false);
 	let confirmRemove = $state(false);
+	let curves = $state<CrowdCurves | undefined>(undefined);
 
 	let duration = $state(60);
 	let notes = $state('');
@@ -41,6 +48,13 @@
 			poi = p;
 			all = list;
 			windows = tightest(people.map((x) => x.mealWindows)).windows;
+			if (t) {
+				curves = await resolveCurves(
+					list.map((x) => ({ id: x.id, category: x.category })),
+					tripDays(toTrip(t)),
+					t.timezone
+				);
+			}
 			if (p) {
 				duration = p.duration_min;
 				notes = p.notes ?? '';
@@ -61,7 +75,8 @@
 					days,
 					allowedModes: trip.allowed_modes as Mode[],
 					timezone: trip.timezone,
-					mealWindows: windows
+					mealWindows: windows,
+					curves
 				})
 			: null
 	);
@@ -100,7 +115,7 @@
 		let best: { hour: number; level: number } | null = null;
 		for (let h = open; h < close; h++) {
 			const at = new Date(`${days[0]?.date ?? '2026-01-01'}T${String(h).padStart(2, '0')}:00:00Z`);
-			const level = categoryCrowd.busyness(poi.category, at, 'UTC') ?? 1;
+			const level = categoryBusyness(poi.category, at, 'UTC');
 			if (!best || level < best.level) best = { hour: h, level };
 		}
 		return best;

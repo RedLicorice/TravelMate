@@ -8,6 +8,7 @@
 	import { toPlanPoi, type PoiRow } from '$lib/trip/pois';
 	import { tripDays } from '$lib/trip/days';
 	import { schedule, type PlanResult } from '$lib/plan/planner';
+	import { resolveCurves, type CrowdCurves } from '$lib/plan/crowd';
 	import type { Mode } from '$lib/plan/modes';
 
 	let row = $state<TripRow | null>(null);
@@ -16,6 +17,7 @@
 	let gone = $state(false);
 	let error = $state<string | null>(null);
 	let joining = $state(false);
+	let curves = $state<CrowdCurves | undefined>(undefined);
 
 	onMount(async () => {
 		try {
@@ -26,6 +28,11 @@
 			}
 			row = shared.trip;
 			pois = shared.pois ?? [];
+			curves = await resolveCurves(
+				pois.map((x) => ({ id: x.id, category: x.category })),
+				tripDays(toTrip(row)),
+				row.timezone
+			);
 		} catch (e) {
 			error = (e as Error).message;
 		} finally {
@@ -57,7 +64,8 @@
 					pois: pois.map(toPlanPoi),
 					days,
 					allowedModes: row.allowed_modes as Mode[],
-					timezone: row.timezone
+					timezone: row.timezone,
+					curves
 				})
 			: null
 	);

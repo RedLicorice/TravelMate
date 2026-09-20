@@ -1,7 +1,7 @@
 import type { Day, LatLng } from '$lib/trip/days';
 import { haversineKm } from './geo';
 import { leg, type Leg, type Mode } from './modes';
-import { categoryCrowd, resolveCrowd, type CrowdProvider } from './crowd';
+import { categoryCurves, type CrowdCurves } from './crowd';
 import {
 	DEFAULT_WINDOWS,
 	isMeal,
@@ -69,7 +69,12 @@ export type PlanInput = {
 	days: Day[];
 	allowedModes: Mode[];
 	timezone: string;
-	crowdProviders?: CrowdProvider[];
+	/**
+	 * Busyness resolved ahead of planning. Omitted, the table answers locally.
+	 * Never resolved inside the planner: this runs hundreds of times per
+	 * replan and must stay synchronous.
+	 */
+	curves?: CrowdCurves;
 	/** The window everyone on the trip agrees on. Defaults when nobody said. */
 	mealWindows?: MealWindows;
 };
@@ -205,7 +210,7 @@ export function orderDay(
 	day: Day,
 	allowedModes: Mode[],
 	timezone: string,
-	providers: CrowdProvider[],
+	curves: CrowdCurves,
 	slots: MealSlot[]
 ): PlanPoi[] {
 	if (pois.length < 2) return pois;
@@ -233,7 +238,7 @@ export function orderDay(
 	// is what lets a museum move out of its 11-15 peak, and what stops it moving
 	// when the detour costs more than the queue.
 	const score = (order: PlanPoi[]) => {
-		const sim = walkClock(order, day, allowedModes, timezone, providers, slots);
+		const sim = walkClock(order, day, allowedModes, timezone, curves, slots);
 		return (
 			sim.travelMin +
 			CROWD_WEIGHT_MIN * sim.crowdSum +
@@ -285,7 +290,7 @@ function walkClock(
 	day: Day,
 	allowedModes: Mode[],
 	timezone: string,
-	providers: CrowdProvider[],
+	curves: CrowdCurves,
 	slots: MealSlot[]
 ): ClockResult {
 	const stops: PlannedStop[] = [];
@@ -331,7 +336,7 @@ function walkClock(
 		clock += durationMin * 60_000;
 		const depart = new Date(clock);
 
-		const busyness = anchor ? null : resolveCrowd(providers, category, arrive, timezone);
+		const busyness = anchor || !poiId ? null : curves.at(poiId, arrive, timezone);
 		if (busyness !== null) crowdSum += busyness;
 
 		const warnings: Warning[] = [];
@@ -394,7 +399,7 @@ function walkClock(
 
 /** Steps 3-5. Respects the day/order the traveller already chose. */
 export function schedule(input: PlanInput): PlanResult {
-	const providers = input.crowdProviders ?? [categoryCrowd];
+	const curves = input.curves ?? categoryCurves(input.pois, input.days, input.timezone);
 	const slots = slotsFrom(input.mealWindows ?? DEFAULT_WINDOWS);
 	const byDay = new Map<number, PlanPoi[]>();
 	input.days.forEach((_, i) => byDay.set(i, []));
@@ -414,7 +419,7 @@ export function schedule(input: PlanInput): PlanResult {
 	}
 
 	const days = input.days.map((day, i) => {
-		const result = walkClock(byDay.get(i)!, day, input.allowedModes, input.timezone, providers, slots);
+		const result = walkClock(byDay.get(i)!, day, input.allowedModes, input.timezone, curves, slots);
 		unplaced.push(...result.overflowed.map((poi) => ({ poi, reason: 'day-full' as const })));
 		return { index: i, date: day.date, stops: result.stops, overflowed: result.overflowed };
 	});
@@ -424,7 +429,7 @@ export function schedule(input: PlanInput): PlanResult {
 
 /** Steps 1-5. A full reshuffle -- what the Replan control runs. */
 export function replan(input: PlanInput): PlanResult {
-	const providers = input.crowdProviders ?? [categoryCrowd];
+	const curves = input.curves ?? categoryCurves(input.pois, input.days, input.timezone);
 	const slots = slotsFrom(input.mealWindows ?? DEFAULT_WINDOWS);
 
 	// Nothing can be measured from a hotel at 0,0, so say so rather than
@@ -434,7 +439,7 @@ export function replan(input: PlanInput): PlanResult {
 			days: input.days.map((day, index) => ({
 				index,
 				date: day.date,
-				stops: walkClock([], day, input.allowedModes, input.timezone, providers, slots).stops,
+				stops: walkClock([], day, input.allowedModes, input.timezone, curves, slots).stops,
 				overflowed: []
 			})),
 			unplaced: input.pois.map((poi) => ({ poi, reason: 'no-usable-days' as const }))
@@ -453,11 +458,11 @@ export function replan(input: PlanInput): PlanResult {
 		spilled.push(...meals.slice(MEALS_PER_DAY));
 
 		const keep = [...rest, ...meals.slice(0, MEALS_PER_DAY)];
-		const ordered = orderDay(keep, input.days[dayIndex], input.allowedModes, input.timezone, providers, slots);
+		const ordered = orderDay(keep, input.days[dayIndex], input.allowedModes, input.timezone, curves, slots);
 		ordered.forEach((p, orderIndex) => assigned.push({ ...p, dayIndex, orderIndex }));
 	});
 
-	const result = schedule({ ...input, pois: assigned, crowdProviders: providers });
+	const result = schedule({ ...input, pois: assigned, curves });
 	return {
 		days: result.days,
 		unplaced: [

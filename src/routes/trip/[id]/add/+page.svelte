@@ -107,12 +107,24 @@
 		}, 250);
 	}
 
+	function clearSearch() {
+		clearTimeout(timer);
+		inflight?.abort();
+		query = '';
+		results = [];
+		selectedId = null;
+		status = 'idle';
+	}
+
 	async function add(p: Poi) {
 		if (isSaved(p)) return;
 		try {
 			saved = [...saved, await addPoi(tripId, p)];
 			justAdded = p.name;
 			setTimeout(() => (justAdded = null), 1600);
+			// Clear after adding: the next place is a new search, and leaving the
+			// old query up invites adding its neighbours by accident.
+			clearSearch();
 		} catch (e) {
 			if (e instanceof DuplicatePoiError) {
 				// The index caught what the UI check missed: refresh so the row
@@ -172,6 +184,15 @@
 				<circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" />
 			</svg>
 			<input bind:value={query} oninput={onInput} placeholder="Museums, parks, a name…" aria-label="Search places" />
+			{#if query}
+				<button
+					onclick={clearSearch}
+					aria-label="Clear search"
+					style="background:none;border:none;cursor:pointer;color:var(--tm-text-faint);font-size:18px;line-height:1;padding:0 2px"
+				>
+					×
+				</button>
+			{/if}
 		</div>
 
 		{#if error}

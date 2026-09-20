@@ -2,7 +2,14 @@ import { describe, it, expect } from 'vitest';
 import { tripDays, type Trip } from '$lib/trip/days';
 import { replan, schedule, REASON_TEXT, type PlanPoi } from './planner';
 import { chooseMode, leg } from './modes';
-import { categoryCrowd, resolveCrowd, type CrowdProvider } from './crowd';
+import {
+	categoryBusyness,
+	categoryCrowd,
+	categoryCurves,
+	crowdKey,
+	resolveCurves,
+	type CrowdProvider
+} from './crowd';
 import { DEFAULT_WINDOWS, slotAt, slotsFrom } from './meals';
 
 const hotel = { lat: 41.8986, lng: 12.4768 };
@@ -168,29 +175,84 @@ describe('chooseMode', () => {
 
 describe('crowd chain', () => {
 	const at11 = new Date('2026-04-10T09:00:00Z'); // 11:00 Rome
+	const tz = 'Europe/Rome';
+	const pois = [{ id: 'm1', category: 'museum' }];
+	const days = [{ date: '2026-04-10' }];
+
+	const stub = (level: number): CrowdProvider => ({
+		name: 'stub',
+		async lookup(requests) {
+			return new Map(requests.map((r) => [crowdKey(r.poiId, r.date, r.hour), level]));
+		}
+	});
 
 	it('reports a museum as busy at midday', () => {
-		expect(categoryCrowd.busyness('museum', at11, 'Europe/Rome')).toBeGreaterThan(0.8);
+		expect(categoryBusyness('museum', at11, tz)).toBeGreaterThan(0.8);
 	});
 
 	it('reports the same museum as quiet at opening', () => {
 		const at9 = new Date('2026-04-10T07:00:00Z'); // 09:00 Rome
-		expect(categoryCrowd.busyness('museum', at9, 'Europe/Rome')).toBeLessThan(0.5);
+		expect(categoryBusyness('museum', at9, tz)).toBeLessThan(0.5);
 	});
 
-	it('takes the first non-null answer in the chain', () => {
-		const stub: CrowdProvider = { name: 'stub', busyness: () => 0.01 };
-		expect(resolveCrowd([stub, categoryCrowd], 'museum', at11, 'Europe/Rome')).toBe(0.01);
+	it('takes the first provider that answers', async () => {
+		const curves = await resolveCurves(pois, days, tz, [stub(0.01), categoryCrowd]);
+		expect(curves.at('m1', at11, tz)).toBe(0.01);
 	});
 
-	it('falls through to the table when a provider returns null', () => {
-		const nulls: CrowdProvider = { name: 'nulls', busyness: () => null };
-		expect(resolveCrowd([nulls, categoryCrowd], 'museum', at11, 'Europe/Rome')).toBeGreaterThan(0.8);
+	it('falls through to the table for what a provider leaves unanswered', async () => {
+		const silent: CrowdProvider = { name: 'silent', async lookup() { return new Map(); } };
+		const curves = await resolveCurves(pois, days, tz, [silent, categoryCrowd]);
+		expect(curves.at('m1', at11, tz)).toBeGreaterThan(0.8);
 	});
 
-	it('still resolves when every provider returns null', () => {
-		const nulls: CrowdProvider = { name: 'nulls', busyness: () => null };
-		expect(resolveCrowd([nulls], 'museum', at11, 'Europe/Rome')).toBeGreaterThan(0);
+	it('does not ask a later provider about hours already answered', async () => {
+		let asked = 0;
+		const counting: CrowdProvider = {
+			name: 'counting',
+			async lookup(requests) {
+				asked += requests.length;
+				return new Map();
+			}
+		};
+		// The table answers everything first, so the paid source downstream is
+		// asked about nothing -- the reason resolution is batched and ordered.
+		await resolveCurves(pois, days, tz, [categoryCrowd, counting]);
+		expect(asked).toBe(0);
+	});
+
+	it('survives a provider that throws rather than failing the plan', async () => {
+		const broken: CrowdProvider = {
+			name: 'broken',
+			async lookup() {
+				throw new Error('scraper blocked');
+			}
+		};
+		const curves = await resolveCurves(pois, days, tz, [broken, categoryCrowd]);
+		expect(curves.at('m1', at11, tz)).toBeGreaterThan(0.8);
+	});
+
+	it('answers a venue it has never heard of rather than throwing', async () => {
+		const curves = await resolveCurves(pois, days, tz);
+		expect(curves.at('never-seen', at11, tz)).toBeGreaterThan(0);
+	});
+
+	it('feeds the planner: a pre-resolved quiet museum is no longer avoided', () => {
+		// Same museum, same hour, but a provider says it is empty. The planner
+		// reads the table it was handed, not the category curve.
+		const quiet = {
+			at: () => 0.05
+		};
+		const busy = { at: () => 0.95 };
+		const museum = poi('m', 41.9, 12.48, { category: 'museum', durationMin: 60 });
+		const withQuiet = replan({ ...input([museum]), curves: quiet });
+		const withBusy = replan({ ...input([museum]), curves: busy });
+		const find = (r: typeof withQuiet) =>
+			r.days.flatMap((d) => d.stops).find((s) => s.poiId === 'm');
+		expect(find(withQuiet)?.busyness).toBe(0.05);
+		expect(find(withBusy)?.busyness).toBe(0.95);
+		expect(find(withBusy)?.warnings.some((w) => w.kind === 'crowded')).toBe(true);
+		expect(find(withQuiet)?.warnings.some((w) => w.kind === 'crowded')).toBe(false);
 	});
 });
 
@@ -289,5 +351,31 @@ describe('unplaced reasons', () => {
 		for (const r of Object.keys(REASON_TEXT)) {
 			expect(REASON_TEXT[r as keyof typeof REASON_TEXT].length).toBeGreaterThan(10);
 		}
+	});
+});
+
+describe('curve resolution keys by local hour', () => {
+	it('answers for the local hour, not the UTC one', async () => {
+		// The bug this guards: building each request instant as UTC while keying
+		// it by local hour puts the whole table two hours out in Europe/Rome, so
+		// a museum reads as quiet at its busiest.
+		const curves = await resolveCurves(
+			[{ id: 'm1', category: 'museum' }],
+			[{ date: '2026-04-10' }],
+			'Europe/Rome'
+		);
+		const noonRome = new Date('2026-04-10T10:00:00Z'); // 12:00 Rome, peak
+		const nineRome = new Date('2026-04-10T07:00:00Z'); // 09:00 Rome, quiet
+		expect(curves.at('m1', noonRome, 'Europe/Rome')).toBeGreaterThan(0.8);
+		expect(curves.at('m1', nineRome, 'Europe/Rome')).toBeLessThan(0.5);
+	});
+
+	it('agrees with the synchronous table it defaults to', async () => {
+		const pois = [{ id: 'm1', category: 'museum' }];
+		const days = [{ date: '2026-04-10' }];
+		const async_ = await resolveCurves(pois, days, 'Europe/Rome');
+		const sync = categoryCurves(pois, days, 'Europe/Rome');
+		const at = new Date('2026-04-10T10:00:00Z');
+		expect(async_.at('m1', at, 'Europe/Rome')).toBe(sync.at('m1', at, 'Europe/Rome'));
 	});
 });
