@@ -1,0 +1,35 @@
+digraph phase1 {
+  bgcolor="#fbfaf8";
+  rankdir=TB;
+  fontname="Helvetica"; fontsize=15; labelloc=t; labeljust=l;
+  label=<<b>Phase 1 &#183; Skeleton, auth, trip CRUD</b>>;
+  fontcolor="#23201c";
+  node [fontname="Helvetica", fontsize=11, shape=box, style="rounded,filled",
+        color="#c9c3b8", fillcolor="#ffffff", fontcolor="#23201c", margin="0.16,0.10"];
+  edge [fontname="Helvetica", fontsize=9, color="#8a8378", fontcolor="#6b655c",
+        arrowsize=0.7, penwidth=1.1];
+
+  login    [label="/login\nemail field"] [fillcolor="#e6effc", color="#3d7fd6"];
+  send     [label="signInWithOtp()"] [fillcolor="#fdf2e2", color="#cf8c1e"];
+  mail     [label="Supabase Auth\nsends magic link"] [fillcolor="#e4f4ea", color="#35935f"];
+  click    [label="traveller clicks link\nin email"] [fillcolor="#e6effc", color="#3d7fd6"];
+  sess     [label="session stored\nlocalStorage"] [fillcolor="#fdf2e2", color="#cf8c1e"];
+  list     [label="/  trip list"] [fillcolor="#e6effc", color="#3d7fd6"];
+  wiz1     [label="1. city + hotel"] [fillcolor="#e6effc", color="#3d7fd6"];
+  wiz2     [label="2. arrival point + time\ndeparture point + time"] [fillcolor="#e6effc", color="#3d7fd6"];
+  wiz3     [label="3. day window\nallowed_modes"] [fillcolor="#e6effc", color="#3d7fd6"];
+  ins      [label="insert into trips\nuser_id = auth.uid()"] [fillcolor="#e4f4ea", color="#35935f"];
+  rls      [label="RLS: owner only"] [fillcolor="#e4f4ea", color="#35935f"];
+  trip     [label="/trip/:id"] [shape=box, style="rounded,filled,bold", fillcolor="#23201c", fontcolor="#fbfaf8", color="#23201c"];
+  has      [label="session?"] [shape=diamond, fillcolor="#ffffff", color="#8a8378", margin="0.02,0.02"];
+
+  list -> has [style=invis];
+  login -> send -> mail -> click -> sess -> list;
+  list -> wiz1 [label="new trip"];
+  wiz1 -> wiz2 -> wiz3 -> ins -> trip;
+  ins -> rls [style=dashed, label="enforced by"];
+  has -> login [label="no"];
+  has -> list  [label="yes"];
+  {rank=same; rls; ins}
+
+}

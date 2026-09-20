@@ -1,0 +1,33 @@
+digraph phase8 {
+  bgcolor="#fbfaf8";
+  rankdir=TB;
+  fontname="Helvetica"; fontsize=15; labelloc=t; labeljust=l;
+  label=<<b>Phase 8 &#183; Live crowd data</b>>;
+  fontcolor="#23201c";
+  node [fontname="Helvetica", fontsize=11, shape=box, style="rounded,filled",
+        color="#c9c3b8", fillcolor="#ffffff", fontcolor="#23201c", margin="0.16,0.10"];
+  edge [fontname="Helvetica", fontsize=9, color="#8a8378", fontcolor="#6b655c",
+        arrowsize=0.7, penwidth=1.1];
+
+  ask   [label="resolveCrowd(venue, at)\nbefore plan(), never inside it"] [fillcolor="#fdf2e2", color="#cf8c1e"];
+  chain [label="CrowdProvider chain\nfirst non-null wins"] [fillcolor="#fdf2e2", color="#cf8c1e"];
+  cache [label="crowd_cache hit?\n(venue, weekday, hour)\nTTL: weeks"] [shape=diamond, fillcolor="#ffffff", color="#8a8378", margin="0.02,0.02"];
+  hit   [label="cached curve"] [fillcolor="#e4f4ea", color="#35935f"];
+  p2    [label="2. BestTime.app\nvia Edge Function"] [fillcolor="#f2ebfa", color="#7d54c2"];
+  p3    [label="3. scraper\n(slot designed, discouraged)"] [fillcolor="#f2ebfa", color="#7d54c2"];
+  p1    [label="1. category table\nterminal &#183; never returns null"] [fillcolor="#fdf2e2", color="#cf8c1e"];
+  risk  [label="undocumented payload\nbreaks without warning\nToS violation\ndatacenter IP blocked"] [fillcolor="#fdeaea", color="#cf4d4d"];
+  curve [label="0..1 busyness curve"] [shape=box, style="rounded,filled,bold", fillcolor="#23201c", fontcolor="#fbfaf8", color="#23201c"];
+  soft  [label="planner step 4\nsoft cost on arrival time"] [fillcolor="#fdf2e2", color="#cf8c1e"];
+  hard  [label="never overrides\nopening hours"] [fillcolor="#fdeaea", color="#cf4d4d"];
+
+  ask -> chain -> cache;
+  cache -> hit [label="yes"];
+  cache -> p2  [label="miss"];
+  p2 -> p3 [label="null / paid tier off", color="#cf4d4d", fontcolor="#cf4d4d"];
+  p3 -> p1 [label="null / blocked",     color="#cf4d4d", fontcolor="#cf4d4d"];
+  p2 -> curve; p3 -> curve; p1 -> curve; hit -> curve;
+  p3 -> risk [style=dashed];
+  curve -> soft -> hard [style=dashed];
+
+}

@@ -1,0 +1,37 @@
+digraph phase7 {
+  bgcolor="#fbfaf8";
+  rankdir=TB;
+  fontname="Helvetica"; fontsize=15; labelloc=t; labeljust=l;
+  label=<<b>Phase 7 &#183; Real routing via Edge Function</b>>;
+  fontcolor="#23201c";
+  node [fontname="Helvetica", fontsize=11, shape=box, style="rounded,filled",
+        color="#c9c3b8", fillcolor="#ffffff", fontcolor="#23201c", margin="0.16,0.10"];
+  edge [fontname="Helvetica", fontsize=9, color="#8a8378", fontcolor="#6b655c",
+        arrowsize=0.7, penwidth=1.1];
+
+  need  [label="planner step 3 needs\ntravelTime(from, to, mode)"] [fillcolor="#fdf2e2", color="#cf8c1e"];
+  chain [label="TravelTimeProvider chain"] [fillcolor="#fdf2e2", color="#cf8c1e"];
+  cache [label="route_cache hit?\n(from, to, mode, time_bucket)"] [shape=diamond, fillcolor="#ffffff", color="#8a8378", margin="0.02,0.02"];
+  hit   [label="cached leg"] [fillcolor="#e4f4ea", color="#35935f"];
+  ef    [label="Edge Function  /route\nholds the API key"] [fillcolor="#e4f4ea", color="#35935f"];
+  ors   [label="OpenRouteService\nfoot / bike / car"] [fillcolor="#f2ebfa", color="#7d54c2"];
+  nav   [label="Navitia or\nGoogle Directions\ntransit"] [fillcolor="#f2ebfa", color="#7d54c2"];
+  ok    [label="store in route_cache"] [fillcolor="#e4f4ea", color="#35935f"];
+  hav   [label="haversine &#215; 1.3\nterminal, never null"] [fillcolor="#fdf2e2", color="#cf8c1e"];
+  gbfs  [label="GBFS feed\nfree, no key"] [fillcolor="#f2ebfa", color="#7d54c2"];
+  avail [label="&#8220;3 bikes at Piazza Navona&#8221;"] [fillcolor="#fdf2e2", color="#cf8c1e"];
+  out   [label="leg minutes + mode"] [shape=box, style="rounded,filled,bold", fillcolor="#23201c", fontcolor="#fbfaf8", color="#23201c"];
+  key   [label="key never reaches\nthe Pages build"] [fillcolor="#e4f4ea", color="#35935f"];
+
+  need -> chain -> cache;
+  cache -> hit [label="yes"];
+  cache -> ef  [label="no"];
+  ef -> ors; ef -> nav;
+  ors -> ok; nav -> ok;
+  ok -> out; hit -> out;
+  ef -> hav [label="provider down\nor over quota", color="#cf4d4d", fontcolor="#cf4d4d"];
+  hav -> out;
+  gbfs -> avail -> out [style=dashed];
+  ef -> key [style=dashed];
+
+}

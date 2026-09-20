@@ -1,0 +1,44 @@
+digraph phase3 {
+  bgcolor="#fbfaf8";
+  rankdir=TB;
+  fontname="Helvetica"; fontsize=15; labelloc=t; labeljust=l;
+  label=<<b>Phase 3 &#183; Planner and timeline</b>>;
+  fontcolor="#23201c";
+  node [fontname="Helvetica", fontsize=11, shape=box, style="rounded,filled",
+        color="#c9c3b8", fillcolor="#ffffff", fontcolor="#23201c", margin="0.16,0.10"];
+  edge [fontname="Helvetica", fontsize=9, color="#8a8378", fontcolor="#6b655c",
+        arrowsize=0.7, penwidth=1.1];
+
+  subgraph cluster_in {
+    label="inputs"; style="rounded,dashed"; color="#c9c3b8"; fontsize=10; fontcolor="#6b655c";
+    trip [label="trip\nhotel, anchors, buffers\nallowed_modes, day window"] [fillcolor="#e4f4ea", color="#35935f"];
+    pois [label="pois\n(wishlist + assigned)"] [fillcolor="#e4f4ea", color="#35935f"];
+  }
+  days  [label="build days[]\nfixedStart / fixedEnd anchors\nclamp day 1 to arrival + buffer\nclamp last day to departure &#8722; buffer"] [fillcolor="#fdf2e2", color="#cf8c1e"];
+  crowd [label="resolveCrowd(pois, days)\nasync provider chain"] [fillcolor="#fdf2e2", color="#cf8c1e"];
+  curves[label="curves  (plain data)"] [fillcolor="#fdf2e2", color="#cf8c1e"];
+
+  subgraph cluster_plan {
+    label="plan()  &#183;  pure, synchronous"; style="rounded"; color="#cf8c1e"; fontsize=10; fontcolor="#cf8c1e";
+    s1 [label="1  cluster into days\nk-means, farthest-point seed\nrebalance by free minutes"] [fillcolor="#fdf2e2", color="#cf8c1e"];
+    s2 [label="2  order each day\nnearest-neighbour + 2-opt\nopen path, anchors frozen"] [fillcolor="#fdf2e2", color="#cf8c1e"];
+    s3 [label="3  mode per leg\ndistance vs allowed_modes"] [fillcolor="#fdf2e2", color="#cf8c1e"];
+    s4 [label="4  walk the clock\n+ crowd soft cost"] [fillcolor="#fdf2e2", color="#cf8c1e"];
+    s5 [label="5  check opening hours\nand day overflow"] [fillcolor="#fdf2e2", color="#cf8c1e"];
+  }
+
+  out  [label="PlannedDay[] + warnings"] [shape=box, style="rounded,filled,bold", fillcolor="#23201c", fontcolor="#fbfaf8", color="#23201c"];
+  tl   [label="timeline renders\ncards + travel legs"] [fillcolor="#e6effc", color="#3d7fd6"];
+  warn [label="amber chip on card\n&#8220;closed Mondays&#8221;"] [fillcolor="#fdeaea", color="#cf4d4d"];
+  drag [label="traveller drags a card"] [fillcolor="#e6effc", color="#3d7fd6"];
+  rep  [label="Replan  (with undo)"] [fillcolor="#e6effc", color="#3d7fd6"];
+
+  trip -> days; pois -> days;
+  days -> crowd -> curves -> s4 [style=dashed];
+  days -> s1 -> s2 -> s3 -> s4 -> s5 -> out -> tl;
+  pois -> s1 [style=invis];
+  out -> warn [style=dashed];
+  drag -> s3 [label="steps 3-5 only\nassignment is the user's", color="#3d7fd6", fontcolor="#3d7fd6"];
+  rep  -> s1 [label="steps 1-5", color="#3d7fd6", fontcolor="#3d7fd6"];
+
+}

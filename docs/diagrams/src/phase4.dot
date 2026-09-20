@@ -1,0 +1,39 @@
+digraph phase4 {
+  bgcolor="#fbfaf8";
+  rankdir=TB;
+  fontname="Helvetica"; fontsize=15; labelloc=t; labeljust=l;
+  label=<<b>Phase 4 &#183; PWA and offline</b>>;
+  fontcolor="#23201c";
+  node [fontname="Helvetica", fontsize=11, shape=box, style="rounded,filled",
+        color="#c9c3b8", fillcolor="#ffffff", fontcolor="#23201c", margin="0.16,0.10"];
+  edge [fontname="Helvetica", fontsize=9, color="#8a8378", fontcolor="#6b655c",
+        arrowsize=0.7, penwidth=1.1];
+
+  build [label="vite build"] [fillcolor="#fdf2e2", color="#cf8c1e"];
+  vp    [label="vite-plugin-pwa\nregisterType: autoUpdate"] [fillcolor="#fdf2e2", color="#cf8c1e"];
+  sw    [label="service worker\n+ manifest"] [fillcolor="#fdf2e2", color="#cf8c1e"];
+  shell [label="app shell\nprecached"] [fillcolor="#fdf2e2", color="#cf8c1e"];
+  tiles [label="OSM tiles\nCacheFirst, cap ~300"] [fillcolor="#fdf2e2", color="#cf8c1e"];
+  idb   [label="current trip rows\nmirrored to IndexedDB"] [fillcolor="#fdf2e2", color="#cf8c1e"];
+  open  [label="traveller opens app"] [fillcolor="#e6effc", color="#3d7fd6"];
+  net   [label="online?"] [shape=diamond, fillcolor="#ffffff", color="#8a8378", margin="0.02,0.02"];
+  sb    [label="Supabase\nread / write"] [fillcolor="#e4f4ea", color="#35935f"];
+  plan  [label="plan renders from\ncache + IndexedDB"] [shape=box, style="rounded,filled,bold", fillcolor="#23201c", fontcolor="#fbfaf8", color="#23201c"];
+  edit  [label="edit while offline"] [fillcolor="#e6effc", color="#3d7fd6"];
+  q     [label="queue mutation"] [fillcolor="#fdf2e2", color="#cf8c1e"];
+  recon [label="reconnect"] [shape=diamond, fillcolor="#ffffff", color="#8a8378", margin="0.02,0.02"];
+  flush [label="flush queue\nlast-write-wins"] [fillcolor="#fdf2e2", color="#cf8c1e"];
+  lost  [label="concurrent remote edit\nis overwritten"] [fillcolor="#fdeaea", color="#cf4d4d"];
+
+  build -> vp -> sw;
+  sw -> shell; sw -> tiles; sw -> idb;
+  open -> net;
+  net -> sb   [label="yes"];
+  net -> plan [label="no"];
+  sb -> plan;
+  plan -> edit -> q -> recon;
+  recon -> flush [label="yes"];
+  recon -> q     [label="no"];
+  flush -> lost [style=dashed, label="known ceiling"];
+
+}

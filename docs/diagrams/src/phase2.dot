@@ -1,0 +1,37 @@
+digraph phase2 {
+  bgcolor="#fbfaf8";
+  rankdir=TB;
+  fontname="Helvetica"; fontsize=15; labelloc=t; labeljust=l;
+  label=<<b>Phase 2 &#183; Map, POI search and capture</b>>;
+  fontcolor="#23201c";
+  node [fontname="Helvetica", fontsize=11, shape=box, style="rounded,filled",
+        color="#c9c3b8", fillcolor="#ffffff", fontcolor="#23201c", margin="0.16,0.10"];
+  edge [fontname="Helvetica", fontsize=9, color="#8a8378", fontcolor="#6b655c",
+        arrowsize=0.7, penwidth=1.1];
+
+  map   [label="/trip/:id  Map view\nLeaflet + OSM tiles"] [fillcolor="#e6effc", color="#3d7fd6"];
+  typ   [label="traveller types query"] [fillcolor="#e6effc", color="#3d7fd6"];
+  deb   [label="debounce 500ms"] [fillcolor="#fdf2e2", color="#cf8c1e"];
+  cache [label="in session cache?"] [shape=diamond, fillcolor="#ffffff", color="#8a8378", margin="0.02,0.02"];
+  seam  [label="poi/index.ts\nsearch() / browse()"] [fillcolor="#fdf2e2", color="#cf8c1e"];
+  nom   [label="Nominatim\n~1 req/sec"] [fillcolor="#f2ebfa", color="#7d54c2"];
+  ovp   [label="Overpass\ncategory + bbox"] [fillcolor="#f2ebfa", color="#7d54c2"];
+  res   [label="results as pins"] [fillcolor="#fdf2e2", color="#cf8c1e"];
+  hold  [label="tap-and-hold map"] [fillcolor="#e6effc", color="#3d7fd6"];
+  pick  [label="traveller taps a pin"] [fillcolor="#e6effc", color="#3d7fd6"];
+  dur   [label="duration_min from\ncategory defaults"] [fillcolor="#fdf2e2", color="#cf8c1e"];
+  ins   [label="insert into pois\nday_index = null"] [fillcolor="#e4f4ea", color="#35935f"];
+  wish  [label="wishlist\n(grey pin)"] [shape=box, style="rounded,filled,bold", fillcolor="#23201c", fontcolor="#fbfaf8", color="#23201c"];
+
+  map -> typ -> deb -> cache;
+  cache -> res  [label="hit"];
+  cache -> seam [label="miss"];
+  seam -> nom [label="search"];
+  seam -> ovp [label="browse"];
+  nom -> res; ovp -> res;
+  res -> pick;
+  map -> hold [label="custom stop"];
+  hold -> dur;
+  pick -> dur -> ins -> wish;
+
+}

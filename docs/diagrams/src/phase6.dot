@@ -1,0 +1,36 @@
+digraph phase6 {
+  bgcolor="#fbfaf8";
+  rankdir=TB;
+  fontname="Helvetica"; fontsize=15; labelloc=t; labeljust=l;
+  label=<<b>Phase 6 &#183; Realtime collaborative editing</b>>;
+  fontcolor="#23201c";
+  node [fontname="Helvetica", fontsize=11, shape=box, style="rounded,filled",
+        color="#c9c3b8", fillcolor="#ffffff", fontcolor="#23201c", margin="0.16,0.10"];
+  edge [fontname="Helvetica", fontsize=9, color="#8a8378", fontcolor="#6b655c",
+        arrowsize=0.7, penwidth=1.1];
+
+  inv   [label="owner sends join link\n/join/:token"] [fillcolor="#e6effc", color="#3d7fd6"];
+  op    [label="companion opens it"] [fillcolor="#e6effc", color="#3d7fd6"];
+  auth  [label="signed in?"] [shape=diamond, fillcolor="#ffffff", color="#8a8378", margin="0.02,0.02"];
+  login [label="magic link first"] [fillcolor="#e6effc", color="#3d7fd6"];
+  join  [label="rpc join_trip(token)"] [fillcolor="#e4f4ea", color="#35935f"];
+  mem   [label="insert trip_members\n(trip_id, user_id, role)"] [fillcolor="#e4f4ea", color="#35935f"];
+  rls   [label="RLS widens:\nowner OR member"] [fillcolor="#e4f4ea", color="#35935f"];
+  sub   [label="subscribe realtime\npostgres_changes on pois\nfilter trip_id"] [fillcolor="#e4f4ea", color="#35935f"];
+  edit  [label="either device\ndrags a card"] [fillcolor="#e6effc", color="#3d7fd6"];
+  upd   [label="update pois row"] [fillcolor="#e4f4ea", color="#35935f"];
+  bcast [label="change broadcast\nto other clients"] [fillcolor="#e4f4ea", color="#35935f"];
+  der   [label="re-derive steps 3-5\nclock + warnings"] [fillcolor="#fdf2e2", color="#cf8c1e"];
+  pres  [label="presence channel\navatars on cards"] [shape=box, style="rounded,filled,bold", fillcolor="#23201c", fontcolor="#fbfaf8", color="#23201c"];
+  lww   [label="simultaneous edit to the\nsame row: last-write-wins"] [fillcolor="#fdeaea", color="#cf4d4d"];
+
+  inv -> op -> auth;
+  auth -> login [label="no"];
+  login -> join;
+  auth -> join [label="yes"];
+  join -> mem -> rls -> sub;
+  sub -> edit -> upd -> bcast -> der;
+  sub -> pres;
+  bcast -> lww [style=dashed, label="known ceiling"];
+
+}

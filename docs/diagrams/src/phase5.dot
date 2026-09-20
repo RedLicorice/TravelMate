@@ -1,0 +1,33 @@
+digraph phase5 {
+  bgcolor="#fbfaf8";
+  rankdir=TB;
+  fontname="Helvetica"; fontsize=15; labelloc=t; labeljust=l;
+  label=<<b>Phase 5 &#183; Read-only share link</b>>;
+  fontcolor="#23201c";
+  node [fontname="Helvetica", fontsize=11, shape=box, style="rounded,filled",
+        color="#c9c3b8", fillcolor="#ffffff", fontcolor="#23201c", margin="0.16,0.10"];
+  edge [fontname="Helvetica", fontsize=9, color="#8a8378", fontcolor="#6b655c",
+        arrowsize=0.7, penwidth=1.1];
+
+  own   [label="owner taps Share"] [fillcolor="#e6effc", color="#3d7fd6"];
+  tok   [label="update trips\nshare_token = gen_random_uuid()"] [fillcolor="#e4f4ea", color="#35935f"];
+  url   [label="copy /shared/:token"] [fillcolor="#e6effc", color="#3d7fd6"];
+  vis   [label="companion opens link\nno account"] [fillcolor="#e6effc", color="#3d7fd6"];
+  rpc   [label="rpc get_shared_trip(token)\nSECURITY DEFINER"] [fillcolor="#e4f4ea", color="#35935f"];
+  grant [label="anon granted EXECUTE\non this function only"] [fillcolor="#e4f4ea", color="#35935f"];
+  found [label="token matches?"] [shape=diamond, fillcolor="#ffffff", color="#8a8378", margin="0.02,0.02"];
+  json  [label="trip + pois as json"] [fillcolor="#e4f4ea", color="#35935f"];
+  ro    [label="read-only plan\nno map, no auth"] [shape=box, style="rounded,filled,bold", fillcolor="#23201c", fontcolor="#fbfaf8", color="#23201c"];
+  gone  [label="&#8220;link no longer active&#8221;"] [fillcolor="#fdeaea", color="#cf4d4d"];
+  rev   [label="owner revokes\nshare_token = null"] [fillcolor="#e6effc", color="#3d7fd6"];
+  why   [label="an RLS policy\n&#8220;share_token is not null&#8221;\nwould let anon enumerate\nevery shared trip"] [fillcolor="#fdeaea", color="#cf4d4d"];
+
+  own -> tok -> url -> vis -> rpc -> found;
+  found -> json [label="yes"];
+  found -> gone [label="no"];
+  json -> ro;
+  rpc -> grant [style=dashed];
+  rev -> found [style=dashed, label="now fails"];
+  why -> rpc [style=dashed, label="why not RLS", color="#cf4d4d", fontcolor="#cf4d4d"];
+
+}
