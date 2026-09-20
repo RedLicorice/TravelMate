@@ -1,0 +1,52 @@
+<!-- @dsCard group="Map" -->
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Pins and route</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="_preview.css">
+<link rel="stylesheet" href="_components.css">
+</head><body>
+<div class="head"><h1>Pins and route</h1><p>Day identity has to survive being 15px on top of photographic map tiles, in both themes.</p></div>
+<div class="pair">
+  <div class="pane" data-theme="light"><p class="mode">Light</p>
+<p class="sec">Day pins</p>
+<div class="row" style="gap:10px"><div style="width:30px;height:30px;border-radius:50% 50% 50% 4px;transform:rotate(-45deg);background:var(--tm-day-1);box-shadow:0 0 0 2px var(--tm-pin-halo);display:grid;place-items:center;"><span style="transform:rotate(45deg);font-size:11px;font-weight:700;color:#fff">1</span></div><div style="width:30px;height:30px;border-radius:50% 50% 50% 4px;transform:rotate(-45deg);background:var(--tm-day-2);box-shadow:0 0 0 2px var(--tm-pin-halo);display:grid;place-items:center;"><span style="transform:rotate(45deg);font-size:11px;font-weight:700;color:#fff">2</span></div><div style="width:30px;height:30px;border-radius:50% 50% 50% 4px;transform:rotate(-45deg);background:var(--tm-day-3);box-shadow:0 0 0 2px var(--tm-pin-halo);display:grid;place-items:center;"><span style="transform:rotate(45deg);font-size:11px;font-weight:700;color:#fff">3</span></div><div style="width:30px;height:30px;border-radius:50% 50% 50% 4px;transform:rotate(-45deg);background:var(--tm-day-4);box-shadow:0 0 0 2px var(--tm-pin-halo);display:grid;place-items:center;"><span style="transform:rotate(45deg);font-size:11px;font-weight:700;color:#fff">4</span></div><div style="width:30px;height:30px;border-radius:50% 50% 50% 4px;transform:rotate(-45deg);background:var(--tm-day-5);box-shadow:0 0 0 2px var(--tm-pin-halo);display:grid;place-items:center;"><span style="transform:rotate(45deg);font-size:11px;font-weight:700;color:#fff">5</span></div></div>
+<p class="sec">Special markers</p>
+<div class="row" style="gap:10px">
+  <div style="width:30px;height:30px;border-radius:50% 50% 50% 4px;transform:rotate(-45deg);background:var(--tm-day-none);box-shadow:0 0 0 2px var(--tm-pin-halo);display:grid;place-items:center;"><span style="transform:rotate(45deg);font-size:11px;font-weight:700;color:#fff">·</span></div>
+  <div style="width:30px;height:30px;border-radius:50% 50% 50% 4px;transform:rotate(-45deg);background:var(--tm-text);box-shadow:0 0 0 2px var(--tm-pin-halo);display:grid;place-items:center;"><span style="transform:rotate(45deg);font-size:11px;font-weight:700;color:var(--tm-bg)">H</span></div>
+  <div style="width:30px;height:30px;border-radius:50% 50% 50% 4px;transform:rotate(-45deg);background:var(--tm-primary);box-shadow:0 0 0 2px var(--tm-pin-halo);display:grid;place-items:center;"><span style="transform:rotate(45deg);font-size:11px;font-weight:700;color:#fff">✈</span></div>
+</div>
+<p class="note">Unassigned, hotel, airport. The halo ring is a token, not a hardcoded white — it flips with
+the theme so a pin keeps its edge against dark map tiles.</p>
+<p class="sec">Route line</p>
+<svg width="100%" height="54" viewBox="0 0 260 54" style="display:block">
+  <path d="M14,40 C60,40 60,14 106,14 S152,40 198,40 240,22 246,18"
+        fill="none" stroke="var(--tm-day-2)" stroke-width="3" stroke-linecap="round" stroke-dasharray="0 1 0"/>
+  <circle cx="14" cy="40" r="5" fill="var(--tm-day-2)" stroke="var(--tm-pin-halo)" stroke-width="2"/>
+  <circle cx="106" cy="14" r="5" fill="var(--tm-day-2)" stroke="var(--tm-pin-halo)" stroke-width="2"/>
+  <circle cx="198" cy="40" r="5" fill="var(--tm-day-2)" stroke="var(--tm-pin-halo)" stroke-width="2"/>
+</svg>
+<p class="note">The route draws itself when a day opens. One colour per day, matching its pins.</p></div>
+  <div class="pane" data-theme="dark"><p class="mode">Dark</p>
+<p class="sec">Day pins</p>
+<div class="row" style="gap:10px"><div style="width:30px;height:30px;border-radius:50% 50% 50% 4px;transform:rotate(-45deg);background:var(--tm-day-1);box-shadow:0 0 0 2px var(--tm-pin-halo);display:grid;place-items:center;"><span style="transform:rotate(45deg);font-size:11px;font-weight:700;color:#fff">1</span></div><div style="width:30px;height:30px;border-radius:50% 50% 50% 4px;transform:rotate(-45deg);background:var(--tm-day-2);box-shadow:0 0 0 2px var(--tm-pin-halo);display:grid;place-items:center;"><span style="transform:rotate(45deg);font-size:11px;font-weight:700;color:#fff">2</span></div><div style="width:30px;height:30px;border-radius:50% 50% 50% 4px;transform:rotate(-45deg);background:var(--tm-day-3);box-shadow:0 0 0 2px var(--tm-pin-halo);display:grid;place-items:center;"><span style="transform:rotate(45deg);font-size:11px;font-weight:700;color:#fff">3</span></div><div style="width:30px;height:30px;border-radius:50% 50% 50% 4px;transform:rotate(-45deg);background:var(--tm-day-4);box-shadow:0 0 0 2px var(--tm-pin-halo);display:grid;place-items:center;"><span style="transform:rotate(45deg);font-size:11px;font-weight:700;color:#fff">4</span></div><div style="width:30px;height:30px;border-radius:50% 50% 50% 4px;transform:rotate(-45deg);background:var(--tm-day-5);box-shadow:0 0 0 2px var(--tm-pin-halo);display:grid;place-items:center;"><span style="transform:rotate(45deg);font-size:11px;font-weight:700;color:#fff">5</span></div></div>
+<p class="sec">Special markers</p>
+<div class="row" style="gap:10px">
+  <div style="width:30px;height:30px;border-radius:50% 50% 50% 4px;transform:rotate(-45deg);background:var(--tm-day-none);box-shadow:0 0 0 2px var(--tm-pin-halo);display:grid;place-items:center;"><span style="transform:rotate(45deg);font-size:11px;font-weight:700;color:#fff">·</span></div>
+  <div style="width:30px;height:30px;border-radius:50% 50% 50% 4px;transform:rotate(-45deg);background:var(--tm-text);box-shadow:0 0 0 2px var(--tm-pin-halo);display:grid;place-items:center;"><span style="transform:rotate(45deg);font-size:11px;font-weight:700;color:var(--tm-bg)">H</span></div>
+  <div style="width:30px;height:30px;border-radius:50% 50% 50% 4px;transform:rotate(-45deg);background:var(--tm-primary);box-shadow:0 0 0 2px var(--tm-pin-halo);display:grid;place-items:center;"><span style="transform:rotate(45deg);font-size:11px;font-weight:700;color:#fff">✈</span></div>
+</div>
+<p class="note">Unassigned, hotel, airport. The halo ring is a token, not a hardcoded white — it flips with
+the theme so a pin keeps its edge against dark map tiles.</p>
+<p class="sec">Route line</p>
+<svg width="100%" height="54" viewBox="0 0 260 54" style="display:block">
+  <path d="M14,40 C60,40 60,14 106,14 S152,40 198,40 240,22 246,18"
+        fill="none" stroke="var(--tm-day-2)" stroke-width="3" stroke-linecap="round" stroke-dasharray="0 1 0"/>
+  <circle cx="14" cy="40" r="5" fill="var(--tm-day-2)" stroke="var(--tm-pin-halo)" stroke-width="2"/>
+  <circle cx="106" cy="14" r="5" fill="var(--tm-day-2)" stroke="var(--tm-pin-halo)" stroke-width="2"/>
+  <circle cx="198" cy="40" r="5" fill="var(--tm-day-2)" stroke="var(--tm-pin-halo)" stroke-width="2"/>
+</svg>
+<p class="note">The route draws itself when a day opens. One colour per day, matching its pins.</p></div>
+</div>
+</body></html>

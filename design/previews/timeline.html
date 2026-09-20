@@ -1,0 +1,50 @@
+<!-- @dsCard group="Components" -->
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Timeline — stops and legs</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="_preview.css">
+<link rel="stylesheet" href="_components.css">
+</head><body>
+<div class="head"><h1>Timeline — stops and legs</h1><p>The repeated unit of the plan view. A leg is a connector, not a card, so the eye reads stops as the content and travel as the gap between them.</p></div>
+<div class="pair">
+  <div class="pane" data-theme="light"><p class="mode">Light</p>
+<div style="--tm-stop-day:var(--tm-day-2)">
+  <div class="tm-stop tm-stop--anchor"><span class="tm-stop__time">09:00</span>
+    <div><p class="tm-stop__name">Hotel Artemide</p><p class="tm-stop__sub">start of day</p></div></div>
+  <div class="tm-leg"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="13" cy="4" r="1.6"/><path d="M11 21l2-6-3-3 1-5 3 3 3 1"/><path d="M10 12l-2 9"/></svg><span>14 min · 1.1 km</span></div>
+  <div class="tm-stop"><span class="tm-stop__time">09:14</span>
+    <div><p class="tm-stop__name">Colosseum</p><p class="tm-stop__sub">2 h · quieter before 10</p></div></div>
+  <div class="tm-leg"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="5" y="3" width="14" height="13" rx="3"/><path d="M5 11h14M8 20l2-4M16 20l-2-4"/></svg><span>9 min · Metro B</span></div>
+  <div class="tm-stop"><span class="tm-stop__time">11:23</span>
+    <div><p class="tm-stop__name">Galleria Borghese</p>
+      <p class="tm-stop__sub">1 h 30</p>
+      <div class="row" style="margin-top:7px"><span class="tm-chip tm-chip--warn">Closed Mondays · arriving 11:23</span></div></div></div>
+  <div class="tm-leg"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M3 13l2-5h14l2 5v4h-3M3 17v-4M6 17h9"/><circle cx="7" cy="17.5" r="1.6"/><circle cx="17" cy="17.5" r="1.6"/></svg><span>22 min · to airport</span></div>
+  <div class="tm-stop tm-stop--anchor"><span class="tm-stop__time">13:00</span>
+    <div><p class="tm-stop__name">Fiumicino</p><p class="tm-stop__sub">flight 15:00 · 2 h buffer</p></div></div>
+</div>
+<p class="note">The day's colour is one custom property on the wrapper, so a whole day recolours by
+changing <code>--tm-stop-day</code>. Anchors are dashed: they are fixed, not draggable. The warning sits
+on the offending card and offers a move rather than reordering anything itself.</p></div>
+  <div class="pane" data-theme="dark"><p class="mode">Dark</p>
+<div style="--tm-stop-day:var(--tm-day-2)">
+  <div class="tm-stop tm-stop--anchor"><span class="tm-stop__time">09:00</span>
+    <div><p class="tm-stop__name">Hotel Artemide</p><p class="tm-stop__sub">start of day</p></div></div>
+  <div class="tm-leg"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="13" cy="4" r="1.6"/><path d="M11 21l2-6-3-3 1-5 3 3 3 1"/><path d="M10 12l-2 9"/></svg><span>14 min · 1.1 km</span></div>
+  <div class="tm-stop"><span class="tm-stop__time">09:14</span>
+    <div><p class="tm-stop__name">Colosseum</p><p class="tm-stop__sub">2 h · quieter before 10</p></div></div>
+  <div class="tm-leg"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="5" y="3" width="14" height="13" rx="3"/><path d="M5 11h14M8 20l2-4M16 20l-2-4"/></svg><span>9 min · Metro B</span></div>
+  <div class="tm-stop"><span class="tm-stop__time">11:23</span>
+    <div><p class="tm-stop__name">Galleria Borghese</p>
+      <p class="tm-stop__sub">1 h 30</p>
+      <div class="row" style="margin-top:7px"><span class="tm-chip tm-chip--warn">Closed Mondays · arriving 11:23</span></div></div></div>
+  <div class="tm-leg"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M3 13l2-5h14l2 5v4h-3M3 17v-4M6 17h9"/><circle cx="7" cy="17.5" r="1.6"/><circle cx="17" cy="17.5" r="1.6"/></svg><span>22 min · to airport</span></div>
+  <div class="tm-stop tm-stop--anchor"><span class="tm-stop__time">13:00</span>
+    <div><p class="tm-stop__name">Fiumicino</p><p class="tm-stop__sub">flight 15:00 · 2 h buffer</p></div></div>
+</div>
+<p class="note">The day's colour is one custom property on the wrapper, so a whole day recolours by
+changing <code>--tm-stop-day</code>. Anchors are dashed: they are fixed, not draggable. The warning sits
+on the offending card and offers a move rather than reordering anything itself.</p></div>
+</div>
+</body></html>

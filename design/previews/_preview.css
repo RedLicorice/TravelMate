@@ -1,0 +1,27 @@
+/* Frame chrome for the preview cards. Not part of the design system —
+   nothing here is a token the app consumes. */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  background: oklch(0.97 0.004 60);
+  color: oklch(0.25 0.015 50);
+  padding: 24px;
+  font-size: 14px;
+}
+.head { margin-bottom: 18px; }
+.head h1 { font-size: 18px; font-weight: 700; letter-spacing: -0.02em; }
+.head p { font-size: 12.5px; color: oklch(0.55 0.012 50); margin-top: 4px; max-width: 76ch; line-height: 1.5; }
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.pane {
+  background: var(--tm-bg); color: var(--tm-text);
+  border: 1px solid var(--tm-border); border-radius: 14px; padding: 18px;
+}
+.mode {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--tm-text-faint); margin-bottom: 14px;
+}
+.sec { font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--tm-text-faint); margin: 18px 0 8px; }
+.sec:first-of-type { margin-top: 0; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.note { font-size: 11px; line-height: 1.5; color: var(--tm-text-faint); margin-top: 10px; }

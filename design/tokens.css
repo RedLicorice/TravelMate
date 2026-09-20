@@ -1,0 +1,195 @@
+/*
+ * TravelMate design tokens — the single source the app imports.
+ *
+ * Two independent palettes, deliberately not merged:
+ *   --tm-accent-*  pastel chrome. Surfaces, chips, highlights. Low chroma so it
+ *                  never competes with the layer above it.
+ *   --tm-day-*     a data encoding. Carries "which day is this stop on" across
+ *                  map pins, timeline cards and route lines. Higher chroma,
+ *                  even hue steps, because it has to stay legible at 15px.
+ *
+ * Colours are OKLCH: even hue steps there are perceptually even, which is the
+ * whole reason no day in the ramp reads as louder than its neighbours.
+ *
+ * Theme has three states. Bare :root is light. The media query covers the
+ * system default, guarded so an explicit light choice still wins. The
+ * [data-theme] blocks let the toggle override in both directions.
+ */
+
+:root,
+[data-theme='light'] {
+  color-scheme: light;
+
+  /* ---- surfaces: warm-neutral, so the gelato accents sit naturally ---- */
+  --tm-bg:            oklch(0.985 0.006 60);
+  --tm-surface:       oklch(1 0 0);
+  --tm-surface-2:     oklch(0.965 0.008 60);
+  --tm-border:        oklch(0.905 0.010 60);
+  --tm-border-strong: oklch(0.82 0.014 60);
+
+  /* ---- text ---- */
+  --tm-text:          oklch(0.25 0.015 50);
+  --tm-text-muted:    oklch(0.52 0.015 50);
+  --tm-text-faint:    oklch(0.66 0.012 50);
+  --tm-text-on-fill:  oklch(1 0 0);
+
+  /* ---- primary action ---- */
+  --tm-primary:       oklch(0.55 0.14 40);
+  --tm-primary-hover: oklch(0.49 0.145 40);
+  --tm-primary-ink:   oklch(1 0 0);
+
+  /* ---- gelato accents: soft fill + ink that passes on it ---- */
+  --tm-peach:         oklch(0.90 0.075 40);
+  --tm-peach-soft:    oklch(0.945 0.045 40);
+  --tm-peach-ink:     oklch(0.45 0.12 40);
+  --tm-butter:        oklch(0.92 0.065 95);
+  --tm-butter-soft:   oklch(0.955 0.040 95);
+  --tm-butter-ink:    oklch(0.46 0.11 95);
+  --tm-mint:          oklch(0.91 0.060 165);
+  --tm-mint-soft:     oklch(0.950 0.040 165);
+  --tm-mint-ink:      oklch(0.45 0.10 165);
+  --tm-sky:           oklch(0.90 0.055 240);
+  --tm-sky-soft:      oklch(0.950 0.038 240);
+  --tm-sky-ink:       oklch(0.45 0.10 240);
+
+  /* ---- semantic ----
+   * Warning is deliberately more saturated than --tm-butter. The spec commits
+   * to warnings being shown and never auto-fixed, so "closed Mondays" has to
+   * read as information the traveller must act on -- if it looked like butter
+   * chrome it would be scrolled past. */
+  --tm-warn:          oklch(0.86 0.105 80);
+  --tm-warn-soft:     oklch(0.955 0.055 80);
+  --tm-warn-ink:      oklch(0.45 0.13 75);
+  --tm-ok:            oklch(0.88 0.085 155);
+  --tm-ok-soft:       oklch(0.955 0.045 155);
+  --tm-ok-ink:        oklch(0.44 0.11 155);
+  --tm-danger-soft:   oklch(0.955 0.045 25);
+  --tm-danger-ink:    oklch(0.48 0.15 25);
+
+  /* ---- day ramp: 8 days, even hue steps, fixed L and C ---- */
+  --tm-day-1: oklch(0.62 0.16 25);
+  --tm-day-2: oklch(0.62 0.16 70);
+  --tm-day-3: oklch(0.62 0.16 115);
+  --tm-day-4: oklch(0.62 0.16 160);
+  --tm-day-5: oklch(0.62 0.16 205);
+  --tm-day-6: oklch(0.62 0.16 250);
+  --tm-day-7: oklch(0.62 0.16 295);
+  --tm-day-8: oklch(0.62 0.16 340);
+  --tm-day-none: oklch(0.70 0.010 60);   /* unassigned wishlist pin */
+  --tm-pin-halo: oklch(1 0 0 / 0.92);    /* ring that lifts a pin off map tiles */
+
+  /* ---- type: mobile-first, 15px base for outdoor legibility ---- */
+  --tm-font: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --tm-font-num: 'Inter', system-ui, sans-serif;
+  --tm-text-xs:   0.75rem;   /* 12 — chip, eyebrow */
+  --tm-text-sm:   0.8125rem; /* 13 — sublabel */
+  --tm-text-base: 0.9375rem; /* 15 — body */
+  --tm-text-lg:   1.0625rem; /* 17 — card title */
+  --tm-text-xl:   1.25rem;   /* 20 — screen title */
+  --tm-text-2xl:  1.5rem;    /* 24 */
+  --tm-text-3xl:  1.875rem;  /* 30 — hero */
+  --tm-leading-tight: 1.2;
+  --tm-leading-body:  1.5;
+
+  /* ---- space: 4px grid ---- */
+  --tm-space-1: 0.25rem; --tm-space-2: 0.5rem;  --tm-space-3: 0.75rem;
+  --tm-space-4: 1rem;    --tm-space-5: 1.25rem; --tm-space-6: 1.5rem;
+  --tm-space-8: 2rem;    --tm-space-12: 3rem;
+
+  /* ---- radius ---- */
+  --tm-r-sm: 8px; --tm-r-md: 12px; --tm-r-lg: 16px; --tm-r-full: 999px;
+
+  /* ---- ergonomics ----
+   * 44px is the floor, not a suggestion: this app gets used one-handed,
+   * outdoors, while walking. */
+  --tm-tap-min: 44px;
+  --tm-motion: 180ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+
+    --tm-bg:            oklch(0.17 0.008 55);
+    --tm-surface:       oklch(0.21 0.010 55);
+    --tm-surface-2:     oklch(0.25 0.012 55);
+    --tm-border:        oklch(0.30 0.012 55);
+    --tm-border-strong: oklch(0.40 0.014 55);
+
+    --tm-text:          oklch(0.95 0.008 60);
+    --tm-text-muted:    oklch(0.72 0.012 55);
+    --tm-text-faint:    oklch(0.58 0.012 55);
+    --tm-text-on-fill:  oklch(0.20 0.020 45);
+
+    /* On dark the warm primary is a light fill with dark ink -- a dark
+     * terracotta button on a dark surface disappears. */
+    --tm-primary:       oklch(0.78 0.110 45);
+    --tm-primary-hover: oklch(0.83 0.115 45);
+    --tm-primary-ink:   oklch(0.20 0.040 45);
+
+    --tm-peach:         oklch(0.72 0.095 40);
+    --tm-peach-soft:    oklch(0.32 0.055 40);
+    --tm-peach-ink:     oklch(0.85 0.085 40);
+    --tm-butter:        oklch(0.76 0.085 95);
+    --tm-butter-soft:   oklch(0.33 0.050 95);
+    --tm-butter-ink:    oklch(0.87 0.080 95);
+    --tm-mint:          oklch(0.75 0.075 165);
+    --tm-mint-soft:     oklch(0.32 0.048 165);
+    --tm-mint-ink:      oklch(0.85 0.075 165);
+    --tm-sky:           oklch(0.73 0.070 240);
+    --tm-sky-soft:      oklch(0.32 0.045 240);
+    --tm-sky-ink:       oklch(0.85 0.070 240);
+
+    --tm-warn:          oklch(0.72 0.115 80);
+    --tm-warn-soft:     oklch(0.33 0.060 78);
+    --tm-warn-ink:      oklch(0.88 0.105 82);
+    --tm-ok:            oklch(0.74 0.095 155);
+    --tm-ok-soft:       oklch(0.31 0.050 155);
+    --tm-ok-ink:        oklch(0.86 0.090 155);
+    --tm-danger-soft:   oklch(0.32 0.055 25);
+    --tm-danger-ink:    oklch(0.84 0.110 25);
+
+    /* Hue angles are identical to light: a day keeps its identity when the
+     * theme flips. Only lightness lifts, so pins hold against dark tiles. */
+    --tm-day-1: oklch(0.70 0.15 25);
+    --tm-day-2: oklch(0.70 0.15 70);
+    --tm-day-3: oklch(0.70 0.15 115);
+    --tm-day-4: oklch(0.70 0.15 160);
+    --tm-day-5: oklch(0.70 0.15 205);
+    --tm-day-6: oklch(0.70 0.15 250);
+    --tm-day-7: oklch(0.70 0.15 295);
+    --tm-day-8: oklch(0.70 0.15 340);
+    --tm-day-none: oklch(0.45 0.010 55);
+    --tm-pin-halo: oklch(0.17 0.008 55 / 0.92);
+  }
+}
+
+/* Explicit choice wins in both directions. Scoped to any element rather than
+ * :root so a container can opt into a theme -- which is what lets the preview
+ * pages show light and dark next to each other. */
+[data-theme='dark'] {
+  color-scheme: dark;
+  --tm-bg: oklch(0.17 0.008 55); --tm-surface: oklch(0.21 0.010 55);
+  --tm-surface-2: oklch(0.25 0.012 55); --tm-border: oklch(0.30 0.012 55);
+  --tm-border-strong: oklch(0.40 0.014 55);
+  --tm-text: oklch(0.95 0.008 60); --tm-text-muted: oklch(0.72 0.012 55);
+  --tm-text-faint: oklch(0.58 0.012 55); --tm-text-on-fill: oklch(0.20 0.020 45);
+  --tm-primary: oklch(0.78 0.110 45); --tm-primary-hover: oklch(0.83 0.115 45);
+  --tm-primary-ink: oklch(0.20 0.040 45);
+  --tm-peach: oklch(0.72 0.095 40); --tm-peach-soft: oklch(0.32 0.055 40); --tm-peach-ink: oklch(0.85 0.085 40);
+  --tm-butter: oklch(0.76 0.085 95); --tm-butter-soft: oklch(0.33 0.050 95); --tm-butter-ink: oklch(0.87 0.080 95);
+  --tm-mint: oklch(0.75 0.075 165); --tm-mint-soft: oklch(0.32 0.048 165); --tm-mint-ink: oklch(0.85 0.075 165);
+  --tm-sky: oklch(0.73 0.070 240); --tm-sky-soft: oklch(0.32 0.045 240); --tm-sky-ink: oklch(0.85 0.070 240);
+  --tm-warn: oklch(0.72 0.115 80); --tm-warn-soft: oklch(0.33 0.060 78); --tm-warn-ink: oklch(0.88 0.105 82);
+  --tm-ok: oklch(0.74 0.095 155); --tm-ok-soft: oklch(0.31 0.050 155); --tm-ok-ink: oklch(0.86 0.090 155);
+  --tm-danger-soft: oklch(0.32 0.055 25); --tm-danger-ink: oklch(0.84 0.110 25);
+  --tm-day-1: oklch(0.70 0.15 25);  --tm-day-2: oklch(0.70 0.15 70);
+  --tm-day-3: oklch(0.70 0.15 115); --tm-day-4: oklch(0.70 0.15 160);
+  --tm-day-5: oklch(0.70 0.15 205); --tm-day-6: oklch(0.70 0.15 250);
+  --tm-day-7: oklch(0.70 0.15 295); --tm-day-8: oklch(0.70 0.15 340);
+  --tm-day-none: oklch(0.45 0.010 55); --tm-pin-halo: oklch(0.17 0.008 55 / 0.92);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --tm-motion: 1ms; }
+}

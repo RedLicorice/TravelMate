@@ -1,0 +1,62 @@
+<!-- @dsCard group="Components" -->
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Buttons, fields, cards, chips</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="_preview.css">
+<link rel="stylesheet" href="_components.css">
+</head><body>
+<div class="head"><h1>Buttons, fields, cards, chips</h1><p>What the login screen and the trip wizard need. Everything is token-driven, so a palette change never means touching a component.</p></div>
+<div class="pair">
+  <div class="pane" data-theme="light"><p class="mode">Light</p>
+<p class="sec">Buttons</p>
+<div class="row"><button class="tm-btn tm-btn--primary">Plan a new trip</button>
+  <button class="tm-btn tm-btn--secondary">Back</button>
+  <button class="tm-btn tm-btn--ghost">Sign out</button>
+  <button class="tm-btn tm-btn--primary" disabled>Saving…</button></div>
+<p class="note">All four clear the 44px tap floor.</p>
+<p class="sec">Fields</p>
+<div class="tm-field" style="margin-bottom:12px">
+  <label class="tm-label" for="a">Hotel</label>
+  <input class="tm-input" id="a" placeholder="Hotel Artemide">
+</div>
+<div class="tm-field">
+  <label class="tm-label" for="b">Email</label>
+  <input class="tm-input" id="b" value="not-an-email" aria-invalid="true">
+  <span class="tm-hint tm-hint--error">That doesn't look like an email address.</span>
+</div>
+<p class="sec">Trip card</p>
+<div class="tm-card">
+  <p class="tm-card__title">Rome</p>
+  <p class="tm-card__meta">10 April · 4 days · 11 stops</p>
+</div>
+<p class="sec">Chips</p>
+<div class="row"><span class="tm-chip">museum</span><span class="tm-chip tm-chip--peach">2 h</span>
+  <span class="tm-chip tm-chip--warn">Closed Mondays</span><span class="tm-chip tm-chip--ok">On time</span></div></div>
+  <div class="pane" data-theme="dark"><p class="mode">Dark</p>
+<p class="sec">Buttons</p>
+<div class="row"><button class="tm-btn tm-btn--primary">Plan a new trip</button>
+  <button class="tm-btn tm-btn--secondary">Back</button>
+  <button class="tm-btn tm-btn--ghost">Sign out</button>
+  <button class="tm-btn tm-btn--primary" disabled>Saving…</button></div>
+<p class="note">All four clear the 44px tap floor.</p>
+<p class="sec">Fields</p>
+<div class="tm-field" style="margin-bottom:12px">
+  <label class="tm-label" for="a">Hotel</label>
+  <input class="tm-input" id="a" placeholder="Hotel Artemide">
+</div>
+<div class="tm-field">
+  <label class="tm-label" for="b">Email</label>
+  <input class="tm-input" id="b" value="not-an-email" aria-invalid="true">
+  <span class="tm-hint tm-hint--error">That doesn't look like an email address.</span>
+</div>
+<p class="sec">Trip card</p>
+<div class="tm-card">
+  <p class="tm-card__title">Rome</p>
+  <p class="tm-card__meta">10 April · 4 days · 11 stops</p>
+</div>
+<p class="sec">Chips</p>
+<div class="row"><span class="tm-chip">museum</span><span class="tm-chip tm-chip--peach">2 h</span>
+  <span class="tm-chip tm-chip--warn">Closed Mondays</span><span class="tm-chip tm-chip--ok">On time</span></div></div>
+</div>
+</body></html>

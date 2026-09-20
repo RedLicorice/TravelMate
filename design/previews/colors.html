@@ -1,137 +1,50 @@
-<!-- @dsCard group="Colors" -->
+<!-- @dsCard group="Foundations" -->
 <!DOCTYPE html>
-<html lang="en"><head><meta charset="utf-8">
-<title>TravelMate — palette directions</title>
+<html lang="en"><head><meta charset="utf-8"><title>Colour</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<style>
-:root{font-family:Inter,system-ui,sans-serif}
-*{box-sizing:border-box;margin:0;padding:0}
-body{background:#fafafa;color:#18181b;padding:28px 24px 48px}
-h1{font-size:20px;font-weight:700;letter-spacing:-.02em}
-.sub{font-size:13px;color:#71717a;margin:4px 0 24px;max-width:70ch;line-height:1.5}
-h2{font-size:12px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:#71717a;margin:28px 0 10px}
-.pair{display:grid;grid-template-columns:1fr 1fr;gap:14px}
-.pane{border-radius:14px;padding:16px}
-.pane.l{background:#fbfbfc;border:1px solid #e4e4e7}
-.pane.d{background:#141417;border:1px solid #2a2a30}
-.pane .mode{font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;margin-bottom:12px}
-.pane.l .mode{color:#a1a1aa}.pane.d .mode{color:#71717a}
-.name{font-size:13px;font-weight:600;margin-bottom:2px}
-.pane.d .name{color:#f4f4f5}
-.desc{font-size:11px;line-height:1.45;margin-bottom:10px}
-.pane.l .desc{color:#71717a}.pane.d .desc{color:#8b8b93}
-.sw{display:flex;gap:8px;margin-bottom:14px}
-.sw div{height:46px;flex:1;border-radius:9px}
-.chip{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:600;
-  padding:5px 10px;border-radius:999px;margin:0 5px 5px 0}
-.btn{display:inline-block;font-size:12px;font-weight:600;padding:8px 14px;border-radius:9px;border:none}
-.pins{display:flex;gap:7px;align-items:center;margin:8px 0 4px}
-.pin{width:15px;height:15px;border-radius:50%;box-shadow:0 0 0 2px rgba(255,255,255,.9)}
-.pane.d .pin{box-shadow:0 0 0 2px rgba(20,20,23,.9)}
-.pinbig{display:flex;gap:7px;margin-bottom:4px}
-.pinbig div{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;
-  font-size:11px;font-weight:700;color:#fff}
-.note{font-size:10.5px;line-height:1.5;margin-top:6px}
-.pane.l .note{color:#a1a1aa}.pane.d .note{color:#71717a}
-</style></head><body>
-
-<h1>TravelMate — palette directions</h1>
-<p class="sub">Two independent palettes. <strong>Pastel accents</strong> are chrome — surfaces, highlights, the eyecandy.
-<strong>Day colours</strong> are a data encoding: they carry “which day is this stop on” across map pins, timeline cards
-and route lines, so they must stay mutually distinguishable at 15px, which pastels cannot do. Pick one accent direction;
-the day ramp is shared.</p>
-
-<h2>A · Gelato — warm, Mediterranean, playful</h2>
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="_preview.css">
+<link rel="stylesheet" href="_components.css">
+</head><body>
+<div class="head"><h1>Colour</h1><p>Two independent palettes. Gelato accents are chrome. The day ramp is a data encoding that must stay legible at 15px on a map pin, which is why it carries more chroma than the pastels.</p></div>
 <div class="pair">
-  <div class="pane l"><p class="mode">Light</p>
-    <div class="sw"><div style="background:oklch(.90 .075 40)"></div><div style="background:oklch(.92 .065 95)"></div>
-      <div style="background:oklch(.91 .060 165)"></div><div style="background:oklch(.90 .055 240)"></div></div>
-    <span class="chip" style="background:oklch(.94 .045 40);color:oklch(.45 .12 40)">peach</span>
-    <span class="chip" style="background:oklch(.95 .040 95);color:oklch(.46 .11 95)">butter</span>
-    <span class="chip" style="background:oklch(.95 .040 165);color:oklch(.45 .10 165)">mint</span>
-    <a class="btn" style="background:oklch(.55 .14 40);color:#fff">Plan a new trip</a>
-  </div>
-  <div class="pane d"><p class="mode">Dark</p>
-    <div class="sw"><div style="background:oklch(.72 .095 40)"></div><div style="background:oklch(.76 .085 95)"></div>
-      <div style="background:oklch(.75 .075 165)"></div><div style="background:oklch(.73 .070 240)"></div></div>
-    <span class="chip" style="background:oklch(.32 .055 40);color:oklch(.84 .085 40)">peach</span>
-    <span class="chip" style="background:oklch(.33 .050 95);color:oklch(.86 .080 95)">butter</span>
-    <span class="chip" style="background:oklch(.33 .048 165);color:oklch(.85 .075 165)">mint</span>
-    <a class="btn" style="background:oklch(.72 .105 40);color:oklch(.20 .04 40)">Plan a new trip</a>
-  </div>
+  <div class="pane" data-theme="light"><p class="mode">Light</p>
+<p class="sec">Surfaces</p><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:6px"><div><div style="height:42px;border-radius:9px;background:var(--tm-bg)"></div><p style="font-size:10px;margin-top:4px;color:var(--tm-text-faint)">bg</p></div><div><div style="height:42px;border-radius:9px;background:var(--tm-surface)"></div><p style="font-size:10px;margin-top:4px;color:var(--tm-text-faint)">surface</p></div><div><div style="height:42px;border-radius:9px;background:var(--tm-surface-2)"></div><p style="font-size:10px;margin-top:4px;color:var(--tm-text-faint)">surface-2</p></div><div><div style="height:42px;border-radius:9px;background:var(--tm-border)"></div><p style="font-size:10px;margin-top:4px;color:var(--tm-text-faint)">border</p></div></div>
+<p class="sec">Gelato accents · chrome</p><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:6px"><div><div style="height:42px;border-radius:9px;background:var(--tm-peach)"></div><p style="font-size:10px;margin-top:4px;color:var(--tm-text-faint)">peach</p></div><div><div style="height:42px;border-radius:9px;background:var(--tm-butter)"></div><p style="font-size:10px;margin-top:4px;color:var(--tm-text-faint)">butter</p></div><div><div style="height:42px;border-radius:9px;background:var(--tm-mint)"></div><p style="font-size:10px;margin-top:4px;color:var(--tm-text-faint)">mint</p></div><div><div style="height:42px;border-radius:9px;background:var(--tm-sky)"></div><p style="font-size:10px;margin-top:4px;color:var(--tm-text-faint)">sky</p></div></div>
+<div class="row" style="margin-top:8px">
+  <span class="tm-chip tm-chip--peach">peach</span><span class="tm-chip tm-chip--mint">mint</span>
+  <span class="tm-chip tm-chip--sky">sky</span>
 </div>
-
-<h2>B · Sea glass — calm, muted, premium</h2>
-<div class="pair">
-  <div class="pane l"><p class="mode">Light</p>
-    <div class="sw"><div style="background:oklch(.90 .048 190)"></div><div style="background:oklch(.92 .042 80)"></div>
-      <div style="background:oklch(.90 .048 20)"></div><div style="background:oklch(.90 .030 260)"></div></div>
-    <span class="chip" style="background:oklch(.95 .030 190);color:oklch(.44 .08 190)">teal</span>
-    <span class="chip" style="background:oklch(.96 .028 80);color:oklch(.45 .07 80)">sand</span>
-    <span class="chip" style="background:oklch(.95 .030 20);color:oklch(.45 .08 20)">rose</span>
-    <a class="btn" style="background:oklch(.48 .085 190);color:#fff">Plan a new trip</a>
-  </div>
-  <div class="pane d"><p class="mode">Dark</p>
-    <div class="sw"><div style="background:oklch(.74 .065 190)"></div><div style="background:oklch(.77 .058 80)"></div>
-      <div style="background:oklch(.74 .065 20)"></div><div style="background:oklch(.74 .040 260)"></div></div>
-    <span class="chip" style="background:oklch(.31 .038 190);color:oklch(.84 .060 190)">teal</span>
-    <span class="chip" style="background:oklch(.32 .034 80);color:oklch(.86 .055 80)">sand</span>
-    <span class="chip" style="background:oklch(.31 .038 20);color:oklch(.84 .060 20)">rose</span>
-    <a class="btn" style="background:oklch(.74 .075 190);color:oklch(.20 .03 190)">Plan a new trip</a>
-  </div>
+<p class="sec">Semantic</p>
+<div class="row"><span class="tm-chip tm-chip--warn">Closed Mondays</span>
+  <span class="tm-chip tm-chip--ok">Fits the day</span></div>
+<p class="note">Warning is more saturated than butter on purpose. Warnings are shown and never auto-fixed,
+so they have to read as something to act on rather than as chrome.</p>
+<p class="sec">Day ramp · data encoding</p>
+<div class="row" style="gap:6px"><div style="width:28px;height:28px;border-radius:50%;background:var(--tm-day-1);display:grid;place-items:center;font-size:11px;font-weight:700;color:#fff">1</div><div style="width:28px;height:28px;border-radius:50%;background:var(--tm-day-2);display:grid;place-items:center;font-size:11px;font-weight:700;color:#fff">2</div><div style="width:28px;height:28px;border-radius:50%;background:var(--tm-day-3);display:grid;place-items:center;font-size:11px;font-weight:700;color:#fff">3</div><div style="width:28px;height:28px;border-radius:50%;background:var(--tm-day-4);display:grid;place-items:center;font-size:11px;font-weight:700;color:#fff">4</div><div style="width:28px;height:28px;border-radius:50%;background:var(--tm-day-5);display:grid;place-items:center;font-size:11px;font-weight:700;color:#fff">5</div><div style="width:28px;height:28px;border-radius:50%;background:var(--tm-day-6);display:grid;place-items:center;font-size:11px;font-weight:700;color:#fff">6</div><div style="width:28px;height:28px;border-radius:50%;background:var(--tm-day-7);display:grid;place-items:center;font-size:11px;font-weight:700;color:#fff">7</div><div style="width:28px;height:28px;border-radius:50%;background:var(--tm-day-8);display:grid;place-items:center;font-size:11px;font-weight:700;color:#fff">8</div></div>
+<div class="row" style="gap:7px;margin-top:8px"><span style="width:15px;height:15px;border-radius:50%;background:var(--tm-day-1);box-shadow:0 0 0 2px var(--tm-pin-halo)"></span><span style="width:15px;height:15px;border-radius:50%;background:var(--tm-day-2);box-shadow:0 0 0 2px var(--tm-pin-halo)"></span><span style="width:15px;height:15px;border-radius:50%;background:var(--tm-day-3);box-shadow:0 0 0 2px var(--tm-pin-halo)"></span><span style="width:15px;height:15px;border-radius:50%;background:var(--tm-day-4);box-shadow:0 0 0 2px var(--tm-pin-halo)"></span><span style="width:15px;height:15px;border-radius:50%;background:var(--tm-day-5);box-shadow:0 0 0 2px var(--tm-pin-halo)"></span><span style="width:15px;height:15px;border-radius:50%;background:var(--tm-day-6);box-shadow:0 0 0 2px var(--tm-pin-halo)"></span><span style="width:15px;height:15px;border-radius:50%;background:var(--tm-day-7);box-shadow:0 0 0 2px var(--tm-pin-halo)"></span><span style="width:15px;height:15px;border-radius:50%;background:var(--tm-day-8);box-shadow:0 0 0 2px var(--tm-pin-halo)"></span>
+  <span style="width:15px;height:15px;border-radius:50%;background:var(--tm-day-none);box-shadow:0 0 0 2px var(--tm-pin-halo)"></span></div>
+<p class="note">Actual map-pin size. Even hue steps at fixed lightness and chroma, so no day shouts louder
+than another. Grey is the unassigned wishlist pin. Eight is the practical ceiling — 2/3 and 7/8 crowd
+each other at this size.</p></div>
+  <div class="pane" data-theme="dark"><p class="mode">Dark</p>
+<p class="sec">Surfaces</p><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:6px"><div><div style="height:42px;border-radius:9px;background:var(--tm-bg)"></div><p style="font-size:10px;margin-top:4px;color:var(--tm-text-faint)">bg</p></div><div><div style="height:42px;border-radius:9px;background:var(--tm-surface)"></div><p style="font-size:10px;margin-top:4px;color:var(--tm-text-faint)">surface</p></div><div><div style="height:42px;border-radius:9px;background:var(--tm-surface-2)"></div><p style="font-size:10px;margin-top:4px;color:var(--tm-text-faint)">surface-2</p></div><div><div style="height:42px;border-radius:9px;background:var(--tm-border)"></div><p style="font-size:10px;margin-top:4px;color:var(--tm-text-faint)">border</p></div></div>
+<p class="sec">Gelato accents · chrome</p><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:6px"><div><div style="height:42px;border-radius:9px;background:var(--tm-peach)"></div><p style="font-size:10px;margin-top:4px;color:var(--tm-text-faint)">peach</p></div><div><div style="height:42px;border-radius:9px;background:var(--tm-butter)"></div><p style="font-size:10px;margin-top:4px;color:var(--tm-text-faint)">butter</p></div><div><div style="height:42px;border-radius:9px;background:var(--tm-mint)"></div><p style="font-size:10px;margin-top:4px;color:var(--tm-text-faint)">mint</p></div><div><div style="height:42px;border-radius:9px;background:var(--tm-sky)"></div><p style="font-size:10px;margin-top:4px;color:var(--tm-text-faint)">sky</p></div></div>
+<div class="row" style="margin-top:8px">
+  <span class="tm-chip tm-chip--peach">peach</span><span class="tm-chip tm-chip--mint">mint</span>
+  <span class="tm-chip tm-chip--sky">sky</span>
 </div>
-
-<h2>C · Sorbet dusk — cooler, evening, strongest in dark</h2>
-<div class="pair">
-  <div class="pane l"><p class="mode">Light</p>
-    <div class="sw"><div style="background:oklch(.89 .070 300)"></div><div style="background:oklch(.90 .070 10)"></div>
-      <div style="background:oklch(.91 .080 60)"></div><div style="background:oklch(.90 .062 210)"></div></div>
-    <span class="chip" style="background:oklch(.95 .042 300);color:oklch(.46 .13 300)">lilac</span>
-    <span class="chip" style="background:oklch(.95 .042 10);color:oklch(.46 .12 10)">blush</span>
-    <span class="chip" style="background:oklch(.95 .048 60);color:oklch(.47 .11 60)">apricot</span>
-    <a class="btn" style="background:oklch(.52 .16 300);color:#fff">Plan a new trip</a>
-  </div>
-  <div class="pane d"><p class="mode">Dark</p>
-    <div class="sw"><div style="background:oklch(.74 .090 300)"></div><div style="background:oklch(.75 .090 10)"></div>
-      <div style="background:oklch(.77 .095 60)"></div><div style="background:oklch(.75 .080 210)"></div></div>
-    <span class="chip" style="background:oklch(.32 .055 300);color:oklch(.85 .085 300)">lilac</span>
-    <span class="chip" style="background:oklch(.32 .055 10);color:oklch(.85 .085 10)">blush</span>
-    <span class="chip" style="background:oklch(.33 .058 60);color:oklch(.87 .088 60)">apricot</span>
-    <a class="btn" style="background:oklch(.74 .120 300);color:oklch(.19 .05 300)">Plan a new trip</a>
-  </div>
-</div>
-
-<h2>Day ramp — shared by all three directions</h2>
-<div class="pair">
-  <div class="pane l"><p class="mode">Light · 8 days</p>
-    <div class="pinbig">
-      <div style="background:oklch(.62 .16 25)">1</div><div style="background:oklch(.62 .16 70)">2</div>
-      <div style="background:oklch(.62 .16 115)">3</div><div style="background:oklch(.62 .16 160)">4</div>
-      <div style="background:oklch(.62 .16 205)">5</div><div style="background:oklch(.62 .16 250)">6</div>
-      <div style="background:oklch(.62 .16 295)">7</div><div style="background:oklch(.62 .16 340)">8</div></div>
-    <div class="pins">
-      <span class="pin" style="background:oklch(.62 .16 25)"></span><span class="pin" style="background:oklch(.62 .16 70)"></span>
-      <span class="pin" style="background:oklch(.62 .16 115)"></span><span class="pin" style="background:oklch(.62 .16 160)"></span>
-      <span class="pin" style="background:oklch(.62 .16 205)"></span><span class="pin" style="background:oklch(.62 .16 250)"></span>
-      <span class="pin" style="background:oklch(.62 .16 295)"></span><span class="pin" style="background:oklch(.62 .16 340)"></span>
-      <span class="pin" style="background:#a1a1aa"></span></div>
-    <p class="note">Even hue steps at fixed lightness/chroma (OKLCH), so no day reads as louder than another.
-      Grey = unassigned wishlist pin. Actual map-pin size.</p>
-  </div>
-  <div class="pane d"><p class="mode">Dark · 8 days</p>
-    <div class="pinbig">
-      <div style="background:oklch(.70 .15 25)">1</div><div style="background:oklch(.70 .15 70)">2</div>
-      <div style="background:oklch(.70 .15 115)">3</div><div style="background:oklch(.70 .15 160)">4</div>
-      <div style="background:oklch(.70 .15 205)">5</div><div style="background:oklch(.70 .15 250)">6</div>
-      <div style="background:oklch(.70 .15 295)">7</div><div style="background:oklch(.70 .15 340)">8</div></div>
-    <div class="pins">
-      <span class="pin" style="background:oklch(.70 .15 25)"></span><span class="pin" style="background:oklch(.70 .15 70)"></span>
-      <span class="pin" style="background:oklch(.70 .15 115)"></span><span class="pin" style="background:oklch(.70 .15 160)"></span>
-      <span class="pin" style="background:oklch(.70 .15 205)"></span><span class="pin" style="background:oklch(.70 .15 250)"></span>
-      <span class="pin" style="background:oklch(.70 .15 295)"></span><span class="pin" style="background:oklch(.70 .15 340)"></span>
-      <span class="pin" style="background:#52525b"></span></div>
-    <p class="note">Lightness lifts to .70 so pins hold against dark tiles. Hue angles are identical to light,
-      so a day keeps its identity when the theme flips.</p>
-  </div>
+<p class="sec">Semantic</p>
+<div class="row"><span class="tm-chip tm-chip--warn">Closed Mondays</span>
+  <span class="tm-chip tm-chip--ok">Fits the day</span></div>
+<p class="note">Warning is more saturated than butter on purpose. Warnings are shown and never auto-fixed,
+so they have to read as something to act on rather than as chrome.</p>
+<p class="sec">Day ramp · data encoding</p>
+<div class="row" style="gap:6px"><div style="width:28px;height:28px;border-radius:50%;background:var(--tm-day-1);display:grid;place-items:center;font-size:11px;font-weight:700;color:#fff">1</div><div style="width:28px;height:28px;border-radius:50%;background:var(--tm-day-2);display:grid;place-items:center;font-size:11px;font-weight:700;color:#fff">2</div><div style="width:28px;height:28px;border-radius:50%;background:var(--tm-day-3);display:grid;place-items:center;font-size:11px;font-weight:700;color:#fff">3</div><div style="width:28px;height:28px;border-radius:50%;background:var(--tm-day-4);display:grid;place-items:center;font-size:11px;font-weight:700;color:#fff">4</div><div style="width:28px;height:28px;border-radius:50%;background:var(--tm-day-5);display:grid;place-items:center;font-size:11px;font-weight:700;color:#fff">5</div><div style="width:28px;height:28px;border-radius:50%;background:var(--tm-day-6);display:grid;place-items:center;font-size:11px;font-weight:700;color:#fff">6</div><div style="width:28px;height:28px;border-radius:50%;background:var(--tm-day-7);display:grid;place-items:center;font-size:11px;font-weight:700;color:#fff">7</div><div style="width:28px;height:28px;border-radius:50%;background:var(--tm-day-8);display:grid;place-items:center;font-size:11px;font-weight:700;color:#fff">8</div></div>
+<div class="row" style="gap:7px;margin-top:8px"><span style="width:15px;height:15px;border-radius:50%;background:var(--tm-day-1);box-shadow:0 0 0 2px var(--tm-pin-halo)"></span><span style="width:15px;height:15px;border-radius:50%;background:var(--tm-day-2);box-shadow:0 0 0 2px var(--tm-pin-halo)"></span><span style="width:15px;height:15px;border-radius:50%;background:var(--tm-day-3);box-shadow:0 0 0 2px var(--tm-pin-halo)"></span><span style="width:15px;height:15px;border-radius:50%;background:var(--tm-day-4);box-shadow:0 0 0 2px var(--tm-pin-halo)"></span><span style="width:15px;height:15px;border-radius:50%;background:var(--tm-day-5);box-shadow:0 0 0 2px var(--tm-pin-halo)"></span><span style="width:15px;height:15px;border-radius:50%;background:var(--tm-day-6);box-shadow:0 0 0 2px var(--tm-pin-halo)"></span><span style="width:15px;height:15px;border-radius:50%;background:var(--tm-day-7);box-shadow:0 0 0 2px var(--tm-pin-halo)"></span><span style="width:15px;height:15px;border-radius:50%;background:var(--tm-day-8);box-shadow:0 0 0 2px var(--tm-pin-halo)"></span>
+  <span style="width:15px;height:15px;border-radius:50%;background:var(--tm-day-none);box-shadow:0 0 0 2px var(--tm-pin-halo)"></span></div>
+<p class="note">Actual map-pin size. Even hue steps at fixed lightness and chroma, so no day shouts louder
+than another. Grey is the unassigned wishlist pin. Eight is the practical ceiling — 2/3 and 7/8 crowd
+each other at this size.</p></div>
 </div>
 </body></html>
