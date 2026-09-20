@@ -4,7 +4,15 @@
 	import { base } from '$app/paths';
 	import { goto } from '$app/navigation';
 	import { getTrip, toTrip, type TripRow } from '$lib/trip/repo';
-	import { getPoi, listPois, removePoi, toPlanPoi, updatePoi, type PoiRow } from '$lib/trip/pois';
+	import {
+		getPoi,
+		listPois,
+		removePoi,
+		saveAssignments,
+		toPlanPoi,
+		updatePoi,
+		type PoiRow
+	} from '$lib/trip/pois';
 	import { tripDays } from '$lib/trip/days';
 	import { schedule, REASON_TEXT, type PlannedStop } from '$lib/plan/planner';
 	import {
@@ -159,6 +167,27 @@
 
 	const STEPS = [15, 30, 45, 60, 90, 120, 180, 240];
 
+	/**
+	 * The keyboard-reachable way to move a stop between days. Dragging is faster
+	 * with a thumb, and impossible without one.
+	 */
+	async function moveToDay(index: number | null) {
+		saving = true;
+		error = null;
+		try {
+			const sameDay = all.filter((p) => p.day_index === index && p.id !== poiId);
+			await saveAssignments([
+				{ id: poiId, dayIndex: index, orderIndex: index === null ? null : sameDay.length }
+			]);
+			all = await listPois(tripId);
+			poi = all.find((p) => p.id === poiId) ?? poi;
+		} catch (e) {
+			error = (e as Error).message;
+		} finally {
+			saving = false;
+		}
+	}
+
 	// Validated again at render, not only at capture: rows written before the
 	// capture-time check existed are still in the database.
 	const website = $derived(safeUrl(poi?.website));
@@ -205,6 +234,35 @@
 				<p class="tm-card__meta">{REASON_TEXT[reason ?? 'not-planned-yet']}</p>
 			{/if}
 		</div>
+
+		<h2 class="tm-label mt-6 mb-2">Which day</h2>
+		<div class="flex flex-wrap gap-2">
+			{#each days as day, i (day.date)}
+				<button
+					class="tm-chip"
+					aria-pressed={placed?.dayIndex === i}
+					style={placed?.dayIndex === i
+						? `background:var(--tm-day-${Math.min(i + 1, 8)});color:#fff`
+						: 'opacity:0.6'}
+					disabled={saving}
+					onclick={() => moveToDay(i)}
+				>
+					{dayLabel(day.date, trip.timezone)}
+				</button>
+			{/each}
+			<button
+				class="tm-chip"
+				aria-pressed={!placed}
+				style={!placed ? 'background:var(--tm-day-none);color:#fff' : 'opacity:0.6'}
+				disabled={saving}
+				onclick={() => moveToDay(null)}
+			>
+				Unscheduled
+			</button>
+		</div>
+		<p class="tm-hint mt-2">
+			Moving it here puts it at the end of that day. Drag it on the plan to place it precisely.
+		</p>
 
 		<h2 class="tm-label mt-6 mb-2">How much you want this</h2>
 		<Stars

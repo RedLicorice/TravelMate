@@ -22,6 +22,7 @@
 	import type { Mode } from '$lib/plan/modes';
 	import Autocomplete from '$lib/Autocomplete.svelte';
 	import Stars from '$lib/Stars.svelte';
+	import { createDrag, reorder } from '$lib/dnd.svelte';
 	import LeafletMap from '$lib/Map.svelte';
 	import { poi as provider, type City } from '$lib/poi';
 
@@ -147,6 +148,35 @@
 		else next.add(i);
 		visible = next;
 	}
+
+	/**
+	 * A manual move runs steps 3-5 only -- the traveller has just stated the
+	 * assignment and the order, and re-clustering would undo the drag.
+	 */
+	async function applyMove(draggedId: string, target: Parameters<typeof reorder>[2]) {
+		const rows = reorder(
+			pois.map((p) => ({ id: p.id, dayIndex: p.day_index, orderIndex: p.order_index })),
+			draggedId,
+			target
+		);
+		if (!rows.length) return;
+		// Update locally first so the timeline moves under the finger rather
+		// than after a round trip.
+		const byId = new Map(rows.map((r) => [r.id, r]));
+		pois = pois.map((p) =>
+			byId.has(p.id)
+				? { ...p, day_index: byId.get(p.id)!.dayIndex, order_index: byId.get(p.id)!.orderIndex }
+				: p
+		);
+		try {
+			await saveAssignments(rows);
+		} catch (e) {
+			error = (e as Error).message;
+			pois = await listPois(tripId);
+		}
+	}
+
+	const drag = createDrag((id, target) => applyMove(id, target));
 
 	async function doReplan() {
 		if (!row || !days.length) return;
@@ -506,10 +536,30 @@
 								<span>{stop.legIn.minutes} min · {stop.legIn.km} km · {stop.legIn.mode}</span>
 							</div>
 						{/if}
-						<div class="tm-stop" class:tm-stop--anchor={stop.anchor}>
+						<div
+							class="tm-stop"
+							class:tm-stop--anchor={stop.anchor}
+							data-drop-stop={stop.poiId ?? undefined}
+							style={drag.state.id === stop.poiId
+								? 'opacity:0.35'
+								: drag.state.target?.kind === 'stop' && drag.state.target.id === stop.poiId
+									? 'outline:2px solid var(--tm-primary);outline-offset:-1px'
+									: ''}
+						>
 							<span class="tm-stop__time">{hhmm(stop.arrive, row.timezone)}</span>
 							<div>
-								<p class="tm-stop__name">{stop.name}</p>
+								<p class="tm-stop__name">
+									{#if stop.poiId}
+										<!-- Grab handle rather than the whole card: the card is a link
+										     target and a scroll surface, and hijacking both to start a
+										     drag makes the list impossible to scroll. -->
+										<span
+											{@attach (node) => drag.handle(node as HTMLElement, stop.poiId!)}
+											aria-hidden="true"
+											style="display:inline-block;cursor:grab;touch-action:none;color:var(--tm-text-faint);margin-right:6px;user-select:none"
+										>⠿</span>
+									{/if}{stop.name}
+								</p>
 								<p class="tm-stop__sub">
 									{stop.anchor ? (stop.durationMin ? `${stop.durationMin} min stop` : 'anchor') : `${stop.durationMin} min`}
 								</p>
@@ -521,6 +571,24 @@
 					{/each}
 				{/if}
 			</div>
+		{/if}
+
+		{#if drag.state.id}
+			<div
+				aria-hidden="true"
+				style="position:fixed;left:{drag.state.x}px;top:{drag.state.y}px;transform:translate(-50%,-140%);
+				pointer-events:none;z-index:50;background:var(--tm-surface);border:1px solid var(--tm-primary);
+				border-radius:var(--tm-r-md);padding:6px 12px;font:600 var(--tm-text-sm)/1 var(--tm-font);
+				box-shadow:0 6px 20px rgba(0,0,0,0.18)"
+			>
+				{pois.find((p) => p.id === drag.state.id)?.name ?? 'Moving'}
+			</div>
+			<p
+				class="tm-hint"
+				style="position:fixed;left:0;right:0;bottom:84px;text-align:center;z-index:50;pointer-events:none"
+			>
+				Drop on another stop to reorder, or on a day to move it
+			</p>
 		{/if}
 
 		<div class="tm-safe-bottom flex items-center justify-between px-4 pt-3" style="border-top: 1px solid var(--tm-border)">
