@@ -4,7 +4,8 @@ import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'vitest/config';
 
 // CI sets this to '/<repo>' so assets resolve under the GitHub Pages subpath.
-const base = process.env.BASE_PATH ?? '';
+// SvelteKit types base as '' | `/${string}`; the env var is a plain string.
+const base = (process.env.BASE_PATH ?? '') as '' | `/${string}`;
 
 export default defineConfig({
 	plugins: [

@@ -2,6 +2,7 @@
 /* After Tailwind, so the design tokens win over preflight. url() inside is
    rebased by Vite, which is what bundles the Satoshi master. */
 @import '../design/tokens.css';
+@import './lib/ui.css';
 
 body {
 	margin: 0;
