@@ -184,7 +184,7 @@ on this function and nothing else.
 
 Revoking a share link is setting `share_token` to null.
 
-The Supabase anon key is baked into the static build. This is how that key is
+The Supabase publishable key is baked into the static build. This is how that key is
 designed to be used; it identifies the project, it does not authorise anything.
 RLS is the actual boundary. The service-role key never appears in the repo, the
 build, or CI. Third-party API keys never reach the client at all — see Routing.
@@ -553,7 +553,7 @@ GitHub Actions: build, then `actions/deploy-pages`.
 
 - `404.html` is copied from `index.html` for SPA fallback.
 - `base` is set to the repository subpath.
-- `PUBLIC_SUPABASE_URL` and `PUBLIC_SUPABASE_ANON_KEY` are injected from
+- `PUBLIC_SUPABASE_URL` and `PUBLIC_SUPABASE_PUBLISHABLE_KEY` are injected from
   repository secrets at build time.
 - From phase 7, Edge Function deploys are a separate CI step; third-party keys
   live in Supabase function secrets, never in the Pages build.

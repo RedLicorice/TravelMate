@@ -16,7 +16,7 @@
 - Runtime dependencies for phases 1-6 are capped at four: `leaflet`, `opening_hours.js`, `@supabase/supabase-js`, `vite-plugin-pwa`. Phase 1 adds only `@supabase/supabase-js`. Dev dependencies are not capped.
 - The planner and all date logic must stay pure: no network, no Supabase imports, no Svelte imports.
 - Derived values are never stored. Clock times are recomputed, not persisted.
-- The service-role key never appears in the repo, the build, or CI. Only `PUBLIC_SUPABASE_URL` and `PUBLIC_SUPABASE_ANON_KEY` reach the client.
+- Service-role and secret keys never appear in the repo, the build, or CI. Only `PUBLIC_SUPABASE_URL` and `PUBLIC_SUPABASE_PUBLISHABLE_KEY` reach the client.
 - Mobile-first. Primary controls sit within thumb reach at the bottom of the viewport.
 - Every `ponytail:` comment names both the ceiling and its upgrade path.
 
@@ -26,12 +26,12 @@ The spec stores `arrival_at` / `departure_at` as `timestamptz` but never names t
 
 ## Prerequisites (human, once)
 
-1. Create a Supabase project at supabase.com. Note the project URL and the **anon** key from Project Settings → API.
+1. Create a Supabase project at supabase.com. Note the project URL and the **publishable** key (`sb_publishable_…`) from Project Settings → API.
 2. Create `.env.local` in the repo root (already git-ignored):
 
 ```
 PUBLIC_SUPABASE_URL=https://<ref>.supabase.co
-PUBLIC_SUPABASE_ANON_KEY=<anon key>
+PUBLIC_SUPABASE_PUBLISHABLE_KEY=<anon key>
 ```
 
 3. In Supabase → Authentication → URL Configuration, add `http://localhost:5173` and the eventual GitHub Pages URL to **Redirect URLs**. Magic links silently fail to redirect otherwise.
@@ -758,11 +758,11 @@ Create `src/lib/supabase.ts`:
 
 ```ts
 import { createClient } from '@supabase/supabase-js';
-import { PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_ANON_KEY } from '$env/static/public';
+import { PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_PUBLISHABLE_KEY } from '$env/static/public';
 
-// The anon key is public by design: it names the project, it authorises
-// nothing. RLS is the boundary.
-export const supabase = createClient(PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_ANON_KEY, {
+// The publishable key is public by design: it names the project, it
+// authorises nothing. RLS is the boundary.
+export const supabase = createClient(PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_PUBLISHABLE_KEY, {
   auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
 });
 ```
@@ -1393,7 +1393,7 @@ jobs:
           # Pages serves the site from /<repo>, so assets need that prefix.
           BASE_PATH: /${{ github.event.repository.name }}
           PUBLIC_SUPABASE_URL: ${{ secrets.PUBLIC_SUPABASE_URL }}
-          PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.PUBLIC_SUPABASE_ANON_KEY }}
+          PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
       - run: ./scripts/check-build.sh
       - uses: actions/upload-pages-artifact@v3
         with:
@@ -1412,10 +1412,10 @@ jobs:
 
 - [ ] **Step 2: Configure the repository**
 
-In GitHub → Settings → Secrets and variables → Actions, add `PUBLIC_SUPABASE_URL` and `PUBLIC_SUPABASE_ANON_KEY`.
+In GitHub → Settings → Secrets and variables → Actions, add `PUBLIC_SUPABASE_URL` and `PUBLIC_SUPABASE_PUBLISHABLE_KEY`.
 In GitHub → Settings → Pages, set Source to **GitHub Actions**.
 
-Only the anon key goes here. The service-role key must never enter CI.
+Only the publishable key goes here. The service-role and secret keys must never enter CI.
 
 - [ ] **Step 3: Add the deployed URL to Supabase**
 
