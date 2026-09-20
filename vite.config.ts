@@ -21,6 +21,12 @@ export default defineConfig({
 			paths: { base }
 		})
 	],
+	server: {
+		// Vite rejects requests whose Host header it does not recognise. Kept in
+		// an env var rather than hardcoded so one developer's tailnet name does
+		// not end up in the repo.
+		allowedHosts: process.env.DEV_ALLOWED_HOSTS?.split(',').filter(Boolean) ?? []
+	},
 	test: {
 		environment: 'node',
 		include: ['src/**/*.test.ts']
