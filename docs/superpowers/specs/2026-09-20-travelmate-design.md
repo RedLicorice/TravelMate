@@ -282,11 +282,12 @@ estimates are correct for v1 and not a placeholder to be apologised for.
 
 ### Crowd avoidance
 
-Crowding at tourist sites is overwhelmingly predictable from category and clock,
-and the planner never needs a headcount — only a relative preference to nudge a
-stop earlier or later. So a per-category curve, roughly twenty lines and a
-lookup table, does the job with no key, no billing, and no provider that can
-deprecate it:
+Crowd data lives behind a provider chain, not in the planner. See Crowd service
+below for the seam. The default and permanent fallback is a per-category curve —
+roughly twenty lines and a lookup table, no key, no billing, and no provider
+that can deprecate it. Crowding at tourist sites is overwhelmingly predictable
+from category and clock, and the planner never needs a headcount, only a
+relative preference to nudge a stop earlier or later:
 
 | Category | Busy | Preferred |
 | --- | --- | --- |
@@ -303,8 +304,7 @@ saves queueing.
 
 Where a heuristic genuinely loses: one-off events, a cruise ship docking, a
 strike, school holidays. Real data catches those and a table never will, which
-is what phase 8 buys. The curve lives behind the same function signature the
-paid provider will later implement, so the upgrade is one file.
+is what phase 8 buys.
 
 ### Known ceilings
 
@@ -316,7 +316,8 @@ Each is marked in code with a `ponytail:` comment naming its upgrade path.
 - **Mode choice is distance thresholds, not comparison.** It doesn't check
   whether a bike is actually available or the metro runs at that hour.
 - **Crowd curves are heuristics, not measurements.** Blind to events, strikes,
-  school holidays and cruise ships. Upgrade: phase 8.
+  school holidays and cruise ships. Upgrade: add a measured provider above the
+  table in the crowd chain; the table stays as fallback.
 - **Clustering is geographic only.** It doesn't know the Louvre wants a morning.
   Upgrade: weight k-means by `duration_min`.
 - **2-opt finds a local optimum.** At twelve or fewer stops per day the gap to
@@ -349,6 +350,8 @@ One file, `planner.test.ts`, assert-based:
 - a museum lands outside 11:00-15:00 when the day has room for it
 - crowd cost never overrides a hard opening-hours constraint
 - crowd cost loses to travel time when avoiding a crowd costs more movement
+- the provider chain returns the first non-null answer
+- the chain still resolves when every non-table provider throws or returns null
 
 This is the only non-trivial logic in the application, so it is the only code
 with tests.
@@ -392,8 +395,9 @@ Road traffic is explicitly **not** planned. It only affects car legs, which are
 the minority in a walkable city centre, and it changes arrival times by minutes
 that the ordering does not depend on.
 
-Crowd data is different: it changes the plan. Phase 8 replaces the heuristic
-crowd curves (see Crowd avoidance) with measured data behind the same seam.
+Crowd data is different: it changes the plan. Phase 8 adds measured providers to
+the chain described in Crowd service. The heuristic table stays underneath them
+permanently as the terminal fallback; it is not replaced.
 
 Provider reality:
 
@@ -409,6 +413,70 @@ Provider reality:
 **Verify both at implementation.** Free-tier terms and response shapes move.
 
 This belongs behind the same Edge Function and the same cache as phase 7.
+
+## Crowd service
+
+External crowd data is resolved through a provider chain in
+`src/lib/crowd/`, independent of the planner.
+
+```ts
+interface CrowdProvider {
+  name: string
+  // 0..1 busyness, or null when this provider has nothing for that venue
+  busyness(venue: VenueRef, at: Date): Promise<number | null>
+}
+```
+
+Providers are tried in order and the first non-null answer wins.
+
+**The category table is the terminal provider and never returns null.** The
+chain therefore always resolves, and the planner never handles a missing value.
+This is what makes the fallback real rather than aspirational: a provider going
+down degrades quality, never correctness. There is no configuration in which the
+app has no crowd signal.
+
+### Resolution happens before planning, not inside it
+
+The planner is pure and synchronous — it re-runs on every drag — and providers
+are async. So the chain resolves first and hands the planner plain data:
+
+```ts
+const curves = await resolveCrowd(pois, days)   // async, cached, chained
+plan({ pois, days, allowedModes, curves })      // pure, sync, instant
+```
+
+Purity and testability survive, the drag interaction stays instant, and tests
+inject a fake curve map with no mocking. Putting the lookup inside `plan()`
+would make the planner async and take the drag interaction with it.
+
+### Caching
+
+`crowd_cache`, keyed by `(venue, weekday, hour)`. Weekly patterns are stable, so
+the TTL is weeks rather than minutes. Live "busy right now" readings are a
+separate short-TTL field that only phase 8 providers populate; the heuristic
+provider has no live component and claims none.
+
+### Provider ranking
+
+1. **Category table** — always present, terminal, zero cost.
+2. **BestTime.app** (phase 8) — licensed forecast curves plus live foot traffic.
+   Paid. The provider to reach for first.
+3. **Scraper** (optional, discouraged) — parses an undocumented Google payload.
+   Three problems: it breaks without warning when that payload changes, it
+   violates Google's terms, and running from an Edge Function means a datacenter
+   IP, which Google blocks aggressively. Expect flakiness that presents as a bug
+   in this app.
+
+The chain is what makes ranking a cheap decision. A provider is one file; when
+it starts returning null the chain falls through to the table automatically and
+nothing else notices.
+
+### Where this abstraction stops
+
+Two concrete chains — `CrowdProvider` now, `TravelTimeProvider` in phase 7 —
+sharing a shape. Not a generic `EnrichmentProvider<T>` with a registry and a
+config schema. Two interfaces that happen to rhyme are cheaper than the
+framework that would unify them, and nothing yet needs a third.
 
 ## Screens
 
