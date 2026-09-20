@@ -454,6 +454,16 @@ This is what makes the fallback real rather than aspirational: a provider going
 down degrades quality, never correctness. There is no configuration in which the
 app has no crowd signal.
 
+### Not yet as built
+
+The shipped planner resolves busyness *inside* its clock walk, synchronously,
+against the category table. That works because the table is local, and it is
+the one place the implementation knowingly departs from this document.
+
+The consequence is narrow but real: no network provider can be added until
+resolution moves ahead of planning as described below. The refactor is the
+cost of the first measured provider, not of the table.
+
 ### Resolution happens before planning, not inside it
 
 The planner is pure and synchronous — its derivation half re-runs on every

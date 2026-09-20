@@ -6,9 +6,18 @@
  * to nudge a stop earlier or later. So this is a lookup table: no key, no
  * billing, no provider that can deprecate it.
  *
- * Shaped as a provider chain so phase 8 can put measured data in front of it.
- * The table is the terminal provider and never returns null, which is what
- * makes the fallback real rather than aspirational.
+ * Shaped as a provider chain so a measured source can go in front of it. The
+ * table is the terminal provider and never returns null, which is what makes
+ * the fallback real rather than aspirational.
+ *
+ * ponytail: this chain is SYNCHRONOUS and resolved inside the planner's clock
+ * walk, which the design doc says it should not be. A network provider cannot
+ * be added without first moving resolution ahead of planning -- resolve every
+ * (poi, candidate hour) up front into a plain lookup, pass that into plan(),
+ * and keep walkClock reading it synchronously. Going async in place would drag
+ * the 2-opt scoring loop async, and that loop runs hundreds of times per
+ * replan. Today the only provider is a local table, so nothing is broken; the
+ * refactor is the price of the first real provider, not of this one.
  */
 export type Busyness = number; // 0 = empty, 1 = packed
 
