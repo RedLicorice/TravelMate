@@ -25,15 +25,16 @@
 		inflight?.abort();
 		error = null;
 
-		if (query.trim().length < 3) {
+		if (query.trim().length < 2) {
 			results = [];
 			status = 'idle';
 			return;
 		}
 
 		status = 'searching';
-		// Nominatim's usage policy caps traffic at roughly one request a second.
-		// 600ms plus abort-on-keystroke keeps a fast typist to one real request.
+		// Photon is a type-ahead geocoder: it answers partial words, so results
+		// should land while the traveller is still typing. 250ms plus
+		// abort-on-keystroke means a fast typist issues one request, not ten.
 		timer = setTimeout(async () => {
 			const controller = new AbortController();
 			inflight = controller;
@@ -45,7 +46,7 @@
 				error = (e as Error).message;
 				status = 'done';
 			}
-		}, 600);
+		}, 250);
 	}
 
 	function choose(item: T) {

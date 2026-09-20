@@ -42,9 +42,12 @@
 				// datetime-local has no zone. The traveller entered local time in
 				// the destination city, which is what the planner assumes too.
 				arrivalAt: new Date(arrivalAt).toISOString(),
-				departureAt: new Date(departureAt).toISOString()
+				departureAt: new Date(departureAt).toISOString(),
+				cityBBox: city!.bbox
 			});
-			await goto(`${base}/trip/${id}`);
+			// replaceState so the finished wizard is not left in history: a
+			// swipe-back from the new trip would otherwise reopen step 3.
+			await goto(`${base}/trip/${id}`, { replaceState: true });
 		} catch (e) {
 			error = (e as Error).message;
 			saving = false;
@@ -68,7 +71,7 @@
 			<Autocomplete
 				label="City"
 				placeholder="London"
-				hint="Type at least 3 letters."
+				hint="Start typing — results appear as you go."
 				search={(q, signal) => poi.searchCities(q, signal)}
 				onpick={(c) => {
 					city = c;

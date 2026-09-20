@@ -1,4 +1,5 @@
 import { supabase } from '$lib/supabase';
+import type { BBox } from '$lib/poi';
 import type { Place, Trip } from './days';
 
 export type TripRow = {
@@ -22,6 +23,10 @@ export type TripRow = {
 	departure_buffer_min: number;
 	bag_drop_min: number;
 	allowed_modes: string[];
+	city_south: number | null;
+	city_north: number | null;
+	city_west: number | null;
+	city_east: number | null;
 	day_start: string;
 	day_end: string;
 	share_token: string | null;
@@ -37,6 +42,7 @@ export type NewTrip = {
 	hotelLng: number;
 	arrivalAt: string;
 	departureAt: string;
+	cityBBox: BBox | null;
 };
 
 function place(name: string | null, lat: number | null, lng: number | null): Place | null {
@@ -99,10 +105,50 @@ export async function createTrip(input: NewTrip): Promise<string> {
 			hotel_lat: input.hotelLat,
 			hotel_lng: input.hotelLng,
 			arrival_at: input.arrivalAt,
-			departure_at: input.departureAt
+			departure_at: input.departureAt,
+			city_south: input.cityBBox?.south ?? null,
+			city_north: input.cityBBox?.north ?? null,
+			city_west: input.cityBBox?.west ?? null,
+			city_east: input.cityBBox?.east ?? null
 		})
 		.select('id')
 		.single();
 	if (error) throw new Error(error.message);
 	return data.id;
+}
+
+/** The city box as stored, or null when the trip predates it being captured. */
+export function cityBBox(row: TripRow): BBox | null {
+	const { city_south, city_north, city_west, city_east } = row;
+	// The column constraint guarantees all four or none, so one check is enough.
+	return city_south !== null && city_north !== null && city_west !== null && city_east !== null
+		? { south: city_south, north: city_north, west: city_west, east: city_east }
+		: null;
+}
+
+/** True for a trip saved before the hotel picker existed: 0,0 is Null Island. */
+export const hotelMissing = (row: TripRow) => row.hotel_lat === 0 && row.hotel_lng === 0;
+
+export async function updateHotel(
+	id: string,
+	hotel: { name: string; lat: number; lng: number }
+): Promise<void> {
+	const { error } = await supabase
+		.from('trips')
+		.update({ hotel_name: hotel.name, hotel_lat: hotel.lat, hotel_lng: hotel.lng })
+		.eq('id', id);
+	if (error) throw new Error(error.message);
+}
+
+export async function updateCityBBox(id: string, bbox: BBox): Promise<void> {
+	const { error } = await supabase
+		.from('trips')
+		.update({
+			city_south: bbox.south,
+			city_north: bbox.north,
+			city_west: bbox.west,
+			city_east: bbox.east
+		})
+		.eq('id', id);
+	if (error) throw new Error(error.message);
 }

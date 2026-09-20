@@ -1,9 +1,12 @@
-import { nominatim } from './nominatim';
-export type { BBox, City, Place, PoiProvider } from './types';
+import { photon } from './photon';
+export type { BBox, City, Place, Poi, PoiProvider } from './types';
 
 /**
- * The active provider. Nominatim needs no key and no billing relationship,
- * which is why it ships first. Swapping to Google Places is a changed import
- * here plus one new file implementing PoiProvider.
+ * The active provider. Photon answers partial words as the traveller types,
+ * which is what a picker needs; Nominatim requires whole words. Both are free,
+ * keyless, and read the same OSM data.
+ *
+ * Swapping to Google Places is a changed import here plus one new file
+ * implementing PoiProvider. No caller changes.
  */
-export const poi = nominatim;
+export const poi = photon;
