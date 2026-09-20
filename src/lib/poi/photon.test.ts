@@ -1,5 +1,15 @@
 import { describe, it, expect } from 'vitest';
-import { contextOf, durationFor, toBBox, toCity, toPlace, toPoi, type PhotonFeature } from './photon';
+import {
+	contextOf,
+	durationFor,
+	safePhone,
+	safeUrl,
+	toBBox,
+	toCity,
+	toPlace,
+	toPoi,
+	type PhotonFeature
+} from './photon';
 
 const london: PhotonFeature = {
 	geometry: { coordinates: [-0.1277653, 51.5074456] },
@@ -119,5 +129,52 @@ describe('toPoi', () => {
 
 	it('leaves the osm id null when the feature has no identity', () => {
 		expect(toPoi(london).osmId).toBeNull();
+	});
+});
+
+describe('safeUrl', () => {
+	it('allows http and https', () => {
+		expect(safeUrl('https://britishmuseum.org')).toBe('https://britishmuseum.org/');
+		expect(safeUrl('http://example.com/x')).toBe('http://example.com/x');
+	});
+
+	it('rejects javascript:, which would run in this origin', () => {
+		// OSM tags are world-editable, so this is data from a stranger.
+		expect(safeUrl('javascript:alert(document.cookie)')).toBeNull();
+		expect(safeUrl('JavaScript:alert(1)')).toBeNull();
+	});
+
+	it('rejects data: and other schemes', () => {
+		expect(safeUrl('data:text/html,<script>alert(1)</script>')).toBeNull();
+		expect(safeUrl('file:///etc/passwd')).toBeNull();
+		expect(safeUrl('vbscript:msgbox(1)')).toBeNull();
+	});
+
+	it('rejects a relative or malformed value', () => {
+		expect(safeUrl('www.example.com')).toBeNull();
+		expect(safeUrl('not a url')).toBeNull();
+		expect(safeUrl('')).toBeNull();
+		expect(safeUrl(null)).toBeNull();
+	});
+
+	it('ignores surrounding whitespace rather than failing on it', () => {
+		expect(safeUrl('  https://example.com  ')).toBe('https://example.com/');
+	});
+});
+
+describe('safePhone', () => {
+	it('allows real-looking numbers', () => {
+		expect(safePhone('+44 20 7323 8299')).toBe('+44 20 7323 8299');
+		expect(safePhone('020 7323 8299')).toBe('020 7323 8299');
+	});
+
+	it('rejects anything carrying a scheme or markup', () => {
+		expect(safePhone('javascript:alert(1)')).toBeNull();
+		expect(safePhone('+44"><script>alert(1)</script>')).toBeNull();
+	});
+
+	it('rejects empty and absent values', () => {
+		expect(safePhone('')).toBeNull();
+		expect(safePhone(undefined)).toBeNull();
 	});
 });

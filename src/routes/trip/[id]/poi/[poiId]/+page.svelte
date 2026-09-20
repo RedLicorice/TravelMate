@@ -12,6 +12,7 @@
 	import { haversineKm } from '$lib/plan/geo';
 	import { loadTripProfiles } from '$lib/profile.svelte';
 	import type { Mode } from '$lib/plan/modes';
+	import { safePhone, safeUrl } from '$lib/poi/photon';
 
 	const tripId = page.params.id!;
 	const poiId = page.params.poiId!;
@@ -141,6 +142,11 @@
 	}
 
 	const STEPS = [15, 30, 45, 60, 90, 120, 180, 240];
+
+	// Validated again at render, not only at capture: rows written before the
+	// capture-time check existed are still in the database.
+	const website = $derived(safeUrl(poi?.website));
+	const phone = $derived(safePhone(poi?.phone));
 </script>
 
 <main class="mx-auto max-w-lg px-6 pb-16">
@@ -237,13 +243,19 @@
 				<p class="tm-card__meta mt-2">Opening hours: <code>{poi.opening_hours}</code></p>
 			{/if}
 			<div class="mt-3 flex flex-wrap gap-2">
-				{#if poi.website}
-					<a class="tm-btn tm-btn--secondary" href={poi.website} target="_blank" rel="noopener noreferrer" style="min-height:38px;text-decoration:none">
+				{#if website}
+					<a
+						class="tm-btn tm-btn--secondary"
+						href={website}
+						target="_blank"
+						rel="noopener noreferrer"
+						style="min-height:38px;text-decoration:none"
+					>
 						Website
 					</a>
 				{/if}
-				{#if poi.phone}
-					<a class="tm-btn tm-btn--secondary" href="tel:{poi.phone}" style="min-height:38px;text-decoration:none">
+				{#if phone}
+					<a class="tm-btn tm-btn--secondary" href="tel:{phone}" style="min-height:38px;text-decoration:none">
 						Call
 					</a>
 				{/if}
@@ -257,7 +269,7 @@
 					Open map
 				</a>
 			</div>
-			{#if !poi.website && !poi.phone}
+			{#if !website && !phone}
 				<p class="tm-hint mt-2">
 					No contact details in OpenStreetMap for this place.
 				</p>

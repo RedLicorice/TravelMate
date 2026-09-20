@@ -108,11 +108,35 @@ export function toPoi(f: PhotonFeature): Poi {
 		category,
 		durationMin: durationFor(category),
 		openingHours: p.extra?.opening_hours ?? null,
-		// OSM tags these inconsistently; both spellings are common.
-		website: p.extra?.website ?? p.extra?.['contact:website'] ?? null,
-		phone: p.extra?.phone ?? p.extra?.['contact:phone'] ?? null,
+		// OSM tags these inconsistently; both spellings are common. Both are
+		// validated here so nothing unsafe is ever stored, not just never shown.
+		website: safeUrl(p.extra?.website ?? p.extra?.['contact:website']),
+		phone: safePhone(p.extra?.phone ?? p.extra?.['contact:phone']),
 		osmId: p.osm_type && p.osm_id ? `${p.osm_type}/${p.osm_id}` : null
 	};
+}
+
+/**
+ * OSM tags are editable by anyone, so a `website` tag can carry any scheme --
+ * including `javascript:`, which would run in this app's origin, where the
+ * session lives. Only http(s) survives, and only as an absolute URL.
+ */
+export function safeUrl(raw: string | undefined | null): string | null {
+	if (!raw) return null;
+	try {
+		const url = new URL(raw.trim());
+		return url.protocol === 'https:' || url.protocol === 'http:' ? url.href : null;
+	} catch {
+		// Not absolute, so not something to hand to an href.
+		return null;
+	}
+}
+
+/** Conservative: digits and the punctuation real numbers use, nothing else. */
+export function safePhone(raw: string | undefined | null): string | null {
+	if (!raw) return null;
+	const trimmed = raw.trim();
+	return /^[+０-９0-9][0-9\s\-().]{3,30}$/.test(trimmed) ? trimmed : null;
 }
 
 /** Anything a traveller would never choose to "visit". */
