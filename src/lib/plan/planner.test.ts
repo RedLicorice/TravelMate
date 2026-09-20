@@ -3,7 +3,7 @@ import { tripDays, type Trip } from '$lib/trip/days';
 import { replan, schedule, REASON_TEXT, type PlanPoi } from './planner';
 import { chooseMode, leg } from './modes';
 import { categoryCrowd, resolveCrowd, type CrowdProvider } from './crowd';
-import { slotAt } from './meals';
+import { DEFAULT_WINDOWS, slotAt, slotsFrom } from './meals';
 
 const hotel = { lat: 41.8986, lng: 12.4768 };
 
@@ -214,7 +214,7 @@ describe('meals', () => {
 		});
 		const stop = result.days.flatMap((d) => d.stops).find((s) => s.poiId === 'trattoria');
 		expect(stop).toBeDefined();
-		expect(slotAt(stop!.arrive, 'Europe/Rome')).not.toBeNull();
+		expect(slotAt(stop!.arrive, 'Europe/Rome', slotsFrom(DEFAULT_WINDOWS))).not.toBeNull();
 	});
 
 	it('flags a meal that could not be fitted near a mealtime', () => {

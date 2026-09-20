@@ -215,3 +215,16 @@ export async function getSharedTrip(
 	if (!data?.trip) return null;
 	return data as { trip: TripRow; pois: PoiRow[] };
 }
+
+/**
+ * Join a trip using a share link. Returns the trip id, or null when the token
+ * is unknown or revoked -- the same answer for both, so neither is confirmed.
+ *
+ * Membership is granted by the function rather than by an insert, because a
+ * client that could insert its own trip_members row would not need a token.
+ */
+export async function joinTrip(token: string): Promise<string | null> {
+	const { data, error } = await supabase.rpc('join_trip', { token });
+	if (error) throw new Error(error.message);
+	return (data as string | null) ?? null;
+}

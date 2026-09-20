@@ -2,7 +2,16 @@ import type { Day, LatLng } from '$lib/trip/days';
 import { haversineKm } from './geo';
 import { leg, type Leg, type Mode } from './modes';
 import { categoryCrowd, resolveCrowd, type CrowdProvider } from './crowd';
-import { isMeal, MEALS_PER_DAY, mealMiss, waitUntilSlot } from './meals';
+import {
+	DEFAULT_WINDOWS,
+	isMeal,
+	MEALS_PER_DAY,
+	mealMiss,
+	slotsFrom,
+	waitUntilSlot,
+	type MealSlot,
+	type MealWindows
+} from './meals';
 
 export type PlanPoi = {
 	id: string;
@@ -61,6 +70,8 @@ export type PlanInput = {
 	allowedModes: Mode[];
 	timezone: string;
 	crowdProviders?: CrowdProvider[];
+	/** The window everyone on the trip agrees on. Defaults when nobody said. */
+	mealWindows?: MealWindows;
 };
 
 const at = (p: { lat: number; lng: number }): LatLng => ({ lat: p.lat, lng: p.lng });
@@ -194,7 +205,8 @@ export function orderDay(
 	day: Day,
 	allowedModes: Mode[],
 	timezone: string,
-	providers: CrowdProvider[]
+	providers: CrowdProvider[],
+	slots: MealSlot[]
 ): PlanPoi[] {
 	if (pois.length < 2) return pois;
 
@@ -221,7 +233,7 @@ export function orderDay(
 	// is what lets a museum move out of its 11-15 peak, and what stops it moving
 	// when the detour costs more than the queue.
 	const score = (order: PlanPoi[]) => {
-		const sim = walkClock(order, day, allowedModes, timezone, providers);
+		const sim = walkClock(order, day, allowedModes, timezone, providers, slots);
 		return (
 			sim.travelMin +
 			CROWD_WEIGHT_MIN * sim.crowdSum +
@@ -273,7 +285,8 @@ function walkClock(
 	day: Day,
 	allowedModes: Mode[],
 	timezone: string,
-	providers: CrowdProvider[]
+	providers: CrowdProvider[],
+	slots: MealSlot[]
 ): ClockResult {
 	const stops: PlannedStop[] = [];
 	const overflowed: PlanPoi[] = [];
@@ -307,7 +320,7 @@ function walkClock(
 		// the wrong hour -- but only if the day can absorb the wait. Otherwise
 		// the stop keeps its early time and picks up an off-hours warning below.
 		if (!anchor && isMeal(category)) {
-			const opens = waitUntilSlot(arrive, timezone);
+			const opens = waitUntilSlot(arrive, timezone, slots);
 			if (opens && opens.getTime() + durationMin * 60_000 <= dayEndMs) {
 				waitedMin += (opens.getTime() - arrive.getTime()) / 60_000;
 				arrive = opens;
@@ -326,7 +339,7 @@ function walkClock(
 			warnings.push({ kind: 'crowded', message: 'Usually packed at this hour' });
 		}
 		if (!anchor && isMeal(category)) {
-			const miss = mealMiss(arrive, timezone);
+			const miss = mealMiss(arrive, timezone, slots);
 			mealMissHours += miss;
 			if (miss > 0.5) {
 				warnings.push({ kind: 'off-hours', message: 'Not really a mealtime' });
@@ -382,6 +395,7 @@ function walkClock(
 /** Steps 3-5. Respects the day/order the traveller already chose. */
 export function schedule(input: PlanInput): PlanResult {
 	const providers = input.crowdProviders ?? [categoryCrowd];
+	const slots = slotsFrom(input.mealWindows ?? DEFAULT_WINDOWS);
 	const byDay = new Map<number, PlanPoi[]>();
 	input.days.forEach((_, i) => byDay.set(i, []));
 	const unplaced: Unplaced[] = [];
@@ -400,7 +414,7 @@ export function schedule(input: PlanInput): PlanResult {
 	}
 
 	const days = input.days.map((day, i) => {
-		const result = walkClock(byDay.get(i)!, day, input.allowedModes, input.timezone, providers);
+		const result = walkClock(byDay.get(i)!, day, input.allowedModes, input.timezone, providers, slots);
 		unplaced.push(...result.overflowed.map((poi) => ({ poi, reason: 'day-full' as const })));
 		return { index: i, date: day.date, stops: result.stops, overflowed: result.overflowed };
 	});
@@ -411,6 +425,7 @@ export function schedule(input: PlanInput): PlanResult {
 /** Steps 1-5. A full reshuffle -- what the Replan control runs. */
 export function replan(input: PlanInput): PlanResult {
 	const providers = input.crowdProviders ?? [categoryCrowd];
+	const slots = slotsFrom(input.mealWindows ?? DEFAULT_WINDOWS);
 
 	// Nothing can be measured from a hotel at 0,0, so say so rather than
 	// producing a plan built on a point in the Gulf of Guinea.
@@ -419,7 +434,7 @@ export function replan(input: PlanInput): PlanResult {
 			days: input.days.map((day, index) => ({
 				index,
 				date: day.date,
-				stops: walkClock([], day, input.allowedModes, input.timezone, providers).stops,
+				stops: walkClock([], day, input.allowedModes, input.timezone, providers, slots).stops,
 				overflowed: []
 			})),
 			unplaced: input.pois.map((poi) => ({ poi, reason: 'no-usable-days' as const }))
@@ -438,7 +453,7 @@ export function replan(input: PlanInput): PlanResult {
 		spilled.push(...meals.slice(MEALS_PER_DAY));
 
 		const keep = [...rest, ...meals.slice(0, MEALS_PER_DAY)];
-		const ordered = orderDay(keep, input.days[dayIndex], input.allowedModes, input.timezone, providers);
+		const ordered = orderDay(keep, input.days[dayIndex], input.allowedModes, input.timezone, providers, slots);
 		ordered.forEach((p, orderIndex) => assigned.push({ ...p, dayIndex, orderIndex }));
 	});
 

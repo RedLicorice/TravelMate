@@ -6,13 +6,75 @@
  * optimisation fixes. Meals are scheduled against the clock first and the map
  * second.
  */
-export type MealSlot = { name: 'lunch' | 'dinner'; from: number; to: number };
+export type MealName = 'lunch' | 'dinner';
+export type MealSlot = { name: MealName; from: number; to: number };
 
-/** Local wall-clock hours. Continental habits; a per-trip override is future work. */
-export const SLOTS: MealSlot[] = [
-	{ name: 'lunch', from: 12, to: 15 },
-	{ name: 'dinner', from: 19, to: 22 }
-];
+/** Local wall-clock 'HH:MM' pairs, as stored per person. */
+export type MealWindows = Record<MealName, { from: string; to: string }>;
+
+/** Continental defaults. Every traveller can move them in their profile. */
+export const DEFAULT_WINDOWS: MealWindows = {
+	lunch: { from: '12:00', to: '15:00' },
+	dinner: { from: '19:00', to: '22:00' }
+};
+
+export const MEAL_NAMES: MealName[] = ['lunch', 'dinner'];
+
+/** 'HH:MM' to decimal hours. '12:30' -> 12.5 */
+export function toHours(hhmm: string): number {
+	const [h, m] = hhmm.split(':').map(Number);
+	return (h % 24) + (m || 0) / 60;
+}
+
+export const toHHMM = (hours: number) => {
+	const clamped = Math.max(0, Math.min(23.983, hours));
+	const h = Math.floor(clamped);
+	const m = Math.round((clamped - h) * 60);
+	return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+};
+
+export function slotsFrom(windows: MealWindows): MealSlot[] {
+	return MEAL_NAMES.map((name) => ({
+		name,
+		from: toHours(windows[name].from),
+		to: toHours(windows[name].to)
+	}));
+}
+
+/** The shortest window that suits everyone. */
+export type Tightest = { windows: MealWindows; conflicts: MealName[] };
+
+/**
+ * Intersect everyone's meal windows.
+ *
+ * With collaborators the plan has to suit all of them, so the window is the
+ * overlap: the latest start and the earliest end. Someone who eats dinner from
+ * 19:00 and someone who eats until 20:00 give 19:00-20:00, not an average --
+ * an average would produce a time that suits neither.
+ *
+ * When there is no overlap at all, there is no honest answer. Rather than
+ * silently inventing one, the latest start wins with a 30-minute window
+ * hung off it, and the meal is reported as a conflict so the UI can say so.
+ */
+export function tightest(all: MealWindows[]): Tightest {
+	if (all.length === 0) return { windows: DEFAULT_WINDOWS, conflicts: [] };
+
+	const conflicts: MealName[] = [];
+	const windows = {} as MealWindows;
+
+	for (const name of MEAL_NAMES) {
+		const from = Math.max(...all.map((w) => toHours(w[name].from)));
+		const to = Math.min(...all.map((w) => toHours(w[name].to)));
+
+		if (to - from < 0.5) {
+			conflicts.push(name);
+			windows[name] = { from: toHHMM(from), to: toHHMM(from + 0.5) };
+		} else {
+			windows[name] = { from: toHHMM(from), to: toHHMM(to) };
+		}
+	}
+	return { windows, conflicts };
+}
 
 const MEAL_CATEGORIES = new Set([
 	'restaurant',
@@ -26,65 +88,54 @@ const MEAL_CATEGORIES = new Set([
 	'ice_cream'
 ]);
 
-export const isMeal = (category: string | null | undefined) =>
-	MEAL_CATEGORIES.has(category ?? '');
+export const isMeal = (category: string | null | undefined) => MEAL_CATEGORIES.has(category ?? '');
 
 /** At most one lunch and one dinner: nobody eats three sit-down meals a day. */
-export const MEALS_PER_DAY = SLOTS.length;
+export const MEALS_PER_DAY = MEAL_NAMES.length;
 
-const hourIn = (at: Date, tz: string) =>
-	Number(
-		new Intl.DateTimeFormat('en-GB', {
-			timeZone: tz,
-			hour: '2-digit',
-			minute: '2-digit',
-			hour12: false
-		})
-			.format(at)
-			.split(':')[0]
-	) %
-		24 +
-	Number(
-		new Intl.DateTimeFormat('en-GB', {
-			timeZone: tz,
-			hour: '2-digit',
-			minute: '2-digit',
-			hour12: false
-		})
-			.format(at)
-			.split(':')[1]
-	) /
-		60;
-
-/**
- * How badly a meal misses its slot, in hours. Zero when it lands inside one.
- * Measured against whichever slot is nearest, so an early lunch is judged
- * against lunch rather than against last night's dinner.
- */
-export function mealMiss(at: Date, tz: string): number {
-	const h = hourIn(at, tz);
-	return Math.min(...SLOTS.map((s) => (h < s.from ? s.from - h : h > s.to ? h - s.to : 0)));
+/** Local wall-clock hour, with minutes as a fraction. */
+function hourIn(at: Date, tz: string): number {
+	const [h, m] = new Intl.DateTimeFormat('en-GB', {
+		timeZone: tz,
+		hour: '2-digit',
+		minute: '2-digit',
+		hour12: false
+	})
+		.format(at)
+		.split(':')
+		.map(Number);
+	return (h % 24) + m / 60;
 }
 
 /**
- * If `at` falls before a meal slot begins later the same local day, the instant
- * that slot opens. Null when it is already inside one, or past the last.
+ * How badly a meal misses its slot, in hours. Zero inside one. Measured
+ * against whichever slot is nearest, so an early lunch is judged against lunch
+ * rather than against last night's dinner.
+ */
+export function mealMiss(at: Date, tz: string, slots: MealSlot[]): number {
+	const h = hourIn(at, tz);
+	if (!slots.length) return 0;
+	return Math.min(...slots.map((s) => (h < s.from ? s.from - h : h > s.to ? h - s.to : 0)));
+}
+
+/**
+ * If `at` falls before a slot that opens later the same local day, the instant
+ * it opens. Null when already inside one, or past the last.
  *
  * This is what lets the planner wait rather than eat lunch at nine because the
  * route happened to arrive then.
  *
- * ponytail: adds whole hours to the instant, so a meal slot on the day the
- * clocks change shifts by an hour. Nobody has complained about lunch being at
- * 13:00 twice a year.
+ * ponytail: adds whole hours to the instant, so a slot on the day the clocks
+ * change shifts by an hour. Nobody has complained about lunch twice a year.
  */
-export function waitUntilSlot(at: Date, tz: string): Date | null {
+export function waitUntilSlot(at: Date, tz: string, slots: MealSlot[]): Date | null {
 	const h = hourIn(at, tz);
-	const next = SLOTS.filter((s) => s.from > h).sort((a, b) => a.from - b.from)[0];
+	const next = slots.filter((s) => s.from > h).sort((a, b) => a.from - b.from)[0];
 	return next ? new Date(at.getTime() + (next.from - h) * 3_600_000) : null;
 }
 
 /** The slot a given time falls in, or null between meals. */
-export function slotAt(at: Date, tz: string): MealSlot['name'] | null {
+export function slotAt(at: Date, tz: string, slots: MealSlot[]): MealName | null {
 	const h = hourIn(at, tz);
-	return SLOTS.find((s) => h >= s.from && h <= s.to)?.name ?? null;
+	return slots.find((s) => h >= s.from && h <= s.to)?.name ?? null;
 }

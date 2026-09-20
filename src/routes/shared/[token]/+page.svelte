@@ -1,7 +1,10 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
-	import { getSharedTrip, toTrip, type TripRow } from '$lib/trip/repo';
+	import { getSharedTrip, joinTrip, toTrip, type TripRow } from '$lib/trip/repo';
+	import { goto } from '$app/navigation';
+	import { base } from '$app/paths';
+	import { session } from '$lib/session.svelte';
 	import { toPlanPoi, type PoiRow } from '$lib/trip/pois';
 	import { tripDays } from '$lib/trip/days';
 	import { schedule, type PlanResult } from '$lib/plan/planner';
@@ -12,6 +15,7 @@
 	let loading = $state(true);
 	let gone = $state(false);
 	let error = $state<string | null>(null);
+	let joining = $state(false);
 
 	onMount(async () => {
 		try {
@@ -28,6 +32,22 @@
 			loading = false;
 		}
 	});
+
+	async function join() {
+		joining = true;
+		error = null;
+		try {
+			const id = await joinTrip(page.params.token!);
+			if (!id) {
+				gone = true;
+				return;
+			}
+			await goto(`${base}/trip/${id}`, { replaceState: true });
+		} catch (e) {
+			error = (e as Error).message;
+			joining = false;
+		}
+	}
 
 	const days = $derived(row ? tripDays(toTrip(row)) : []);
 
@@ -103,6 +123,19 @@
 				{/if}
 			</section>
 		{/each}
-		<p class="tm-attrib">Read only · © OpenStreetMap contributors</p>
+		{#if session.user}
+			<div class="tm-card" style="background: var(--tm-peach-soft); border-color: transparent">
+				<p class="tm-card__title" style="color: var(--tm-peach-ink)">Travelling too?</p>
+				<p class="tm-card__meta" style="color: var(--tm-peach-ink)">
+					Join and the plan will take your meal times into account alongside everyone else's.
+				</p>
+				<button class="tm-btn tm-btn--primary tm-btn--block mt-3" onclick={join} disabled={joining}>
+					{joining ? 'Joining…' : 'Join this trip'}
+				</button>
+			</div>
+		{:else}
+			<p class="tm-hint">Sign in to join this trip and add places of your own.</p>
+		{/if}
+		<p class="tm-attrib mt-4">© OpenStreetMap contributors</p>
 	{/if}
 </main>

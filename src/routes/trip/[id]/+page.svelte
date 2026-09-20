@@ -15,7 +15,9 @@
 	import { listPois, saveAssignments, toPlanPoi, type PoiRow } from '$lib/trip/pois';
 	import { tripDays, type Day } from '$lib/trip/days';
 	import { replan, schedule, REASON_TEXT, type PlanResult, type UnplacedReason } from '$lib/plan/planner';
-	import { isMeal } from '$lib/plan/meals';
+	import { isMeal, tightest, type MealWindows } from '$lib/plan/meals';
+	import { avatarDataUri } from '$lib/avatar';
+	import { displayName, loadTripProfiles, type Profile } from '$lib/profile.svelte';
 	import type { Mode } from '$lib/plan/modes';
 	import Autocomplete from '$lib/Autocomplete.svelte';
 	import LeafletMap from '$lib/Map.svelte';
@@ -39,10 +41,15 @@
 	let shareUrl = $state<string | null>(null);
 	let copied = $state(false);
 	let bbox = $state<ReturnType<typeof cityBBox>>(null);
+	let people = $state<Profile[]>([]);
 
 	onMount(async () => {
 		try {
-			[row, pois] = await Promise.all([getTrip(tripId), listPois(tripId)]);
+			[row, pois, people] = await Promise.all([
+				getTrip(tripId),
+				listPois(tripId),
+				loadTripProfiles(tripId)
+			]);
 			if (!row) return;
 			if (row.share_token) shareUrl = linkFor(row.share_token);
 			bbox = cityBBox(row);
@@ -71,13 +78,21 @@
 		}
 	});
 
+	/**
+	 * The window that suits everyone on the trip. With one traveller this is
+	 * simply their own preference; with collaborators it is the overlap, so a
+	 * restaurant is never booked for a time that suits only half the party.
+	 */
+	const agreed = $derived(tightest(people.map((p) => p.mealWindows)));
+
 	const result = $derived<PlanResult | null>(
 		row && days.length
 			? schedule({
 					pois: pois.map(toPlanPoi),
 					days,
 					allowedModes: row.allowed_modes as Mode[],
-					timezone: row.timezone
+					timezone: row.timezone,
+					mealWindows: agreed.windows
 				})
 			: null
 	);
@@ -118,7 +133,8 @@
 				pois: pois.map(toPlanPoi),
 				days,
 				allowedModes: row.allowed_modes as Mode[],
-				timezone: row.timezone
+				timezone: row.timezone,
+				mealWindows: agreed.windows
 			});
 			const assignments = next.days.flatMap((d) =>
 				d.stops.filter((s) => s.poiId).map((s, i) => ({ id: s.poiId!, dayIndex: d.index, orderIndex: i }))
@@ -282,6 +298,38 @@
 							</div>
 						{/each}
 					</dl>
+					<div class="mt-3" style="border-top: 1px solid var(--tm-border); padding-top: 0.75rem">
+						<p class="tm-label mb-2">
+							{people.length > 1 ? `${people.length} travellers` : 'Just you'}
+						</p>
+						<div class="flex flex-wrap items-center gap-2">
+							{#each people as person (person.userId)}
+								<span class="flex items-center gap-1.5">
+									<img
+										src={person.avatarUrl ?? avatarDataUri(person.avatarSeed)}
+										alt=""
+										width="22"
+										height="22"
+										style="width:22px;height:22px;border-radius:50%;object-fit:cover"
+									/>
+									<span style="font: 500 var(--tm-text-sm)/1 var(--tm-font)">
+										{displayName(person)}
+									</span>
+								</span>
+							{/each}
+						</div>
+						<p class="tm-hint mt-2">
+							Meals {agreed.windows.lunch.from}–{agreed.windows.lunch.to} and
+							{agreed.windows.dinner.from}–{agreed.windows.dinner.to}
+							{#if people.length > 1}(the overlap between everyone){/if}
+						</p>
+						{#if agreed.conflicts.length}
+							<span class="tm-chip tm-chip--warn mt-2">
+								No shared {agreed.conflicts.join(' or ')} time — using the latest start
+							</span>
+						{/if}
+					</div>
+
 					<div class="mt-3 flex gap-2">
 						<button class="tm-btn tm-btn--secondary flex-1" style="min-height:38px" onclick={share}>
 							{shareUrl ? 'Stop sharing' : 'Share'}
