@@ -1,0 +1,13 @@
+@import 'tailwindcss';
+/* After Tailwind, so the design tokens win over preflight. url() inside is
+   rebased by Vite, which is what bundles the Satoshi master. */
+@import '../design/tokens.css';
+
+body {
+	margin: 0;
+	background: var(--tm-bg);
+	color: var(--tm-text);
+	font-family: var(--tm-font);
+	font-size: var(--tm-text-base);
+	-webkit-tap-highlight-color: transparent;
+}
