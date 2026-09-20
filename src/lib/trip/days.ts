@@ -1,8 +1,12 @@
 export type LatLng = { lat: number; lng: number };
 export type Place = { name: string; at: LatLng };
 
-/** A fixed point in a day's route. `dwellMin` is time spent there, not travelling. */
-export type Waypoint = { name: string; at: LatLng; dwellMin: number };
+/**
+ * A fixed point in a day's route. `dwellMin` is time spent there, not
+ * travelling. `kind` exists so the mode chooser can tell an airport transfer
+ * from a walk back to the hotel -- nobody walks 25km from a terminal.
+ */
+export type Waypoint = { name: string; at: LatLng; dwellMin: number; kind: 'hotel' | 'terminal' };
 
 export type Trip = {
 	hotelName: string;
@@ -112,9 +116,15 @@ export function tripDays(trip: Trip): Day[] {
 	const hotelStop = (dwellMin: number): Waypoint => ({
 		name: trip.hotelName,
 		at: trip.hotel,
-		dwellMin
+		dwellMin,
+		kind: 'hotel'
 	});
-	const placeStop = (p: Place): Waypoint => ({ name: p.name, at: p.at, dwellMin: 0 });
+	const placeStop = (p: Place): Waypoint => ({
+		name: p.name,
+		at: p.at,
+		dwellMin: 0,
+		kind: 'terminal'
+	});
 
 	return dates.map((date, i) => {
 		const windowStart = zonedInstant(date, trip.dayStart, tz);
