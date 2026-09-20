@@ -160,6 +160,11 @@
 			target
 		);
 		if (!rows.length) return;
+
+		// Follow the stop to its new day. Without this it simply vanishes from
+		// the day on screen and the move looks like a deletion.
+		const landedOn = rows.find((r) => r.id === draggedId)?.dayIndex;
+		if (landedOn !== null && landedOn !== undefined) dayIndex = landedOn;
 		// Update locally first so the timeline moves under the finger rather
 		// than after a round trip.
 		const byId = new Map(rows.map((r) => [r.id, r]));
@@ -433,7 +438,12 @@
 						{@const on = view === 'map' ? visible.has(i) : i === dayIndex}
 						<button
 							class="tm-chip"
-							style={on ? `background:${dayColor(i)};color:#fff` : 'opacity:0.55'}
+							data-drop-day={i}
+							style={on
+								? `background:${dayColor(i)};color:#fff`
+								: drag.state.id
+									? 'opacity:1;outline:2px dashed var(--tm-border-strong);outline-offset:2px'
+									: 'opacity:0.55'}
 							onclick={() => (view === 'map' ? toggleDay(i) : (dayIndex = i))}
 						>
 							{dayLabel(day.date, row.timezone)}
