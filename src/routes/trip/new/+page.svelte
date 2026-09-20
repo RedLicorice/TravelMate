@@ -2,19 +2,17 @@
 	import { goto } from '$app/navigation';
 	import { base } from '$app/paths';
 	import { createTrip } from '$lib/trip/repo';
+	import Autocomplete from '$lib/Autocomplete.svelte';
+	import { poi } from '$lib/poi';
+	import type { City, Place } from '$lib/poi';
 
 	let step = $state(1);
-	let city = $state('');
-	let hotelName = $state('');
+	let city = $state<City | null>(null);
+	let hotel = $state<Place | null>(null);
 	let arrivalAt = $state('');
 	let departureAt = $state('');
 	let saving = $state(false);
 	let error = $state<string | null>(null);
-
-	// Phase 2 replaces this with a real geocode through the POI seam. Until then
-	// the hotel has a name but no position, so no map can centre on it.
-	// ponytail: hardcoded 0,0 -- replace with poi.search() in phase 2.
-	const PLACEHOLDER = { lat: 0, lng: 0 };
 
 	// The browser's zone is the best guess available without geocoding. Shown,
 	// not hidden, so someone planning from home can correct it.
@@ -24,7 +22,7 @@
 
 	const canAdvance = $derived(
 		step === 1
-			? city.trim() !== '' && hotelName.trim() !== ''
+			? city !== null && hotel !== null
 			: step === 2
 				? arrivalAt !== '' && departureAt !== '' && departureAt > arrivalAt
 				: true
@@ -35,12 +33,12 @@
 		error = null;
 		try {
 			const id = await createTrip({
-				name: city,
-				city,
+				name: city!.name,
+				city: city!.name,
 				timezone,
-				hotelName,
-				hotelLat: PLACEHOLDER.lat,
-				hotelLng: PLACEHOLDER.lng,
+				hotelName: hotel!.name,
+				hotelLat: hotel!.lat,
+				hotelLng: hotel!.lng,
 				// datetime-local has no zone. The traveller entered local time in
 				// the destination city, which is what the planner assumes too.
 				arrivalAt: new Date(arrivalAt).toISOString(),
@@ -66,14 +64,27 @@
 	</h1>
 
 	{#if step === 1}
-		<div class="tm-field mb-5">
-			<label class="tm-label" for="city">City</label>
-			<input class="tm-input" id="city" bind:value={city} placeholder="Rome" />
+		<div class="mb-5">
+			<Autocomplete
+				label="City"
+				placeholder="London"
+				hint="Type at least 3 letters."
+				search={(q, signal) => poi.searchCities(q, signal)}
+				onpick={(c) => {
+					city = c;
+					hotel = null; // a hotel from the previous city is meaningless here
+				}}
+			/>
 		</div>
-		<div class="tm-field">
-			<label class="tm-label" for="hotel">Hotel</label>
-			<input class="tm-input" id="hotel" bind:value={hotelName} placeholder="Hotel Artemide" />
-		</div>
+		<Autocomplete
+			label="Hotel"
+			placeholder={city ? `Hotels in ${city.name}` : 'Pick a city first'}
+			hint={city ? 'Searched inside the city you picked.' : 'Pick a city first.'}
+			disabled={!city}
+			search={(q, signal) => poi.searchHotels(q, city!, signal)}
+			onpick={(h) => (hotel = h)}
+		/>
+		<p class="tm-attrib mt-4">{poi.attribution}</p>
 	{:else if step === 2}
 		<div class="tm-field mb-5">
 			<label class="tm-label" for="arr">Arrival</label>
@@ -90,7 +101,7 @@
 		</div>
 	{:else}
 		<dl class="flex flex-col gap-3">
-			{#each [['City', city], ['Hotel', hotelName], ['Arrival', arrivalAt], ['Departure', departureAt], ['Timezone', timezone]] as [label, value]}
+			{#each [['City', city?.name ?? ''], ['Hotel', hotel?.name ?? ''], ['Arrival', arrivalAt], ['Departure', departureAt], ['Timezone', timezone]] as [label, value]}
 				<div>
 					<dt style="font: 400 var(--tm-text-sm)/1 var(--tm-font); color: var(--tm-text-faint)">
 						{label}

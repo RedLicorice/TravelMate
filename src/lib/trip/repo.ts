@@ -78,6 +78,12 @@ export async function listTrips(): Promise<TripRow[]> {
 	return data ?? [];
 }
 
+export async function getTrip(id: string): Promise<TripRow | null> {
+	const { data, error } = await supabase.from('trips').select('*').eq('id', id).maybeSingle();
+	if (error) throw new Error(error.message);
+	return data;
+}
+
 export async function createTrip(input: NewTrip): Promise<string> {
 	const { data: auth } = await supabase.auth.getUser();
 	if (!auth.user) throw new Error('Not signed in');
