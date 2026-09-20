@@ -28,6 +28,16 @@
 	let busy = $state(false);
 	let dayIndex = $state(0);
 	let view = $state<'plan' | 'map'>('plan');
+	/** Which days are drawn on the map. Every day starts visible. */
+	let visible = $state(new Set<number>());
+	let seeded = false;
+
+	function toggleDay(i: number) {
+		const next = new Set(visible);
+		if (next.has(i)) next.delete(i);
+		else next.add(i);
+		visible = next;
+	}
 
 	let bbox = $state<ReturnType<typeof cityBBox>>(null);
 
@@ -75,6 +85,13 @@
 	}
 
 	const days = $derived<Day[]>(row ? tripDays(toTrip(row)) : []);
+
+	$effect(() => {
+		if (!seeded && days.length) {
+			visible = new Set(days.map((_, i) => i));
+			seeded = true;
+		}
+	});
 
 	const result = $derived<PlanResult | null>(
 		row && days.length
@@ -138,16 +155,28 @@
 
 	const dayColor = (i: number) => `var(--tm-day-${Math.min(i + 1, 8)})`;
 
+	const shownDays = $derived((result?.days ?? []).filter((d) => visible.has(d.index)));
+
 	const markers = $derived(
-		current
-			? current.stops.map((s, i) => ({
-					id: s.poiId ?? `anchor-${i}`,
-					lat: s.at.lat,
-					lng: s.at.lng,
-					color: s.anchor ? 'var(--tm-text)' : dayColor(dayIndex),
-					glyph: s.anchor ? 'H' : String(current.stops.slice(0, i).filter((x) => !x.anchor).length + 1)
-				}))
-			: []
+		shownDays.flatMap((day) =>
+			day.stops.map((s, i) => ({
+				id: `${day.index}:${s.poiId ?? `anchor-${i}`}`,
+				lat: s.at.lat,
+				lng: s.at.lng,
+				color: s.anchor ? 'var(--tm-text)' : dayColor(day.index),
+				glyph: s.anchor
+					? 'H'
+					: String(day.stops.slice(0, i).filter((x) => !x.anchor).length + 1)
+			}))
+		)
+	);
+
+	const routes = $derived(
+		shownDays.map((day) => ({
+			id: String(day.index),
+			points: day.stops.map((s) => s.at),
+			color: dayColor(day.index)
+		}))
 	);
 </script>
 
@@ -184,16 +213,32 @@
 				<button role="tab" aria-selected={view === 'map'} onclick={() => (view = 'map')}>Map</button>
 			</div>
 
-			<div class="flex gap-1.5 overflow-x-auto">
+			<div class="flex items-center gap-1.5 overflow-x-auto">
 				{#each days as day, i (day.date)}
+					{@const on = view === 'map' ? visible.has(i) : i === dayIndex}
 					<button
 						class="tm-chip"
-						style={i === dayIndex ? `background:${dayColor(i)};color:#fff` : ''}
-						onclick={() => (dayIndex = i)}
+						aria-pressed={view === 'map' ? on : undefined}
+						style={on
+							? `background:${dayColor(i)};color:#fff`
+							: 'opacity:0.55'}
+						onclick={() => (view === 'map' ? toggleDay(i) : (dayIndex = i))}
 					>
 						{dayLabel(day.date, row.timezone)}
 					</button>
 				{/each}
+				{#if view === 'map'}
+					<button
+						class="tm-chip"
+						style="white-space: nowrap"
+						onclick={() =>
+							(visible = visible.size === days.length
+								? new Set()
+								: new Set(days.map((_, i) => i)))}
+					>
+						{visible.size === days.length ? 'None' : 'All'}
+					</button>
+				{/if}
 			</div>
 
 			{#if error}<p class="tm-hint tm-hint--error">{error}</p>{/if}
@@ -219,11 +264,7 @@
 
 		{#if view === 'map'}
 			<div class="flex-1">
-				<Map
-					{markers}
-					route={current?.stops.map((s) => s.at) ?? []}
-					center={centre}
-				/>
+				<Map {markers} {routes} center={centre} />
 			</div>
 		{:else}
 			<div class="flex-1 overflow-y-auto p-4" style="--tm-stop-day: {dayColor(dayIndex)}">

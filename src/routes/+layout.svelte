@@ -6,10 +6,17 @@
 	import { base } from '$app/paths';
 	import { session, watchSession } from '$lib/session.svelte';
 	import { redirectTarget } from '$lib/guard';
+	import { registerSW } from 'virtual:pwa-register';
 
 	let { children } = $props();
 
-	onMount(() => watchSession());
+	onMount(() => {
+		// autoUpdate: a traveller should never be asked to approve a refresh of
+		// a trip planner. Registered here because the static fallback page gets
+		// no build-time injection.
+		registerSW({ immediate: true });
+		return watchSession();
+	});
 
 	$effect(() => {
 		if (!session.ready) return;

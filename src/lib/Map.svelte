@@ -13,21 +13,28 @@
 		selected?: boolean;
 	};
 
+	export type MapRoute = {
+		id: string;
+		points: { lat: number; lng: number }[];
+		color: string;
+	};
+
 	type Props = {
 		markers: MapMarker[];
-		route?: { lat: number; lng: number }[];
+		/** One polyline per visible day, each in that day's colour. */
+		routes?: MapRoute[];
 		center: { lat: number; lng: number };
 		zoom?: number;
 		height?: string;
 		onselect?: (id: string) => void;
 	};
 
-	let { markers, route = [], center, zoom = 13, height = '100%', onselect }: Props = $props();
+	let { markers, routes = [], center, zoom = 13, height = '100%', onselect }: Props = $props();
 
 	let host: HTMLDivElement;
 	let map: LeafletMap | null = null;
 	let layer: Marker[] = [];
-	let line: Polyline | null = null;
+	let lines: Polyline[] = [];
 	let L: typeof import('leaflet') | null = null;
 
 	onMount(async () => {
@@ -76,19 +83,34 @@
 				.addTo(map!)
 				.on('click', () => onselect?.(m.id))
 		);
-		line?.remove();
-		line = route.length > 1
-			? L.polyline(
-					route.map((p) => [p.lat, p.lng]),
-					{ color: markers[0]?.color ?? '#888', weight: 3, opacity: 0.8 }
-				).addTo(map)
-			: null;
+		lines.forEach((l) => l.remove());
+		lines = routes
+			.filter((r) => r.points.length > 1)
+			.map((r) =>
+				L!
+					.polyline(
+						r.points.map((p) => [p.lat, p.lng]),
+						{ color: r.color, weight: 3.5, opacity: 0.85, lineJoin: 'round' }
+					)
+					.addTo(map!)
+			);
+	}
+
+	/** Fit the view to everything drawn, so toggling a day never leaves the
+	    traveller looking at empty sea. Only when there is something to fit. */
+	export function fitAll() {
+		if (!map || !L) return;
+		const points = [
+			...markers.map((m) => [m.lat, m.lng] as [number, number]),
+			...routes.flatMap((r) => r.points.map((p) => [p.lat, p.lng] as [number, number]))
+		];
+		if (points.length > 1) map.fitBounds(L.latLngBounds(points), { padding: [40, 40] });
 	}
 
 	// Redraw when the caller's data changes, not on every unrelated render.
 	$effect(() => {
 		void markers;
-		void route;
+		void routes;
 		draw();
 	});
 </script>

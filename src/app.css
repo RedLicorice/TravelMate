@@ -4,11 +4,55 @@
 @import '../design/tokens.css';
 @import './lib/ui.css';
 
+html {
+	/* Honour the system text-size setting without letting iOS reflow the
+	   layout on rotate. */
+	-webkit-text-size-adjust: 100%;
+	height: 100%;
+}
+
 body {
 	margin: 0;
+	min-height: 100%;
 	background: var(--tm-bg);
 	color: var(--tm-text);
 	font-family: var(--tm-font);
 	font-size: var(--tm-text-base);
 	-webkit-tap-highlight-color: transparent;
+
+	/* Native-feel pass. Each of these removes a specific browser tell:
+	   the rubber-band overscroll at the top of a list, the magnifying loupe
+	   and copy bubble on long-press, and the 300ms double-tap-zoom delay. */
+	overscroll-behavior: none;
+	-webkit-touch-callout: none;
+	-webkit-user-select: none;
+	user-select: none;
+	touch-action: manipulation;
+}
+
+/* Text the traveller might actually want to copy stays selectable. Blanket
+   user-select:none on a whole app is how you end up unable to copy an address. */
+input,
+textarea,
+[contenteditable],
+.tm-stop__name,
+.tm-result__name,
+.tm-card__title {
+	-webkit-user-select: text;
+	user-select: text;
+}
+
+/* Leaflet handles pinch, drag and double-tap itself and needs the raw touch
+   stream; `manipulation` above would swallow part of it. */
+.leaflet-container {
+	touch-action: none;
+}
+
+/* Safe areas: the notch and the home indicator. Applied to the docks rather
+   than the body so scrolling content still runs edge to edge. */
+.tm-safe-top {
+	padding-top: max(var(--tm-space-4), env(safe-area-inset-top));
+}
+.tm-safe-bottom {
+	padding-bottom: max(var(--tm-space-4), env(safe-area-inset-bottom));
 }
