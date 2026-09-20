@@ -1,24 +1,17 @@
-/* Brand face, self-hosted. Three real masters rather than one Regular with
- * the range declared 100-900: synthesising 600/700 from a single weight
- * smears, and every button, title and chip in this system is 600 or 700.
- * woff2 only -- universally supported, and roughly 40% the size of the ttf
- * on a product whose headline feature is being fast on a bad connection. */
+/* Brand face, self-hosted. One variable master rather than several statics:
+ * 41.6 KB covers the whole 300-900 range, against 79.3 KB for Regular +
+ * Medium + Bold alone -- half the bytes, one request, and every weight is a
+ * real instance instead of three steps with synthesis between them. That
+ * matters on a product whose headline feature is working on a bad connection.
+ *
+ * Satoshi by Indian Type Foundry, ITF Free Font License -- see
+ * fonts/LICENSE-Satoshi.txt. The licence travels with the file. */
 @font-face {
   font-family: 'Satoshi';
-  src: url('fonts/Satoshi-Regular.woff2') format('woff2');
-  font-weight: 400; font-style: normal; font-display: swap;
-}
-@font-face {
-  font-family: 'Satoshi';
-  src: url('fonts/Satoshi-Medium.woff2') format('woff2');
-  font-weight: 500; font-style: normal; font-display: swap;
-}
-/* 700 also answers requests for 600: the component CSS asks for 600 in
- * places, and the nearest real master beats a synthesised one. */
-@font-face {
-  font-family: 'Satoshi';
-  src: url('fonts/Satoshi-Bold.woff2') format('woff2');
-  font-weight: 600 700; font-style: normal; font-display: swap;
+  src: url('fonts/Satoshi-Variable.woff2') format('woff2');
+  font-weight: 300 900;
+  font-style: normal;
+  font-display: swap;
 }
 
 /*
