@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { tripDays, type Trip } from '$lib/trip/days';
-import { replan, schedule, type PlanPoi } from './planner';
+import { replan, schedule, REASON_TEXT, type PlanPoi } from './planner';
 import { chooseMode, leg } from './modes';
 import { categoryCrowd, resolveCrowd, type CrowdProvider } from './crowd';
+import { slotAt } from './meals';
 
 const hotel = { lat: 41.8986, lng: 12.4768 };
 
@@ -127,7 +128,7 @@ describe('schedule', () => {
 
 	it('treats an unassigned POI as unplaced rather than inventing a day', () => {
 		const result = schedule(input([poi('a', 41.9, 12.48)]));
-		expect(result.unplaced.map((p) => p.id)).toEqual(['a']);
+		expect(result.unplaced.map((u) => u.poi.id)).toEqual(['a']);
 	});
 });
 
@@ -190,5 +191,103 @@ describe('crowd chain', () => {
 	it('still resolves when every provider returns null', () => {
 		const nulls: CrowdProvider = { name: 'nulls', busyness: () => null };
 		expect(resolveCrowd([nulls], 'museum', at11, 'Europe/Rome')).toBeGreaterThan(0);
+	});
+});
+
+describe('meals', () => {
+	const mealTrip: Trip = { ...trip, arrivalAt: '2026-04-10T04:00:00Z', departureAt: '2026-04-12T22:00:00Z' };
+	const mealDays = tripDays(mealTrip);
+
+	const lunchSpot = poi('trattoria', 41.902, 12.482, { category: 'restaurant', durationMin: 75 });
+	const sights = [
+		poi('forum', 41.8925, 12.4853, { durationMin: 90 }),
+		poi('pantheon', 41.8986, 12.4769, { durationMin: 45 }),
+		poi('trevi', 41.9009, 12.4833, { durationMin: 30 })
+	];
+
+	it('schedules a restaurant inside a meal slot, not wherever the route reaches it', () => {
+		const result = replan({
+			pois: [...sights, lunchSpot],
+			days: mealDays,
+			allowedModes: ['walk', 'transit'],
+			timezone: 'Europe/Rome'
+		});
+		const stop = result.days.flatMap((d) => d.stops).find((s) => s.poiId === 'trattoria');
+		expect(stop).toBeDefined();
+		expect(slotAt(stop!.arrive, 'Europe/Rome')).not.toBeNull();
+	});
+
+	it('flags a meal that could not be fitted near a mealtime', () => {
+		// Forced: the only day is a sliver of afternoon, well outside any slot.
+		const sliver: Trip = {
+			...trip,
+			arrivalAt: '2026-04-10T13:30:00Z', // 15:30 local
+			departureAt: '2026-04-10T18:00:00Z' // 20:00 local, minus 2h buffer = 18:00
+		};
+		const d = tripDays(sliver);
+		const result = replan({
+			pois: [poi('dinner', 41.9, 12.48, { category: 'restaurant', durationMin: 60 })],
+			days: d,
+			allowedModes: ['walk'],
+			timezone: 'Europe/Rome'
+		});
+		const stop = result.days.flatMap((s) => s.stops).find((s) => s.poiId === 'dinner');
+		if (stop) {
+			expect(stop.warnings.some((w) => w.kind === 'off-hours')).toBe(true);
+		} else {
+			expect(result.unplaced.map((u) => u.poi.id)).toContain('dinner');
+		}
+	});
+
+	it('never puts more than two meals on one day', () => {
+		const manyMeals = Array.from({ length: 6 }, (_, i) =>
+			poi(`eat${i}`, 41.9 + i * 0.001, 12.48 + i * 0.001, { category: 'restaurant', durationMin: 60 })
+		);
+		const result = replan({
+			pois: manyMeals,
+			days: mealDays,
+			allowedModes: ['walk', 'transit'],
+			timezone: 'Europe/Rome'
+		});
+		for (const day of result.days) {
+			const meals = day.stops.filter((s) => s.poiId?.startsWith('eat'));
+			expect(meals.length).toBeLessThanOrEqual(2);
+		}
+	});
+});
+
+describe('unplaced reasons', () => {
+	it('says a never-planned stop simply has not been planned', () => {
+		const result = schedule(input([poi('a', 41.9, 12.48)]));
+		expect(result.unplaced[0].reason).toBe('not-planned-yet');
+	});
+
+	it('says a trip with no usable time has no usable days', () => {
+		const noTime: Trip = {
+			...trip,
+			arrivalAt: '2026-04-10T06:00:00Z',
+			departureAt: '2026-04-10T08:30:00Z'
+		};
+		const result = replan({
+			pois: [poi('a', 41.9, 12.48)],
+			days: tripDays(noTime),
+			allowedModes: ['walk'],
+			timezone: 'Europe/Rome'
+		});
+		expect(result.unplaced[0].reason).toBe('no-usable-days');
+	});
+
+	it('says a stop that would not fit found every day full', () => {
+		const pois = Array.from({ length: 20 }, (_, i) =>
+			poi(`p${i}`, 41.89 + i * 0.002, 12.47 + i * 0.002, { durationMin: 180 })
+		);
+		const result = replan(input(pois));
+		expect(result.unplaced.every((u) => u.reason === 'day-full')).toBe(true);
+	});
+
+	it('has readable text for every reason', () => {
+		for (const r of Object.keys(REASON_TEXT)) {
+			expect(REASON_TEXT[r as keyof typeof REASON_TEXT].length).toBeGreaterThan(10);
+		}
 	});
 });

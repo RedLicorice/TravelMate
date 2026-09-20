@@ -9,7 +9,6 @@
 	let trips = $state<TripRow[]>([]);
 	let error = $state<string | null>(null);
 	let loading = $state(true);
-	let openId = $state<string | null>(null);
 
 	onMount(() => {
 		const stop = watchInstall();
@@ -31,17 +30,6 @@
 			new Date(row.departure_at)
 		);
 
-	/** Shown in the trip's own timezone: 15:00 means 15:00 where they land. */
-	const stamp = (iso: string, tz: string) =>
-		new Intl.DateTimeFormat(undefined, {
-			timeZone: tz,
-			weekday: 'short',
-			day: 'numeric',
-			month: 'short',
-			hour: '2-digit',
-			minute: '2-digit',
-			hour12: false
-		}).format(new Date(iso));
 </script>
 
 <main class="mx-auto max-w-lg px-6 pb-28">
@@ -65,13 +53,8 @@
 	{:else}
 		<ul class="flex flex-col gap-3">
 			{#each trips as trip (trip.id)}
-				<li class="tm-card" style="padding: 0; overflow: hidden">
-					<button
-						class="w-full text-left"
-						style="background: none; border: none; padding: var(--tm-space-4); cursor: pointer; color: inherit; font: inherit"
-						aria-expanded={openId === trip.id}
-						onclick={() => (openId = openId === trip.id ? null : trip.id)}
-					>
+				<li>
+					<a href="{base}/trip/{trip.id}" class="tm-card block" style="text-decoration: none">
 						<p class="tm-card__title">{trip.city}</p>
 						<p class="tm-card__meta">{range(trip)} · {dayCount(trip)} days</p>
 						<div class="mt-3 flex gap-1.5">
@@ -81,35 +64,7 @@
 								></span>
 							{/each}
 						</div>
-					</button>
-
-					{#if openId === trip.id}
-						<div
-							style="border-top: 1px solid var(--tm-border); background: var(--tm-surface-2); padding: var(--tm-space-4)"
-						>
-							<dl class="flex flex-col gap-3">
-								{#each [['City', trip.city], ['Hotel', trip.hotel_name], ['Arrival', stamp(trip.arrival_at, trip.timezone)], ['Departure', stamp(trip.departure_at, trip.timezone)], ['Timezone', trip.timezone]] as [label, value]}
-									<div class="flex items-baseline justify-between gap-4">
-										<dt
-											style="font: 400 var(--tm-text-sm)/1.3 var(--tm-font); color: var(--tm-text-faint); white-space: nowrap"
-										>
-											{label}
-										</dt>
-										<dd
-											style="font: 500 var(--tm-text-base)/1.3 var(--tm-font); text-align: right"
-										>
-											{value}
-										</dd>
-									</div>
-								{/each}
-							</dl>
-							<a
-								href="{base}/trip/{trip.id}"
-								class="tm-btn tm-btn--primary tm-btn--block mt-4"
-								style="text-decoration: none">Open plan</a
-							>
-						</div>
-					{/if}
+					</a>
 				</li>
 			{/each}
 		</ul>

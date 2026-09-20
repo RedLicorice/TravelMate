@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { tripDays, type Trip } from './days';
+import { fromLocalInput, toLocalInput, tripDays, type Trip } from './days';
 
 const hotel = { lat: 41.8986, lng: 12.4768 };
 const fco = { lat: 41.8003, lng: 12.2389 };
@@ -129,5 +129,23 @@ describe('tripDays', () => {
 			'2026-03-29',
 			'2026-03-30'
 		]);
+	});
+});
+
+describe('local input conversion', () => {
+	it('round-trips a wall-clock value through the trip timezone', () => {
+		const iso = fromLocalInput('2026-04-10T15:00', 'Europe/Rome');
+		expect(iso).toBe('2026-04-10T13:00:00.000Z'); // 15:00 CEST
+		expect(toLocalInput(iso, 'Europe/Rome')).toBe('2026-04-10T15:00');
+	});
+
+	it('reads the value in the destination zone, not the machine zone', () => {
+		// The bug this guards: 15:00 entered for a Tokyo trip must be 15:00 in
+		// Tokyo, whatever the planner's own clock says.
+		expect(fromLocalInput('2026-04-10T15:00', 'Asia/Tokyo')).toBe('2026-04-10T06:00:00.000Z');
+	});
+
+	it('renders midnight as 00:00, not 24:00', () => {
+		expect(toLocalInput('2026-04-09T22:00:00.000Z', 'Europe/Rome')).toBe('2026-04-10T00:00');
 	});
 });

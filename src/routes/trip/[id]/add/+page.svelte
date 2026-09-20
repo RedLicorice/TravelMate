@@ -6,7 +6,7 @@
 	import { addPoi, listPois, removePoi, type PoiRow } from '$lib/trip/pois';
 	import { poi as provider, type City, type Poi } from '$lib/poi';
 	import { haversineKm } from '$lib/plan/geo';
-	import Map from '$lib/Map.svelte';
+	import LeafletMap from '$lib/Map.svelte';
 
 	const tripId = page.params.id!;
 
@@ -207,7 +207,7 @@
 		</div>
 	{:else if trip}
 		<div class="relative flex-1">
-			<Map
+			<LeafletMap
 				{markers}
 				center={centre}
 				onselect={(id) => (selectedId = id)}

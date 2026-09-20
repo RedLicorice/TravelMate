@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { base } from '$app/paths';
 	import { createTrip } from '$lib/trip/repo';
+	import { fromLocalInput } from '$lib/trip/days';
 	import Autocomplete from '$lib/Autocomplete.svelte';
 	import { poi } from '$lib/poi';
 	import type { City, Place } from '$lib/poi';
@@ -39,10 +40,11 @@
 				hotelName: hotel!.name,
 				hotelLat: hotel!.lat,
 				hotelLng: hotel!.lng,
-				// datetime-local has no zone. The traveller entered local time in
-				// the destination city, which is what the planner assumes too.
-				arrivalAt: new Date(arrivalAt).toISOString(),
-				departureAt: new Date(departureAt).toISOString(),
+				// datetime-local carries no zone. Read it as wall-clock time in the
+				// destination, not in the browser: planning a Tokyo trip from Rome
+				// would otherwise store the arrival eight hours out.
+				arrivalAt: fromLocalInput(arrivalAt, timezone),
+				departureAt: fromLocalInput(departureAt, timezone),
 				cityBBox: city!.bbox
 			});
 			// replaceState so the finished wizard is not left in history: a

@@ -1,6 +1,7 @@
 import { supabase } from '$lib/supabase';
 import type { BBox } from '$lib/poi';
 import type { Place, Trip } from './days';
+import type { PoiRow } from './pois';
 
 export type TripRow = {
 	id: string;
@@ -151,4 +152,66 @@ export async function updateCityBBox(id: string, bbox: BBox): Promise<void> {
 		})
 		.eq('id', id);
 	if (error) throw new Error(error.message);
+}
+
+export type TripEdit = {
+	city: string;
+	timezone: string;
+	hotelName: string;
+	hotelLat: number;
+	hotelLng: number;
+	arrivalAt: string;
+	departureAt: string;
+	allowedModes: string[];
+	dayStart: string;
+	dayEnd: string;
+};
+
+export async function updateTrip(id: string, edit: TripEdit): Promise<void> {
+	const { error } = await supabase
+		.from('trips')
+		.update({
+			name: edit.city,
+			city: edit.city,
+			timezone: edit.timezone,
+			hotel_name: edit.hotelName,
+			hotel_lat: edit.hotelLat,
+			hotel_lng: edit.hotelLng,
+			arrival_at: edit.arrivalAt,
+			departure_at: edit.departureAt,
+			allowed_modes: edit.allowedModes,
+			day_start: edit.dayStart,
+			day_end: edit.dayEnd
+		})
+		.eq('id', id);
+	if (error) throw new Error(error.message);
+}
+
+export async function deleteTrip(id: string): Promise<void> {
+	// pois cascade via the foreign key, so this is one statement, not two.
+	const { error } = await supabase.from('trips').delete().eq('id', id);
+	if (error) throw new Error(error.message);
+}
+
+/** A share token, minted on demand. Null revokes the link. */
+export async function setShareToken(id: string, token: string | null): Promise<void> {
+	const { error } = await supabase.from('trips').update({ share_token: token }).eq('id', id);
+	if (error) throw new Error(error.message);
+}
+
+/**
+ * A shared trip, read through the RPC rather than the table.
+ *
+ * Anonymous callers have no select policy on trips at all -- deliberately, as
+ * a `share_token is not null` policy would let them write their own WHERE and
+ * enumerate every shared trip. The function takes the token as an argument, so
+ * an unguessable value is genuinely required.
+ */
+export async function getSharedTrip(
+	token: string
+): Promise<{ trip: TripRow; pois: PoiRow[] } | null> {
+	const { data, error } = await supabase.rpc('get_shared_trip', { token });
+	if (error) throw new Error(error.message);
+	if (!data?.trip) return null;
+	return data as { trip: TripRow; pois: PoiRow[] };
 }

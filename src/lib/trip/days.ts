@@ -80,7 +80,7 @@ function zonedDate(at: Date, tz: string): string {
  * ponytail: a wall-clock time skipped by a spring-forward resolves to the
  * instant after the jump. Upgrade to Temporal.ZonedDateTime when it ships.
  */
-function zonedInstant(date: string, time: string, tz: string): Date {
+export function zonedInstant(date: string, time: string, tz: string): Date {
 	const naive = new Date(`${date}T${time}:00Z`).getTime();
 	let at = new Date(naive);
 	for (let i = 0; i < 2; i++) at = new Date(naive - tzOffsetMs(at, tz));
@@ -172,4 +172,25 @@ export function tripDays(trip: Trip): Day[] {
 			usableMin: Math.round((end.getTime() - start.getTime()) / MIN)
 		};
 	});
+}
+
+/**
+ * An ISO instant rendered as a `datetime-local` value (YYYY-MM-DDTHH:mm) in
+ * the trip's zone, not the browser's. A traveller entering "15:00 arrival"
+ * means 15:00 where they land.
+ */
+export function toLocalInput(iso: string, tz: string): string {
+	const parts = new Intl.DateTimeFormat('en-CA', {
+		timeZone: tz,
+		year: 'numeric', month: '2-digit', day: '2-digit',
+		hour: '2-digit', minute: '2-digit', hour12: false
+	}).formatToParts(new Date(iso));
+	const g = (t: string) => parts.find((p) => p.type === t)!.value;
+	return `${g('year')}-${g('month')}-${g('day')}T${String(Number(g('hour')) % 24).padStart(2, '0')}:${g('minute')}`;
+}
+
+/** The inverse: a `datetime-local` value read as wall-clock time in `tz`. */
+export function fromLocalInput(value: string, tz: string): string {
+	const [date, time] = value.split('T');
+	return zonedInstant(date, time.slice(0, 5), tz).toISOString();
 }
