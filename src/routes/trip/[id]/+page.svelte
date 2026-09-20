@@ -149,18 +149,27 @@
 		}
 	}
 
+	/** Mints a link the first time, copies it thereafter. Revoking is separate:
+	    a button that shares on one tap and unshares on the next is how people
+	    kill a link they meant to send. */
 	async function share() {
 		if (!row) return;
 		try {
-			if (shareUrl) {
-				await setShareToken(tripId, null);
-				shareUrl = null;
-				return;
+			if (!shareUrl) {
+				const token = crypto.randomUUID();
+				await setShareToken(tripId, token);
+				shareUrl = linkFor(token);
 			}
-			const token = crypto.randomUUID();
-			await setShareToken(tripId, token);
-			shareUrl = linkFor(token);
 			await copy();
+		} catch (e) {
+			error = (e as Error).message;
+		}
+	}
+
+	async function revoke() {
+		try {
+			await setShareToken(tripId, null);
+			shareUrl = null;
 		} catch (e) {
 			error = (e as Error).message;
 		}
@@ -281,9 +290,16 @@
 					</button>
 				</div>
 				<div class="flex gap-2">
-					<a href="{base}/trip/{tripId}/edit" class="tm-btn tm-btn--secondary" style="min-height:36px;text-decoration:none">Edit</a>
-					<button class="tm-btn tm-btn--secondary" style="min-height:36px" onclick={doReplan} disabled={busy || !pois.length || hotelMissing(row)}>
+					<button
+						class="tm-btn tm-btn--secondary"
+						style="min-height:36px"
+						onclick={doReplan}
+						disabled={busy || !pois.length || hotelMissing(row)}
+					>
 						{busy ? 'Planning…' : 'Replan'}
+					</button>
+					<button class="tm-btn tm-btn--primary" style="min-height:36px" onclick={share}>
+						{copied ? 'Copied' : shareUrl ? 'Copy link' : 'Share'}
 					</button>
 				</div>
 			</div>
@@ -331,12 +347,16 @@
 					</div>
 
 					<div class="mt-3 flex gap-2">
-						<button class="tm-btn tm-btn--secondary flex-1" style="min-height:38px" onclick={share}>
-							{shareUrl ? 'Stop sharing' : 'Share'}
-						</button>
+						<a
+							href="{base}/trip/{tripId}/edit"
+							class="tm-btn tm-btn--secondary flex-1"
+							style="min-height:38px;text-decoration:none"
+						>
+							Edit trip
+						</a>
 						{#if shareUrl}
-							<button class="tm-btn tm-btn--secondary flex-1" style="min-height:38px" onclick={copy}>
-								{copied ? 'Copied' : 'Copy link'}
+							<button class="tm-btn tm-btn--secondary flex-1" style="min-height:38px" onclick={revoke}>
+								Stop sharing
 							</button>
 						{/if}
 					</div>
