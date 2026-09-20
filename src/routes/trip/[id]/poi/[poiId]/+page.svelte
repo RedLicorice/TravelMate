@@ -19,6 +19,7 @@
 	import { loadTripProfiles } from '$lib/profile.svelte';
 	import type { Mode } from '$lib/plan/modes';
 	import { safePhone, safeUrl } from '$lib/poi/photon';
+	import Stars from '$lib/Stars.svelte';
 
 	const tripId = page.params.id!;
 	const poiId = page.params.poiId!;
@@ -204,6 +205,17 @@
 				<p class="tm-card__meta">{REASON_TEXT[reason ?? 'not-planned-yet']}</p>
 			{/if}
 		</div>
+
+		<h2 class="tm-label mt-6 mb-2">How much you want this</h2>
+		<Stars
+			value={poi.priority}
+			size={18}
+			onchange={(v) => persist({ priority: v })}
+		/>
+		<p class="tm-hint mt-2">
+			When a day runs out of hours, the least wanted stops are the ones that fall off. Higher
+			ratings also pull a place towards the start of the trip.
+		</p>
 
 		<!-- Expected busyness -->
 		<h2 class="tm-label mt-6 mb-2">Expected busyness</h2>

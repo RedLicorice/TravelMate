@@ -10,6 +10,7 @@ export type PoiRow = {
 	lng: number;
 	category: string | null;
 	duration_min: number;
+	priority: number;
 	opening_hours: string | null;
 	osm_id: string | null;
 	website: string | null;
@@ -27,6 +28,7 @@ export const toPlanPoi = (row: PoiRow): PlanPoi => ({
 	lng: row.lng,
 	category: row.category,
 	durationMin: row.duration_min,
+	priority: row.priority ?? 3,
 	dayIndex: row.day_index,
 	orderIndex: row.order_index
 });
@@ -83,7 +85,7 @@ export async function getPoi(id: string): Promise<PoiRow | null> {
 
 export async function updatePoi(
 	id: string,
-	patch: { duration_min?: number; notes?: string | null; name?: string }
+	patch: { duration_min?: number; notes?: string | null; name?: string; priority?: number }
 ): Promise<PoiRow> {
 	const { data, error } = await supabase
 		.from('pois')

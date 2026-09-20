@@ -20,6 +20,8 @@ export type PlanPoi = {
 	lng: number;
 	category: string | null;
 	durationMin: number;
+	/** 1-5, how much the traveller wants this. 3 when unsaid. */
+	priority: number;
 	dayIndex: number | null;
 	orderIndex: number | null;
 };
@@ -95,6 +97,17 @@ const CROWD_WEIGHT_MIN = 20;
  */
 const MEAL_WEIGHT_MIN_PER_HOUR = 90;
 
+/**
+ * Minutes of detour worth accepting to move a wanted stop one place earlier in
+ * the day. Small: priority decides what gets in and which day it lands on, and
+ * only nudges the order once it is there. Making it large would march the
+ * traveller back and forth across town in rating order.
+ */
+const PRIORITY_ORDER_WEIGHT_MIN = 3;
+
+/** The default when nobody has rated a stop: wanting it averagely. */
+const NEUTRAL_PRIORITY = 3;
+
 // ---------------------------------------------------------------- clustering
 
 /**
@@ -161,10 +174,23 @@ export function assignDays(pois: PlanPoi[], days: Day[]): Map<number, PlanPoi[]>
 	if (!pois.length || !usable.length) return buckets;
 
 	const labels = kmeans(pois, Math.min(usable.length, pois.length));
+
+	// Clusters carrying the most wanted stops go to the earliest days. A rained
+	// out final day should cost the trip its least wanted stops, not its best.
+	const clusters = new Map<number, PlanPoi[]>();
 	labels.forEach((label, j) => {
-		const dayIndex = usable[Math.min(label, usable.length - 1)].i;
-		buckets.get(dayIndex)!.push(pois[j]);
+		const key = Math.min(label, usable.length - 1);
+		if (!clusters.has(key)) clusters.set(key, []);
+		clusters.get(key)!.push(pois[j]);
 	});
+	const wanted = (list: PlanPoi[]) =>
+		list.reduce((sum, p) => sum + (p.priority ?? NEUTRAL_PRIORITY), 0) / (list.length || 1);
+	[...clusters.values()]
+		.sort((a, b) => wanted(b) - wanted(a))
+		.forEach((list, rank) => {
+			const dayIndex = usable[Math.min(rank, usable.length - 1)].i;
+			buckets.get(dayIndex)!.push(...list);
+		});
 
 	// Rebalance: while a day is over its minute budget and another has slack,
 	// move the stop that is geographically closest to the slack day.
@@ -181,9 +207,15 @@ export function assignDays(pois: PlanPoi[], days: Day[]): Map<number, PlanPoi[]>
 
 		const centre = centroid(buckets.get(under.i)!) ?? at(buckets.get(over.i)![0]);
 		const list = buckets.get(over.i)!;
+		// Move the least wanted first, and among equals the one closest to where
+		// it is going. A full day should shed what the traveller cares least
+		// about, not whatever happens to sit nearest the other cluster.
 		const moved = list
 			.map((p, idx) => ({ p, idx, d: haversineKm(centre, at(p)) }))
-			.sort((a, b) => a.d - b.d)[0];
+			.sort(
+				(a, b) =>
+					(a.p.priority ?? NEUTRAL_PRIORITY) - (b.p.priority ?? NEUTRAL_PRIORITY) || a.d - b.d
+			)[0];
 		list.splice(moved.idx, 1);
 		buckets.get(under.i)!.push(moved.p);
 	}
@@ -246,6 +278,9 @@ export function orderDay(
 			// Waiting is a real cost, just a much smaller one than eating at the
 			// wrong time: prefer the order that arrives closer to the slot.
 			0.5 * sim.waitedMin +
+			// A wanted stop earlier in the day, when it is nearly free to do so.
+			PRIORITY_ORDER_WEIGHT_MIN *
+				order.reduce((sum, p, i) => sum + (p.priority ?? NEUTRAL_PRIORITY) * i, 0) +
 			// Anything that did not fit is worse than any amount of walking.
 			10_000 * sim.overflowed.length
 		);
@@ -453,11 +488,16 @@ export function replan(input: PlanInput): PlanResult {
 	buckets.forEach((list, dayIndex) => {
 		// Cap meals per day before ordering: geographic clustering happily puts
 		// three restaurants in one day, and nobody eats three sit-down meals.
-		const meals = list.filter((p) => isMeal(p.category));
+		const byWant = (a: PlanPoi, b: PlanPoi) =>
+			(b.priority ?? NEUTRAL_PRIORITY) - (a.priority ?? NEUTRAL_PRIORITY);
+		const meals = list.filter((p) => isMeal(p.category)).sort(byWant);
 		const rest = list.filter((p) => !isMeal(p.category));
 		spilled.push(...meals.slice(MEALS_PER_DAY));
 
-		const keep = [...rest, ...meals.slice(0, MEALS_PER_DAY)];
+		// Sorted most-wanted-first so that when the day runs out of hours, it is
+		// the least wanted stops that fall off the end rather than whichever
+		// happened to be furthest along the route.
+		const keep = [...rest.sort(byWant), ...meals.slice(0, MEALS_PER_DAY)];
 		const ordered = orderDay(keep, input.days[dayIndex], input.allowedModes, input.timezone, curves, slots);
 		ordered.forEach((p, orderIndex) => assigned.push({ ...p, dayIndex, orderIndex }));
 	});

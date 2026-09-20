@@ -36,6 +36,7 @@ const poi = (id: string, lat: number, lng: number, extra: Partial<PlanPoi> = {})
 	lng,
 	category: 'attraction',
 	durationMin: 60,
+	priority: 3,
 	dayIndex: null,
 	orderIndex: null,
 	...extra
@@ -377,5 +378,104 @@ describe('curve resolution keys by local hour', () => {
 		const sync = categoryCurves(pois, days, 'Europe/Rome');
 		const at = new Date('2026-04-10T10:00:00Z');
 		expect(async_.at('m1', at, 'Europe/Rome')).toBe(sync.at('m1', at, 'Europe/Rome'));
+	});
+});
+
+describe('priority', () => {
+	const roomy: Trip = { ...trip, arrivalAt: '2026-04-10T04:00:00Z', departureAt: '2026-04-12T22:00:00Z' };
+	const roomyDays = tripDays(roomy);
+
+	/** Twelve long stops cannot fit three days; something has to give. */
+	const tooMany = (priorities: number[]) =>
+		priorities.map((priority, i) =>
+			poi(`p${i}`, 41.89 + i * 0.004, 12.47 + i * 0.004, { durationMin: 150, priority })
+		);
+
+	it('drops the least wanted when not everything fits', () => {
+		const pois = tooMany([5, 5, 5, 1, 1, 1, 5, 5, 1, 1, 5, 1]);
+		const result = replan({
+			pois,
+			days: roomyDays,
+			allowedModes: ['walk', 'transit'],
+			timezone: 'Europe/Rome'
+		});
+		expect(result.unplaced.length).toBeGreaterThan(0);
+		const droppedPriorities = result.unplaced.map((u) => u.poi.priority);
+		const placedPriorities = result.days
+			.flatMap((d) => d.stops)
+			.filter((s) => s.poiId)
+			.map((s) => pois.find((p) => p.id === s.poiId)!.priority);
+		// The average thing dropped is wanted less than the average thing kept.
+		const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
+		expect(mean(droppedPriorities)).toBeLessThan(mean(placedPriorities));
+	});
+
+	it('keeps a five-star stop over a one-star one', () => {
+		const pois = tooMany([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 5]);
+		const result = replan({
+			pois,
+			days: roomyDays,
+			allowedModes: ['walk', 'transit'],
+			timezone: 'Europe/Rome'
+		});
+		expect(result.unplaced.map((u) => u.poi.id)).not.toContain('p11');
+	});
+
+	it('front-loads the trip: wanted stops land on earlier days', () => {
+		// Two geographic clusters, one clearly more wanted than the other.
+		const wanted = [0, 1, 2].map((i) =>
+			poi(`want${i}`, 41.95 + i * 0.002, 12.55 + i * 0.002, { priority: 5, durationMin: 60 })
+		);
+		const meh = [0, 1, 2].map((i) =>
+			poi(`meh${i}`, 41.85 + i * 0.002, 12.4 + i * 0.002, { priority: 1, durationMin: 60 })
+		);
+		const result = replan({
+			pois: [...meh, ...wanted],
+			days: roomyDays,
+			allowedModes: ['walk', 'transit'],
+			timezone: 'Europe/Rome'
+		});
+		const dayOf = (id: string) =>
+			result.days.findIndex((d) => d.stops.some((s) => s.poiId === id));
+		const wantedDays = wanted.map((p) => dayOf(p.id)).filter((d) => d >= 0);
+		const mehDays = meh.map((p) => dayOf(p.id)).filter((d) => d >= 0);
+		if (wantedDays.length && mehDays.length) {
+			const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
+			expect(mean(wantedDays)).toBeLessThanOrEqual(mean(mehDays));
+		}
+	});
+
+	it('leaves an unrated stop in the middle, not at the bottom', () => {
+		// Not having said yet is not the same as not caring.
+		const pois = [
+			poi('low', 41.9, 12.48, { priority: 1, durationMin: 150 }),
+			poi('unsaid', 41.902, 12.482, { priority: 3, durationMin: 150 }),
+			poi('high', 41.904, 12.484, { priority: 5, durationMin: 150 })
+		];
+		const result = replan({
+			pois,
+			days: [roomyDays[0]],
+			allowedModes: ['walk'],
+			timezone: 'Europe/Rome'
+		});
+		const dropped = result.unplaced.map((u) => u.poi.id);
+		if (dropped.length) expect(dropped).not.toContain('high');
+	});
+
+	it('does not reorder a day purely by rating', () => {
+		// Priority nudges; it must not march the traveller across town in
+		// rating order. The far five-star should not come before the near one.
+		const pois = [
+			poi('near', 41.899, 12.477, { priority: 4, durationMin: 30 }),
+			poi('far', 41.95, 12.55, { priority: 5, durationMin: 30 })
+		];
+		const result = replan({
+			pois,
+			days: [roomyDays[0]],
+			allowedModes: ['walk', 'transit'],
+			timezone: 'Europe/Rome'
+		});
+		const ids = result.days[0].stops.filter((s) => s.poiId).map((s) => s.poiId);
+		expect(ids[0]).toBe('near');
 	});
 });

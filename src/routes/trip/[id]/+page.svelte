@@ -21,6 +21,7 @@
 	import { displayName, loadTripProfiles, type Profile } from '$lib/profile.svelte';
 	import type { Mode } from '$lib/plan/modes';
 	import Autocomplete from '$lib/Autocomplete.svelte';
+	import Stars from '$lib/Stars.svelte';
 	import LeafletMap from '$lib/Map.svelte';
 	import { poi as provider, type City } from '$lib/poi';
 
@@ -465,7 +466,10 @@
 									style="width:12px;height:12px;border-radius:50%;margin-top:4px;flex:none;background:{colorOf(p.id)}"
 								></span>
 								<span>
-									<span class="tm-result__name">{p.name}</span>
+									<span style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+										<span class="tm-result__name">{p.name}</span>
+										<Stars value={p.priority} size={9} label="Wanted" />
+									</span>
 									<span class="tm-result__meta" style="display:block">
 										{p.category ?? 'place'} · {p.duration_min} min
 										{#if isMeal(p.category)} · meal{/if}
