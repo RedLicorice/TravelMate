@@ -5,7 +5,6 @@
 	import {
 		enabledProviders,
 		sendPasswordReset,
-		signIn,
 		signInWithPassword,
 		signInWithProvider,
 		signUpWithPassword,
@@ -80,19 +79,6 @@
 		// Success navigates away to the provider.
 	}
 
-	async function magicLink() {
-		if (!emailOk) {
-			error = 'Enter your email address first.';
-			return;
-		}
-		busy = true;
-		error = null;
-		notice = null;
-		const r = await signIn(email, next);
-		error = r.error;
-		if (!r.error) notice = `Check ${email} for a sign-in link.`;
-		busy = false;
-	}
 </script>
 
 <main class="mx-auto flex min-h-dvh max-w-sm flex-col justify-center gap-4 p-6">
@@ -186,15 +172,6 @@
 		{:else}
 			<button class="tm-btn tm-btn--ghost" style="min-height:auto;padding:0" onclick={() => (mode = 'signin')}>
 				Back to sign in
-			</button>
-		{/if}
-
-		{#if mode === 'signin'}
-			<!-- Kept as a fallback, not the default. A magic link opens in the
-			     browser, which on a home-screen PWA signs you in somewhere other
-			     than the app you were standing in. -->
-			<button class="tm-btn tm-btn--ghost" style="min-height:auto;padding:0" disabled={busy} onclick={magicLink}>
-				Email me a link instead
 			</button>
 		{/if}
 	</div>

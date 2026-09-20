@@ -21,22 +21,16 @@ export function watchSession(): () => void {
 	return () => data.subscription.unsubscribe();
 }
 
-export async function signIn(email: string, next?: string | null): Promise<{ error: string | null }> {
-	// The Pages subpath has to survive the round trip through the email link,
-	// or the magic link lands on a 404 at the domain root. `next` carries the
-	// page they were trying to reach -- usually a share link, which is useless
-	// if signing in dumps them on their own trip list instead.
-	const destination = safeNext(next) ?? '/';
-	const { error } = await supabase.auth.signInWithOtp({
-		email,
-		options: { emailRedirectTo: window.location.origin + base + destination }
-	});
-	return { error: error?.message ?? null };
-}
-
 export async function signOut(): Promise<void> {
 	await supabase.auth.signOut();
 }
+
+/*
+ * There is no magic-link sign-in. A magic link opens in the browser, so from a
+ * home-screen PWA it signs you in somewhere other than the app you were
+ * standing in. The only emailed link left is the password reset below, which
+ * is a magic link used to set a password rather than to stand in for one.
+ */
 
 const dest = (next?: string | null) => window.location.origin + base + (safeNext(next) ?? '/');
 
