@@ -1,0 +1,57 @@
+<!-- @dsCard group="Screens" -->
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Trip list</title>
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="../previews/_components.css">
+<link rel="stylesheet" href="_screen.css">
+</head><body>
+<div class="head"><h1>Trip list</h1><p>Day dots preview the plan without opening it — and show at a glance which trips are still unplanned.</p></div>
+<div class="frames"><div class="wrap"><span class="cap">Light</span><div class="phone" data-theme="light"><div class="scr">
+<div class="bar"><h2>Your trips</h2>
+  <span class="eyebrow">Sign out</span></div>
+<div class="tm-card" style="--x:0">
+  <p class="tm-card__title">Rome</p>
+  <p class="tm-card__meta">10–13 April · 4 days · 11 stops</p>
+  <div class="row" style="display:flex;gap:5px;margin-top:10px">
+    <span style="width:11px;height:11px;border-radius:50%;background:var(--tm-day-1)"></span>
+    <span style="width:11px;height:11px;border-radius:50%;background:var(--tm-day-2)"></span>
+    <span style="width:11px;height:11px;border-radius:50%;background:var(--tm-day-3)"></span>
+    <span style="width:11px;height:11px;border-radius:50%;background:var(--tm-day-4)"></span>
+  </div>
+</div>
+<div class="tm-card">
+  <p class="tm-card__title">Lisbon</p>
+  <p class="tm-card__meta">2–5 June · 4 days · 3 stops</p>
+  <div style="display:flex;gap:5px;margin-top:10px">
+    <span style="width:11px;height:11px;border-radius:50%;background:var(--tm-day-none)"></span>
+    <span style="width:11px;height:11px;border-radius:50%;background:var(--tm-day-none)"></span>
+    <span style="font:600 10px/11px var(--tm-font);color:var(--tm-text-faint);margin-left:4px">not planned yet</span>
+  </div>
+</div>
+<div class="spacer"></div>
+<button class="tm-btn tm-btn--primary tm-btn--block">Plan a new trip</button></div></div></div><div class="wrap"><span class="cap">Dark</span><div class="phone" data-theme="dark"><div class="scr">
+<div class="bar"><h2>Your trips</h2>
+  <span class="eyebrow">Sign out</span></div>
+<div class="tm-card" style="--x:0">
+  <p class="tm-card__title">Rome</p>
+  <p class="tm-card__meta">10–13 April · 4 days · 11 stops</p>
+  <div class="row" style="display:flex;gap:5px;margin-top:10px">
+    <span style="width:11px;height:11px;border-radius:50%;background:var(--tm-day-1)"></span>
+    <span style="width:11px;height:11px;border-radius:50%;background:var(--tm-day-2)"></span>
+    <span style="width:11px;height:11px;border-radius:50%;background:var(--tm-day-3)"></span>
+    <span style="width:11px;height:11px;border-radius:50%;background:var(--tm-day-4)"></span>
+  </div>
+</div>
+<div class="tm-card">
+  <p class="tm-card__title">Lisbon</p>
+  <p class="tm-card__meta">2–5 June · 4 days · 3 stops</p>
+  <div style="display:flex;gap:5px;margin-top:10px">
+    <span style="width:11px;height:11px;border-radius:50%;background:var(--tm-day-none)"></span>
+    <span style="width:11px;height:11px;border-radius:50%;background:var(--tm-day-none)"></span>
+    <span style="font:600 10px/11px var(--tm-font);color:var(--tm-text-faint);margin-left:4px">not planned yet</span>
+  </div>
+</div>
+<div class="spacer"></div>
+<button class="tm-btn tm-btn--primary tm-btn--block">Plan a new trip</button></div></div></div></div>
+<p class="note">The dot row is the day ramp doing double duty: on a planned trip it is a density preview, on an unplanned one the grey dots say so without a badge or an empty-state illustration.</p>
+</body></html>

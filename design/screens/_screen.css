@@ -1,0 +1,22 @@
+/* Phone-frame chrome for screen mockups. Not tokens — presentation only. */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: var(--tm-font); background: oklch(0.97 0.004 60); color: oklch(0.25 0.015 50); padding: 24px; font-size: 14px; }
+.head h1 { font-size: 18px; font-weight: 700; letter-spacing: -0.02em; }
+.head p { font-size: 12.5px; color: oklch(0.55 0.012 50); margin: 4px 0 18px; max-width: 78ch; line-height: 1.5; }
+.frames { display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-start; }
+.wrap { display: flex; flex-direction: column; gap: 8px; }
+.wrap > .cap { font-size: 10px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: oklch(0.6 0.012 50); }
+.phone {
+  width: 272px; height: 568px; position: relative; overflow: hidden;
+  border-radius: 26px; border: 1px solid var(--tm-border);
+  background: var(--tm-bg); color: var(--tm-text);
+  display: flex; flex-direction: column;
+}
+.scr { flex: 1; display: flex; flex-direction: column; gap: 10px; padding: 16px 14px; overflow: hidden; }
+.scr--flush { padding: 0; gap: 0; }
+.bar { display: flex; align-items: center; justify-content: space-between; }
+.bar h2 { font: 700 var(--tm-text-xl)/1.15 var(--tm-font); letter-spacing: -0.01em; }
+.eyebrow { font: 600 var(--tm-text-sm)/1 var(--tm-font); color: var(--tm-text-faint); }
+.dock { padding: 12px 14px 16px; display: flex; gap: 8px; }
+.note { font-size: 11px; line-height: 1.55; color: oklch(0.55 0.012 50); max-width: 74ch; margin-top: 14px; }
+.spacer { flex: 1; }

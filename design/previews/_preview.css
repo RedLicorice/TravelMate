@@ -2,7 +2,7 @@
    nothing here is a token the app consumes. */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 body {
-  font-family: 'Inter', system-ui, sans-serif;
+  font-family: var(--tm-font);
   background: oklch(0.97 0.004 60);
   color: oklch(0.25 0.015 50);
   padding: 24px;

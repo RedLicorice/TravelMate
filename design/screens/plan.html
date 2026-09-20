@@ -1,0 +1,65 @@
+<!-- @dsCard group="Screens" -->
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Day plan</title>
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="../previews/_components.css">
+<link rel="stylesheet" href="_screen.css">
+</head><body>
+<div class="head"><h1>Day plan</h1><p>The timeline with a day selected. Day chips carry the ramp, so colour is consistent with the map.</p></div>
+<div class="frames"><div class="wrap"><span class="cap">Light</span><div class="phone" data-theme="light"><div class="scr">
+<div class="bar"><h2 style="font-size:var(--tm-text-xl)">Rome</h2><span class="eyebrow">Replan</span></div>
+<div class="tm-seg"><button aria-selected="false">Map</button><button aria-selected="true">Plan</button></div>
+<div style="display:flex;gap:6px;overflow:hidden">
+  <span class="tm-chip" style="background:var(--tm-day-1);color:#fff">Fri 10</span>
+  <span class="tm-chip" style="background:var(--tm-day-2);color:#fff">Sat 11</span>
+  <span class="tm-chip">Sun 12</span><span class="tm-chip">Mon 13</span>
+</div>
+<div style="--tm-stop-day:var(--tm-day-2);overflow:hidden">
+  <div class="tm-stop tm-stop--anchor"><span class="tm-stop__time">09:00</span>
+    <div><p class="tm-stop__name">Hotel Artemide</p><p class="tm-stop__sub">start of day</p></div></div>
+  <div class="tm-leg"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    stroke-width="2.4" stroke-linecap="round"><circle cx="13" cy="4" r="1.6"/><path d="M11 21l2-6-3-3 1-5 3 3 3 1"/>
+    <path d="M10 12l-2 9"/></svg><span>14 min · 1.1 km</span></div>
+  <div class="tm-stop"><span class="tm-stop__time">09:14</span>
+    <div><p class="tm-stop__name">Colosseum</p><p class="tm-stop__sub">2 h · quieter before 10</p></div></div>
+  <div class="tm-leg"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    stroke-width="2.2" stroke-linecap="round"><rect x="5" y="3" width="14" height="13" rx="3"/>
+    <path d="M5 11h14M8 20l2-4M16 20l-2-4"/></svg><span>9 min · Metro B</span></div>
+  <div class="tm-stop"><span class="tm-stop__time">11:23</span>
+    <div><p class="tm-stop__name">Galleria Borghese</p><p class="tm-stop__sub">1 h 30</p>
+      <div style="margin-top:7px"><span class="tm-chip tm-chip--warn">Closed Mondays · move?</span></div></div></div>
+</div>
+<div class="spacer"></div>
+<div style="display:flex;align-items:center;justify-content:space-between">
+  <span class="tm-chip tm-chip--mint">2 unplaced</span>
+  <span class="tm-attrib">© OpenStreetMap contributors</span>
+</div></div></div></div><div class="wrap"><span class="cap">Dark</span><div class="phone" data-theme="dark"><div class="scr">
+<div class="bar"><h2 style="font-size:var(--tm-text-xl)">Rome</h2><span class="eyebrow">Replan</span></div>
+<div class="tm-seg"><button aria-selected="false">Map</button><button aria-selected="true">Plan</button></div>
+<div style="display:flex;gap:6px;overflow:hidden">
+  <span class="tm-chip" style="background:var(--tm-day-1);color:#fff">Fri 10</span>
+  <span class="tm-chip" style="background:var(--tm-day-2);color:#fff">Sat 11</span>
+  <span class="tm-chip">Sun 12</span><span class="tm-chip">Mon 13</span>
+</div>
+<div style="--tm-stop-day:var(--tm-day-2);overflow:hidden">
+  <div class="tm-stop tm-stop--anchor"><span class="tm-stop__time">09:00</span>
+    <div><p class="tm-stop__name">Hotel Artemide</p><p class="tm-stop__sub">start of day</p></div></div>
+  <div class="tm-leg"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    stroke-width="2.4" stroke-linecap="round"><circle cx="13" cy="4" r="1.6"/><path d="M11 21l2-6-3-3 1-5 3 3 3 1"/>
+    <path d="M10 12l-2 9"/></svg><span>14 min · 1.1 km</span></div>
+  <div class="tm-stop"><span class="tm-stop__time">09:14</span>
+    <div><p class="tm-stop__name">Colosseum</p><p class="tm-stop__sub">2 h · quieter before 10</p></div></div>
+  <div class="tm-leg"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    stroke-width="2.2" stroke-linecap="round"><rect x="5" y="3" width="14" height="13" rx="3"/>
+    <path d="M5 11h14M8 20l2-4M16 20l-2-4"/></svg><span>9 min · Metro B</span></div>
+  <div class="tm-stop"><span class="tm-stop__time">11:23</span>
+    <div><p class="tm-stop__name">Galleria Borghese</p><p class="tm-stop__sub">1 h 30</p>
+      <div style="margin-top:7px"><span class="tm-chip tm-chip--warn">Closed Mondays · move?</span></div></div></div>
+</div>
+<div class="spacer"></div>
+<div style="display:flex;align-items:center;justify-content:space-between">
+  <span class="tm-chip tm-chip--mint">2 unplaced</span>
+  <span class="tm-attrib">© OpenStreetMap contributors</span>
+</div></div></div></div></div>
+<p class="note">“2 unplaced” is deliberately a quiet chip rather than a banner: stops that did not fit are information, not an error, and the traveller may well be fine with leaving them out.</p>
+</body></html>

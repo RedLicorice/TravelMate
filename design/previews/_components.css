@@ -72,3 +72,61 @@
   content: ''; position: absolute; left: 9px; top: 0; bottom: 0;
   border-left: 2px dotted var(--tm-border-strong);
 }
+
+/* ---- POI search ---- */
+.tm-seg {
+  display: flex; gap: 2px; padding: 3px;
+  background: var(--tm-surface-2); border-radius: var(--tm-r-full);
+}
+.tm-seg button {
+  flex: 1; border: none; cursor: pointer;
+  font: 600 var(--tm-text-sm)/1 var(--tm-font);
+  padding: 9px 0; border-radius: var(--tm-r-full);
+  background: transparent; color: var(--tm-text-muted);
+}
+.tm-seg button[aria-selected='true'] { background: var(--tm-surface); color: var(--tm-text); }
+
+.tm-search {
+  display: flex; align-items: center; gap: var(--tm-space-2);
+  background: var(--tm-surface); border: 1px solid var(--tm-border-strong);
+  border-radius: var(--tm-r-md); padding: 0 var(--tm-space-3); min-height: 40px;
+  color: var(--tm-text-faint);
+}
+.tm-search input {
+  flex: 1; border: none; outline: none; background: none;
+  font: 400 var(--tm-text-base)/1 var(--tm-font); color: var(--tm-text); min-width: 0;
+}
+
+.tm-filters { display: flex; gap: 6px; overflow-x: auto; }
+.tm-filters .tm-chip { cursor: pointer; white-space: nowrap; }
+.tm-filters .tm-chip[aria-pressed='true'] { background: var(--tm-peach-soft); color: var(--tm-peach-ink); }
+
+/* A result is a row, not a card: a list of ten cards is a wall. */
+.tm-result {
+  display: grid; grid-template-columns: 1fr auto; gap: var(--tm-space-3);
+  align-items: center; padding: 10px 0;
+  border-bottom: 1px solid var(--tm-border);
+}
+.tm-result__name { font: 600 var(--tm-text-base)/1.25 var(--tm-font); }
+.tm-result__meta { font: 400 var(--tm-text-sm)/1.4 var(--tm-font); color: var(--tm-text-faint); margin-top: 2px; }
+.tm-add {
+  width: 34px; height: 34px; border-radius: var(--tm-r-full); cursor: pointer;
+  border: 1px solid var(--tm-border-strong); background: var(--tm-surface);
+  color: var(--tm-text); display: grid; place-items: center;
+  font: 600 16px/1 var(--tm-font);
+}
+.tm-add[aria-pressed='true'] { background: var(--tm-ok-soft); border-color: transparent; color: var(--tm-ok-ink); }
+
+/* Bottom sheet: the map's detail surface. Sits over the map, never replaces it —
+   losing sight of where a place is defeats the point of the map view. */
+.tm-sheet {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  background: var(--tm-surface); border-top: 1px solid var(--tm-border);
+  border-radius: var(--tm-r-lg) var(--tm-r-lg) 0 0;
+  padding: var(--tm-space-3) var(--tm-space-4) var(--tm-space-4);
+}
+.tm-sheet__grip {
+  width: 34px; height: 4px; border-radius: 2px; background: var(--tm-border-strong);
+  margin: 0 auto var(--tm-space-3);
+}
+.tm-attrib { font: 400 10px/1 var(--tm-font); color: var(--tm-text-faint); }

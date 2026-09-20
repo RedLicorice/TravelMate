@@ -1,0 +1,109 @@
+<!-- @dsCard group="Screens" -->
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Add places — list and map</title>
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="../previews/_components.css">
+<link rel="stylesheet" href="_screen.css">
+</head><body>
+<div class="head"><h1>Add places — list and map</h1>
+<p>One search, two views of the same result set. The segmented control swaps the view; it never resets the
+query, the filters, or what has already been added.</p></div>
+<div class="frames"><div class="wrap"><span class="cap">List · light</span><div class="phone" data-theme="light"><div class="scr">
+<div class="bar"><h2 style="font-size:var(--tm-text-xl)">Add places</h2><span class="eyebrow">Done</span></div>
+<div class="tm-seg" role="tablist"><button role="tab" aria-selected="true">List</button>
+  <button role="tab" aria-selected="false">Map</button></div>
+<div class="tm-search"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input value="borghese" aria-label="Search places"></div>
+<div class="tm-filters"><span class="tm-chip" aria-pressed="true">All</span><span class="tm-chip">Museums</span>
+  <span class="tm-chip">Food</span><span class="tm-chip">Views</span><span class="tm-chip">Parks</span></div>
+<div style="overflow:hidden">
+  <div class="tm-result"><div><p class="tm-result__name">Galleria Borghese</p>
+    <p class="tm-result__meta">Museum · 2.1 km · 2 h</p></div><button class="tm-add">+</button></div>
+  <div class="tm-result"><div><p class="tm-result__name">Villa Borghese Gardens</p>
+    <p class="tm-result__meta">Park · 1.8 km · 1 h</p></div><button class="tm-add" aria-pressed="true">✓</button></div>
+  <div class="tm-result"><div><p class="tm-result__name">Museo Carlo Bilotti</p>
+    <p class="tm-result__meta">Museum · 2.0 km · 45 min</p></div><button class="tm-add">+</button></div>
+  <div class="tm-result" style="border-bottom:none"><div><p class="tm-result__name">Bioparco di Roma</p>
+    <p class="tm-result__meta">Zoo · 2.4 km · 2 h</p></div><button class="tm-add">+</button></div>
+</div>
+<div class="spacer"></div>
+<div style="display:flex;align-items:center;justify-content:space-between">
+  <span class="tm-chip tm-chip--peach">4 in wishlist</span>
+  <span class="tm-attrib">© OpenStreetMap contributors</span></div></div></div></div><div class="wrap"><span class="cap">List · dark</span><div class="phone" data-theme="dark"><div class="scr">
+<div class="bar"><h2 style="font-size:var(--tm-text-xl)">Add places</h2><span class="eyebrow">Done</span></div>
+<div class="tm-seg" role="tablist"><button role="tab" aria-selected="true">List</button>
+  <button role="tab" aria-selected="false">Map</button></div>
+<div class="tm-search"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input value="borghese" aria-label="Search places"></div>
+<div class="tm-filters"><span class="tm-chip" aria-pressed="true">All</span><span class="tm-chip">Museums</span>
+  <span class="tm-chip">Food</span><span class="tm-chip">Views</span><span class="tm-chip">Parks</span></div>
+<div style="overflow:hidden">
+  <div class="tm-result"><div><p class="tm-result__name">Galleria Borghese</p>
+    <p class="tm-result__meta">Museum · 2.1 km · 2 h</p></div><button class="tm-add">+</button></div>
+  <div class="tm-result"><div><p class="tm-result__name">Villa Borghese Gardens</p>
+    <p class="tm-result__meta">Park · 1.8 km · 1 h</p></div><button class="tm-add" aria-pressed="true">✓</button></div>
+  <div class="tm-result"><div><p class="tm-result__name">Museo Carlo Bilotti</p>
+    <p class="tm-result__meta">Museum · 2.0 km · 45 min</p></div><button class="tm-add">+</button></div>
+  <div class="tm-result" style="border-bottom:none"><div><p class="tm-result__name">Bioparco di Roma</p>
+    <p class="tm-result__meta">Zoo · 2.4 km · 2 h</p></div><button class="tm-add">+</button></div>
+</div>
+<div class="spacer"></div>
+<div style="display:flex;align-items:center;justify-content:space-between">
+  <span class="tm-chip tm-chip--peach">4 in wishlist</span>
+  <span class="tm-attrib">© OpenStreetMap contributors</span></div></div></div></div><div class="wrap"><span class="cap">Map · light</span><div class="phone" data-theme="light"><div class="scr scr--flush">
+<div style="position:absolute;inset:0">
+  <svg viewBox="0 0 272 568" width="272" height="568" style="display:block">
+    <rect width="272" height="568" fill="var(--tm-surface-2)"/>
+    <g fill="var(--tm-border)" opacity="0.35"><rect x="0" y="0" width="272" height="568"/></g>
+    <g fill="none" stroke="var(--tm-bg)" stroke-width="9" stroke-linecap="round">
+      <path d="M-10,150 L120,120 L290,175"/><path d="M-10,340 L110,310 L290,360"/>
+      <path d="M60,-10 L80,240 L40,580"/><path d="M205,-10 L188,250 L228,580"/></g>
+    <g fill="var(--tm-border)" opacity="0.5">
+      <rect x="98" y="150" width="76" height="56" rx="4"/><rect x="98" y="336" width="72" height="66" rx="4"/>
+      <rect x="-5" y="185" width="52" height="86" rx="4"/><rect x="232" y="205" width="58" height="76" rx="4"/></g>
+    <path d="M104,152 q44,-18 76,10 q24,44 -20,68 q-54,14 -58,-34 z" fill="var(--tm-mint-soft)"/>
+  </svg></div>
+<div style="position:absolute;inset:14px 14px auto;display:flex;flex-direction:column;gap:9px">
+  <div class="tm-seg"><button aria-selected="false">List</button><button aria-selected="true">Map</button></div>
+  <div class="tm-search"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input value="borghese" aria-label="Search places"></div></div>
+<div style="position:absolute;left:192px;top:148px"><div style="width:26px;height:26px;border-radius:50% 50% 50% 4px;transform:rotate(-45deg);background:var(--tm-text);box-shadow:0 0 0 2px var(--tm-pin-halo);display:grid;place-items:center"><span style="transform:rotate(45deg);font:700 11px/1 var(--tm-font);color:var(--tm-bg)">H</span></div></div>
+<div style="position:absolute;left:50px;top:300px"><div style="width:26px;height:26px;border-radius:50% 50% 50% 4px;transform:rotate(-45deg);background:var(--tm-day-none);box-shadow:0 0 0 2px var(--tm-pin-halo);display:grid;place-items:center"><span style="transform:rotate(45deg);font:700 11px/1 var(--tm-font);color:#fff"></span></div></div>
+<div style="position:absolute;left:178px;top:258px"><div style="width:26px;height:26px;border-radius:50% 50% 50% 4px;transform:rotate(-45deg);background:var(--tm-ok);box-shadow:0 0 0 2px var(--tm-pin-halo);display:grid;place-items:center"><span style="transform:rotate(45deg);font:700 11px/1 var(--tm-font);color:#fff">✓</span></div></div>
+<div style="position:absolute;left:98px;top:186px"><div style="width:32px;height:32px;border-radius:50% 50% 50% 4px;transform:rotate(-45deg);background:var(--tm-primary);box-shadow:0 0 0 3px var(--tm-pin-halo);display:grid;place-items:center"><span style="transform:rotate(45deg);font:700 14px/1 var(--tm-font);color:var(--tm-primary-ink)">★</span></div></div>
+<div class="tm-sheet">
+  <div class="tm-sheet__grip"></div>
+  <p style="font:700 var(--tm-text-lg)/1.2 var(--tm-font)">Galleria Borghese</p>
+  <p style="font:400 var(--tm-text-sm)/1.4 var(--tm-font);color:var(--tm-text-muted);margin-top:3px">
+    Museum · 2.1 km from hotel</p>
+  <div style="display:flex;gap:6px;margin:10px 0 12px">
+    <span class="tm-chip tm-chip--peach">2 h</span><span class="tm-chip tm-chip--warn">Booking required</span></div>
+  <button class="tm-btn tm-btn--primary tm-btn--block">Add to trip</button>
+  <p class="tm-attrib" style="text-align:center;margin-top:9px">© OpenStreetMap contributors</p></div></div></div></div><div class="wrap"><span class="cap">Map · dark</span><div class="phone" data-theme="dark"><div class="scr scr--flush">
+<div style="position:absolute;inset:0">
+  <svg viewBox="0 0 272 568" width="272" height="568" style="display:block">
+    <rect width="272" height="568" fill="var(--tm-surface-2)"/>
+    <g fill="var(--tm-border)" opacity="0.35"><rect x="0" y="0" width="272" height="568"/></g>
+    <g fill="none" stroke="var(--tm-bg)" stroke-width="9" stroke-linecap="round">
+      <path d="M-10,150 L120,120 L290,175"/><path d="M-10,340 L110,310 L290,360"/>
+      <path d="M60,-10 L80,240 L40,580"/><path d="M205,-10 L188,250 L228,580"/></g>
+    <g fill="var(--tm-border)" opacity="0.5">
+      <rect x="98" y="150" width="76" height="56" rx="4"/><rect x="98" y="336" width="72" height="66" rx="4"/>
+      <rect x="-5" y="185" width="52" height="86" rx="4"/><rect x="232" y="205" width="58" height="76" rx="4"/></g>
+    <path d="M104,152 q44,-18 76,10 q24,44 -20,68 q-54,14 -58,-34 z" fill="var(--tm-mint-soft)"/>
+  </svg></div>
+<div style="position:absolute;inset:14px 14px auto;display:flex;flex-direction:column;gap:9px">
+  <div class="tm-seg"><button aria-selected="false">List</button><button aria-selected="true">Map</button></div>
+  <div class="tm-search"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input value="borghese" aria-label="Search places"></div></div>
+<div style="position:absolute;left:192px;top:148px"><div style="width:26px;height:26px;border-radius:50% 50% 50% 4px;transform:rotate(-45deg);background:var(--tm-text);box-shadow:0 0 0 2px var(--tm-pin-halo);display:grid;place-items:center"><span style="transform:rotate(45deg);font:700 11px/1 var(--tm-font);color:var(--tm-bg)">H</span></div></div>
+<div style="position:absolute;left:50px;top:300px"><div style="width:26px;height:26px;border-radius:50% 50% 50% 4px;transform:rotate(-45deg);background:var(--tm-day-none);box-shadow:0 0 0 2px var(--tm-pin-halo);display:grid;place-items:center"><span style="transform:rotate(45deg);font:700 11px/1 var(--tm-font);color:#fff"></span></div></div>
+<div style="position:absolute;left:178px;top:258px"><div style="width:26px;height:26px;border-radius:50% 50% 50% 4px;transform:rotate(-45deg);background:var(--tm-ok);box-shadow:0 0 0 2px var(--tm-pin-halo);display:grid;place-items:center"><span style="transform:rotate(45deg);font:700 11px/1 var(--tm-font);color:#fff">✓</span></div></div>
+<div style="position:absolute;left:98px;top:186px"><div style="width:32px;height:32px;border-radius:50% 50% 50% 4px;transform:rotate(-45deg);background:var(--tm-primary);box-shadow:0 0 0 3px var(--tm-pin-halo);display:grid;place-items:center"><span style="transform:rotate(45deg);font:700 14px/1 var(--tm-font);color:var(--tm-primary-ink)">★</span></div></div>
+<div class="tm-sheet">
+  <div class="tm-sheet__grip"></div>
+  <p style="font:700 var(--tm-text-lg)/1.2 var(--tm-font)">Galleria Borghese</p>
+  <p style="font:400 var(--tm-text-sm)/1.4 var(--tm-font);color:var(--tm-text-muted);margin-top:3px">
+    Museum · 2.1 km from hotel</p>
+  <div style="display:flex;gap:6px;margin:10px 0 12px">
+    <span class="tm-chip tm-chip--peach">2 h</span><span class="tm-chip tm-chip--warn">Booking required</span></div>
+  <button class="tm-btn tm-btn--primary tm-btn--block">Add to trip</button>
+  <p class="tm-attrib" style="text-align:center;margin-top:9px">© OpenStreetMap contributors</p></div></div></div></div></div>
+<p class="note">Adding a place puts it in the <strong>wishlist</strong> — <code>day_index</code> stays null. Nothing is assigned to a day at capture time: the traveller has no basis to decide yet, and the planner would overrule them anyway. Distance is from the <em>hotel</em>, not the device — most people add places from the sofa, weeks before they fly, where “400 m away” would be meaningless.<br><br>The map keeps the sheet <em>over</em> the map rather than pushing to a detail screen: losing sight of where a place sits is the one thing this view exists to prevent. Pins encode <strong>state, not category</strong> — terracotta selected, green already added, grey not yet, dark the hotel — because when you are scanning for “what have I already got”, state is the question. OpenStreetMap attribution appears in both views because Nominatim’s terms require it, not because it looks tidy.</p>
+</body></html>
