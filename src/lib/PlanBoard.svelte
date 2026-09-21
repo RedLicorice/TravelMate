@@ -1,7 +1,6 @@
 <script lang="ts">
 	import type { Day } from '$lib/trip/days';
 	import type { PlannedDay, PlannedStop } from '$lib/plan/planner';
-	import { toHours, type MealWindows } from '$lib/plan/meals';
 	import type { createDrag } from '$lib/dnd.svelte';
 	import { stack } from '$lib/board';
 
@@ -9,7 +8,6 @@
 		days: Day[];
 		planned: PlannedDay[];
 		timezone: string;
-		mealWindows: MealWindows;
 		dayColor: (index: number) => string;
 		drag: ReturnType<typeof createDrag>;
 		pinned?: Set<string>;
@@ -23,7 +21,6 @@
 		days,
 		planned,
 		timezone,
-		mealWindows,
 		dayColor,
 		drag,
 		pinned = new Set<string>(),
@@ -205,14 +202,6 @@
 		new Intl.DateTimeFormat(undefined, { timeZone: timezone, weekday: 'short', day: 'numeric' })
 			.format(new Date(`${iso}T12:00:00Z`));
 
-	/** Meal bands, shaded so a gap at 13:00 reads as lunch rather than dead air. */
-	const bands = $derived(
-		(['lunch', 'dinner'] as const).map((name) => ({
-			name,
-			from: toHours(mealWindows[name].from) * 60,
-			to: toHours(mealWindows[name].to) * 60
-		}))
-	);
 </script>
 
 
@@ -336,16 +325,6 @@
 							background:var(--tm-surface-2);opacity:0.55"
 						></div>
 
-						{#each bands as band}
-							<div
-								title={band.name}
-								style="position:absolute;left:0;right:0;top:{top(band.from)}px;
-								height:{(band.to - band.from) * PX_PER_MIN}px;
-								background:var(--tm-butter-soft);
-								border-top:1px solid var(--tm-butter);border-bottom:1px solid var(--tm-butter)"
-							></div>
-						{/each}
-
 						{#each hours as h}
 							<div
 								style="position:absolute;left:0;right:0;top:{top(h)}px;height:1px;
@@ -375,13 +354,8 @@
 	<p class="tm-hint px-4 py-2" style="border-top: 1px solid var(--tm-border)">
 		<span
 			style="display:inline-block;width:10px;height:10px;border-radius:2px;
-			background:var(--tm-butter-soft);border:1px solid var(--tm-butter);vertical-align:-1px"
-		></span>
-		mealtimes ·
-		<span
-			style="display:inline-block;width:10px;height:10px;border-radius:2px;
 			background:var(--tm-surface-2);
-			border:1px solid var(--tm-border);vertical-align:-1px"
+			border-left:3px solid var(--tm-border-strong);vertical-align:-1px"
 		></span>
 		travelling ·
 		<span

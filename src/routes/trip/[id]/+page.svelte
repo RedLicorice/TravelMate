@@ -767,7 +767,6 @@
 						{days}
 						planned={result.days}
 						timezone={row.timezone}
-						mealWindows={agreed.windows}
 						{dayColor}
 						{drag}
 						pinned={pinnedIds}
