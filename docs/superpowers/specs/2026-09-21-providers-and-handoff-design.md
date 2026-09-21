@@ -245,12 +245,16 @@ cannot -- real times, pins, resolved transit legs and warnings.
 - **Drag edits persist as times**, not only as order.
 - **Offline is real.** A stored plan renders with no computation.
 
-### The cost: staleness
+### Staleness is already how this works
 
-A stored plan can fall behind the wishlist. Adding a place changes nothing
-until Regenerate is tapped. That must be visible -- "3 places added since this
-plan was made", with the button beside it -- or the app looks like it is
-ignoring the traveller.
+A newly added place already sits unplaced until Regenerate is tapped -- the
+planner reports it as `not-planned-yet` and the wishlist says "Added since the
+last plan". Storing the plan does not introduce staleness; it extends the same
+rule to every input, so changing a duration, a rating or the dates also leaves
+the plan behind until it is regenerated.
+
+What it does change is that this now needs saying once, plainly, rather than
+per stop: "3 changes since this plan was made", with the button beside it.
 
 ## The read path
 
