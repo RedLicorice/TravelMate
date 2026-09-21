@@ -164,6 +164,13 @@ export function tripDays(trip: Trip): Day[] {
 		kind: 'terminal'
 	});
 
+	/** 'HH:MM' a number of minutes either side of another 'HH:MM'. */
+	const shift = (clock: string, minutes: number) => {
+		const [h, m] = clock.split(':').map(Number);
+		const at = (((h * 60 + m + minutes) % 1440) + 1440) % 1440;
+		return `${String(Math.floor(at / 60)).padStart(2, '0')}:${String(at % 60).padStart(2, '0')}`;
+	};
+
 	/** 'HH:MM' out of a `YYYY-MM-DDTHH:MM` the traveller typed. */
 	const clockOf = (local: string | null) => local?.split('T')[1]?.slice(0, 5) ?? null;
 
@@ -241,8 +248,14 @@ export function tripDays(trip: Trip): Day[] {
 				fixedStart.push(...journey);
 				// Passport queues and baggage reclaim happen at the airport the
 				// traveller landed at, which is the last card of the journey.
+				// Its stated time is the landing, and the queue runs on from it.
 				const landed = fixedStart[fixedStart.length - 1];
-				if (landed?.kind === 'terminal') landed.dwellMin = trip.arrivalBufferMin;
+				if (landed?.kind === 'terminal') {
+					landed.dwellMin = trip.arrivalBufferMin;
+					if (landed.timeLabel && trip.arrivalBufferMin > 0) {
+						landed.timeLabel = `${landed.timeLabel}–${shift(landed.timeLabel, trip.arrivalBufferMin)}`;
+					}
+				}
 			} else {
 				fixedStart.push(placeStop(trip.arrivalPoint, trip.arrivalBufferMin));
 			}
@@ -262,14 +275,22 @@ export function tripDays(trip: Trip): Day[] {
 
 		const fixedEnd: Waypoint[] = [];
 		if (i === lastIndex && trip.departurePoint) {
-			if (trip.bagDropMin > 0) fixedEnd.push(choreStop('Collect the bags', trip.bagDropMin));
+			// Back to the hotel, then the bags. They happen in that order.
 			fixedEnd.push(hotelStop(0));
+			if (trip.bagDropMin > 0) fixedEnd.push(choreStop('Collect the bags', trip.bagDropMin));
 			const journey = journeyStops(trip.departureLegs, trip.departurePoint.at);
 			if (journey.length) {
 				// Checking in happens at the airport they leave from, which is
-				// the first card of the journey out.
+				// the first card of the journey out. Its stated time is when the
+				// flight goes, and the wait runs up to that rather than on from
+				// it -- so the card ends on its label, it does not start there.
 				const [leaving] = journey;
-				if (leaving?.kind === 'terminal') leaving.dwellMin = trip.departureBufferMin;
+				if (leaving?.kind === 'terminal') {
+					leaving.dwellMin = trip.departureBufferMin;
+					if (leaving.timeLabel && trip.departureBufferMin > 0) {
+						leaving.timeLabel = `${shift(leaving.timeLabel, -trip.departureBufferMin)}–${leaving.timeLabel}`;
+					}
+				}
 				fixedEnd.push(...journey);
 			} else {
 				fixedEnd.push(placeStop(trip.departurePoint, trip.departureBufferMin));

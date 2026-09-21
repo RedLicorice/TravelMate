@@ -85,11 +85,11 @@ describe('tripDays', () => {
 		const last = tripDays(base).at(-1)!;
 		expect(last.fixedStart.map((w) => w.name)).toEqual(['Hotel Artemide']);
 		expect(last.fixedEnd.map((w) => w.name)).toEqual([
-			'Collect the bags',
 			'Hotel Artemide',
+			'Collect the bags',
 			'Fiumicino'
 		]);
-		expect(last.fixedEnd[0].dwellMin).toBe(30);
+		expect(last.fixedEnd[1].dwellMin).toBe(30);
 		// Checking in is time spent in the terminal, not a clamp.
 		expect(last.fixedEnd[2].dwellMin).toBe(base.departureBufferMin);
 	});
@@ -212,8 +212,8 @@ describe('the journey shows on the plan', () => {
 		const days = tripDays(withLegs());
 		const last = days[days.length - 1];
 		expect(last.fixedEnd.map((w) => w.name)).toEqual([
-			'Collect the bags',
 			base.hotelName,
+			'Collect the bags',
 			'Stansted',
 			'FR 8013',
 			'Ciampino'
@@ -298,7 +298,8 @@ describe('journey cards carry the times off the ticket', () => {
 		expect(first.fixedStart.map((w) => w.timeLabel ?? null)).toEqual([
 			'08:00',
 			'08:00–11:10',
-			'11:10',
+			// Landing at 11:10 and 45 minutes to get out of the airport.
+			'11:10–11:55',
 			null, // the hotel runs on the trip's own clock
 			null // and so do the bags
 		]);
@@ -362,5 +363,76 @@ describe('the morning is accounted for', () => {
 
 	it('says nothing when nobody has set a wake time', () => {
 		expect(tripDays(base)[1].fixedStart.map((w) => w.name)).toEqual(['Hotel Artemide']);
+	});
+});
+
+describe('the departure day', () => {
+	const leaving = (): Trip => ({
+		...base,
+		arrivalPoint: null,
+		arrivalLegs: [],
+		departurePoint: { name: 'Stansted', at: { lat: 51.886, lng: 0.2389 } },
+		departureBufferMin: 120,
+		bagDropMin: 30,
+		departureLegs: [
+			{
+				from: { name: 'Stansted', lat: 51.886, lng: 0.2389, kind: 'airport' },
+				to: { name: 'Ciampino', lat: 41.8, lng: 12.6, kind: 'airport' },
+				service: 'FR 8013',
+				bookingRef: null,
+				departLocal: '2026-04-13T06:55',
+				arriveLocal: '2026-04-13T09:50'
+			}
+		]
+	});
+
+	it('goes back to the hotel and then collects the bags, in that order', () => {
+		const last = tripDays(leaving()).at(-1)!;
+		expect(last.fixedEnd.slice(0, 2).map((w) => w.name)).toEqual([
+			'Hotel Artemide',
+			'Collect the bags'
+		]);
+	});
+
+	it('runs check-in up to the flight, not on from it', () => {
+		// Two hours before a 06:55 departure is 04:55. Showing 06:55-08:55 had
+		// the traveller checking in after the plane had gone.
+		const last = tripDays(leaving()).at(-1)!;
+		const airport = last.fixedEnd.find((w) => w.name === 'Stansted')!;
+		expect(airport.timeLabel).toBe('04:55–06:55');
+		expect(airport.dwellMin).toBe(120);
+	});
+
+	it('leaves the service itself reading as the flight', () => {
+		const last = tripDays(leaving()).at(-1)!;
+		const flight = last.fixedEnd.find((w) => w.kind === 'service')!;
+		expect(flight.timeLabel).toBe('06:55–09:50');
+	});
+
+	it('runs the arrival queue on from the landing, the mirror of check-in', () => {
+		const t: Trip = {
+			...base,
+			arrivalPoint: { name: 'Stansted', at: { lat: 51.886, lng: 0.2389 } },
+			arrivalBufferMin: 45,
+			arrivalLegs: [
+				{
+					from: { name: 'Ciampino', lat: 41.8, lng: 12.6, kind: 'airport' },
+					to: { name: 'Stansted', lat: 51.886, lng: 0.2389, kind: 'airport' },
+					service: 'FR 8012',
+					bookingRef: null,
+					departLocal: '2026-04-10T13:00',
+					arriveLocal: '2026-04-10T15:00'
+				}
+			]
+		};
+		const airport = tripDays(t)[0].fixedStart.find((w) => w.name === 'Stansted')!;
+		expect(airport.timeLabel).toBe('15:00–15:45');
+	});
+
+	it('crosses midnight backwards without a negative clock', () => {
+		const t = leaving();
+		t.departureLegs[0].departLocal = '2026-04-13T00:30';
+		const airport = tripDays(t).at(-1)!.fixedEnd.find((w) => w.name === 'Stansted')!;
+		expect(airport.timeLabel).toBe('22:30–00:30');
 	});
 });
