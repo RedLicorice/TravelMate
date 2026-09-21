@@ -483,22 +483,39 @@ function walkClock(
 		push(w.name, w.at, w.dwellMin, true, null, null, w.kind === 'terminal', null, w.kind);
 	}
 
-	const tailMin = day.fixedEnd.reduce((s, w) => s + w.dwellMin, 0);
+	/**
+	 * Minutes between leaving `from` and being done with the day's closing
+	 * anchors -- the legs as well as the dwell.
+	 *
+	 * Summing only the dwell was wrong in the case that matters most: on a
+	 * departure day the closing anchors are the hotel and then the airport, and
+	 * the leg between them is the whole transfer. Leaving it out let the
+	 * planner fill the day right up to check-in and then spend ninety minutes
+	 * getting to Stansted, arriving after the desk had closed.
+	 */
+	const tailCost = (from: LatLng) => {
+		let point = from;
+		let fromTerminal = false;
+		let total = 0;
+		for (const w of day.fixedEnd) {
+			const terminal = w.kind === 'terminal' || fromTerminal;
+			total += leg(point, w.at, allowedModes, terminal, travel).minutes + w.dwellMin;
+			point = w.at;
+			fromTerminal = w.kind === 'terminal';
+		}
+		return total;
+	};
 	for (const p of pois) {
 		// Would this stop, plus getting to the day's final anchor, run past the
 		// end of the day? If so it does not fit -- and neither will anything
 		// after it, since the route is ordered.
 		const probe = leg(cursor ?? at(p), at(p), allowedModes, cursorTerminal, travel);
 		const finish = clock + (cursor ? probe.minutes : 0) * 60_000 + p.durationMin * 60_000;
-		// The walk home starts from wherever the stop lets the traveller out --
+		// The way home starts from wherever the stop lets the traveller out --
 		// measuring it from the entrance would price a cable car's whole span
 		// at zero.
 		const leaves = p.exitAt ?? at(p);
-		const home = day.fixedEnd[0]
-			? leg(leaves, day.fixedEnd[0].at, allowedModes, day.fixedEnd[0].kind === 'terminal', travel)
-					.minutes
-			: 0;
-		if (finish + (home + tailMin) * 60_000 > day.end.getTime()) {
+		if (finish + tailCost(leaves) * 60_000 > day.end.getTime()) {
 			overflowed.push(p);
 			continue;
 		}
