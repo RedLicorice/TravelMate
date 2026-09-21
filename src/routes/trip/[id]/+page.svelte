@@ -573,12 +573,49 @@
 		}
 	}
 
+	/**
+	 * Put a place into the slot.
+	 *
+	 * One that is already on the plan is copied, not moved. The control says
+	 * Add, so it adds: taking Monday's coffee away to give Tuesday one is not
+	 * what Add means. Moving is what dragging is for.
+	 */
 	async function placeHere(poiId: string) {
 		if (!slot) return;
 		const target = slot;
+		const source = pois.find((p) => p.id === poiId);
 		slot = null;
 		busy = true;
-		await placeInto(poiId, target);
+
+		if (!source || !dayOfPoi.has(poiId)) {
+			await placeInto(poiId, target);
+			return;
+		}
+
+		try {
+			const copy = await addPoi(tripId, {
+				name: source.name,
+				label: '',
+				lat: source.lat,
+				lng: source.lng,
+				category: source.category,
+				durationMin: source.duration_min,
+				openingHours: source.opening_hours,
+				website: source.website,
+				phone: source.phone,
+				// A second helping of a chain still answers with whichever
+				// branch is nearest on the day it is had.
+				branches: source.any_branch ? source.branches : undefined,
+				// Not the same OSM row twice: a copy is deliberately its own
+				// place, and the uniqueness index is there for the first one.
+				osmId: null
+			});
+			pois = [...pois, copy];
+			await placeInto(copy.id, target);
+		} catch (e) {
+			error = (e as Error).message;
+			busy = false;
+		}
 	}
 
 	async function placeInto(poiId: string, target: { day: number; before: string | null }) {
@@ -1298,7 +1335,10 @@
 									<span class="tm-result__meta" style="display:block">
 										{p.category ?? 'place'} · {p.duration_min} min
 										{#if dayOfPoi.has(p.id)}
-											· on {dayLabel(days[dayOfPoi.get(p.id)!].date, row.timezone)}
+											· another, as well as {dayLabel(
+												days[dayOfPoi.get(p.id)!].date,
+												row.timezone
+											)}
 										{/if}
 									</span>
 								</span>
