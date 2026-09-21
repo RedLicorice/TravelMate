@@ -234,7 +234,14 @@ export function tripDays(trip: Trip): Day[] {
 
 	return dates.map((date, i) => {
 		const windowStart = zonedInstant(date, trip.dayStart, tz);
-		const windowEnd = zonedInstant(date, trip.dayEnd, tz);
+		// A day that ends before it starts ends tomorrow: 02:00 means two in the
+		// morning, after a long evening, not two o'clock fourteen hours before
+		// the traveller got up.
+		const sameDayEnd = zonedInstant(date, trip.dayEnd, tz);
+		const windowEnd =
+			sameDayEnd.getTime() > windowStart.getTime()
+				? sameDayEnd
+				: new Date(sameDayEnd.getTime() + DAY);
 
 		// Getting out of the airport and checking in are real time spent in a
 		// real place, so they are dwell on the terminal cards rather than a

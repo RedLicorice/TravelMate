@@ -47,7 +47,7 @@ const toRow = (tripId: string, dayIndex: number, orderIndex: number, s: PlannedS
 	starts_at: s.arrive.toISOString(),
 	ends_at: s.depart.toISOString(),
 	duration_min: s.durationMin,
-	pinned: false,
+	pinned: s.pinned ?? false,
 	leg_mode: s.legIn?.mode ?? null,
 	leg_minutes: s.legIn?.minutes ?? null,
 	leg_km: s.legIn?.km ?? null,

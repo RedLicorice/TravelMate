@@ -160,23 +160,23 @@ describe('cardTime', () => {
 		expect(cardTime('19:35', '09:00', 45)).toBe('19:35–20:20');
 	});
 
-	it('leaves a stated moment alone when it takes no time', () => {
-		expect(cardTime('17:25', '09:00', 0)).toBe('17:25');
+	it('still says both ends when a stated moment takes no time', () => {
+		expect(cardTime('17:25', '09:00', 0)).toBe('17:25–17:25');
 	});
 
 	it('derives the range from the clock when there is no label', () => {
 		expect(cardTime(null, '09:00', 90)).toBe('09:00–10:30');
 	});
 
-	it('gives just the clock for a card with no length', () => {
-		expect(cardTime(null, '09:00', 0)).toBe('09:00');
+	it('says both ends for a card with no length', () => {
+		expect(cardTime(null, '09:00', 0)).toBe('09:00–09:00');
 	});
 
 	it('rolls past midnight without printing hour 24', () => {
 		expect(cardTime(null, '23:30', 60)).toBe('23:30–00:30');
 	});
 
-	it('passes a label it cannot read straight through', () => {
-		expect(cardTime('your journey', '09:00', 0)).toBe('09:00');
+	it('falls back to the clock for a label it cannot read', () => {
+		expect(cardTime('your journey', '09:00', 0)).toBe('09:00–09:00');
 	});
 });

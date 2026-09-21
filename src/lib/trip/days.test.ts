@@ -546,3 +546,24 @@ describe('a terminal you connect through', () => {
 		expect(card(t, 'Reggio Calabria').timeLabel).toBe('16:20–16:50');
 	});
 });
+
+describe('a day that runs past midnight', () => {
+	const nightOwl: Trip = { ...base, dayStart: '09:00', dayEnd: '02:00' };
+
+	it('ends at two in the morning, not at two in the afternoon', () => {
+		const [, second] = tripDays(nightOwl);
+		expect(second.end.getTime()).toBeGreaterThan(second.start.getTime());
+		expect(hhmm(second.end, base.timezone)).toBe('02:00');
+	});
+
+	it('gives the day seventeen hours, not a negative one', () => {
+		const [, second] = tripDays(nightOwl);
+		expect(second.usableMin).toBe(17 * 60);
+	});
+
+	it('leaves an ordinary day alone', () => {
+		const [, second] = tripDays(base);
+		expect(hhmm(second.end, base.timezone)).toBe('19:00');
+		expect(second.usableMin).toBe(10 * 60);
+	});
+});

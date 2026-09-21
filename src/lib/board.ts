@@ -72,5 +72,9 @@ export function cardTime(
 
 	const from = stated?.from ?? spanOf(clock)?.from;
 	if (from === undefined) return clock;
-	return durationMin > 0 ? `${hhmmOf(from)}–${hhmmOf(from + durationMin)}` : hhmmOf(from);
+
+	// Both ends, always. A card showing one time says nothing about how long
+	// it lasts, and a stop with no length is still a moment that begins and
+	// ends -- reading 09:00–09:00 is how the plan says "this takes no time".
+	return `${hhmmOf(from)}–${hhmmOf(from + durationMin)}`;
 }

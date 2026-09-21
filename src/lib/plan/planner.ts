@@ -95,6 +95,8 @@ export type PlannedStop = {
 	warnings: Warning[];
 	/** Where the next leg departs from, when that is not `at`. */
 	exitAt?: LatLng | null;
+	/** Held by the traveller. Written so the stored plan can say so itself. */
+	pinned?: boolean;
 };
 
 export type PlannedDay = {
@@ -197,7 +199,7 @@ export const BLOCK_CATEGORY = 'block';
  * trip. A stored plan older than this re-times itself when the trip is opened,
  * so the traveller never has to tap Replan because the app changed.
  */
-export const PLANNER_VERSION = 1;
+export const PLANNER_VERSION = 2;
 
 /** The default when nobody has rated a stop: wanting it averagely. */
 const NEUTRAL_PRIORITY = 3;
@@ -392,7 +394,22 @@ export function orderDay(
 	timezone: string,
 	curves: CrowdCurves,
 	slots: MealSlot[],
-	travel: TravelTable
+	travel: TravelTable,
+	/**
+	 * The rest of the day as it will actually be walked: the restaurants the
+	 * meal pass may seat, what the traveller has said about the slots, and
+	 * which day this is.
+	 *
+	 * Without these, 2-opt scored a day with no meals in it at all and then
+	 * the real walk seated them -- so the order was chosen against one day and
+	 * the overflow fell out of another.
+	 */
+	rest: {
+		diners?: PlanPoi[];
+		says?: Map<string, MealSlotRow>;
+		dayIndex?: number;
+		picked?: Map<string, PlanPoi>;
+	} = {}
 ): PlanPoi[] {
 	if (pois.length < 2) return pois;
 
@@ -420,10 +437,19 @@ export function orderDay(
 	const held = new Map<number, PlanPoi>();
 	let nextFree = 0;
 	pins.forEach((pin, rank) => {
-		const wanted = pin.pinnedAt ? rank : (pin.orderIndex ?? rank);
+		// Its own place in the day, not its rank among the pins. Taking the rank
+		// put a single pinned stop at the front of the day and, since 2-opt
+		// cannot cross a pin, left everything else behind it to be dropped --
+		// and since every drag records a time, every dragged card did this.
+		// The times still order the pins against each other, through nextFree.
+		const wanted = pin.orderIndex ?? rank;
 		let slot = Math.min(Math.max(wanted, nextFree), pois.length - 1);
 		while (held.has(slot) && slot < pois.length - 1) slot++;
-		while (held.has(slot) && slot > 0) slot--;
+		// Only ever forwards. Falling back to an earlier slot put a pin before
+		// one it comes after -- two pins stored at the same index came out in
+		// the wrong order however clearly their clocks disagreed. A pin with
+		// nowhere left is appended below, in time order, which is right.
+		if (held.has(slot)) return;
 		held.set(slot, pin);
 		nextFree = slot + 1;
 	});
@@ -458,7 +484,19 @@ export function orderDay(
 	// is what lets a museum move out of its 11-15 peak, and what stops it moving
 	// when the detour costs more than the queue.
 	const score = (order: PlanPoi[]) => {
-		const sim = walkClock(order, day, allowedModes, timezone, curves, slots, travel);
+		const sim = walkClock(
+			order,
+			day,
+			allowedModes,
+			timezone,
+			curves,
+			slots,
+			travel,
+			rest.diners ?? [],
+			rest.says ?? new Map(),
+			rest.dayIndex ?? 0,
+			rest.picked ?? new Map()
+		);
 		return (
 			sim.travelMin +
 			CROWD_WEIGHT_MIN * sim.crowdSum +
@@ -597,8 +635,13 @@ function walkClock(
 		// A pinned stop happens when the traveller said it happens. Being early
 		// is waiting; being late means the day is over-full, and the warning
 		// below says so rather than the plan quietly sliding the pin.
+		//
+		// Never backwards. Setting the clock to a moment already past rewound
+		// the day: the stop was timed before the one it follows, everything
+		// after it overlapped, and the plan of record showed times that ran
+		// the wrong way.
 		const late = heldAt !== null && clock > heldAt;
-		if (heldAt !== null) clock = heldAt;
+		if (heldAt !== null) clock = Math.max(clock, heldAt);
 		let arrive = new Date(clock);
 
 		// A meal reached before its slot waits for it rather than being eaten at
@@ -649,6 +692,7 @@ function walkClock(
 		stops.push({
 			poiId,
 			name,
+			pinned: heldAt !== null,
 			at: point,
 			arrive,
 			depart,
@@ -817,11 +861,19 @@ function walkClock(
 				? (cursor ?? at(p))
 				: nearestBranch(p, cursor ?? at(p), haversineKm);
 		const held = p.pinned && p.pinnedAt ? new Date(p.pinnedAt).getTime() : null;
-		const probe = leg(cursor ?? where, where, allowedModes, cursorTerminal, travel);
-		const finish = clock + (cursor ? probe.minutes : 0) * 60_000 + p.durationMin * 60_000;
-		// Anything whose window opens before this stop would end. Offered here so
-		// the day fills in order rather than saving every meal until the end.
-		offerMeals(finish);
+		// Anything whose window opens before this stop would end. Offered here
+		// so the day fills in order rather than saving every meal until the end.
+		//
+		// Measured, then offered, then measured again. The meal pass moves the
+		// clock, and testing the stop against a reading taken before it let a
+		// stop run a whole meal past the end of the day with nothing said --
+		// on a departure day, past the airport's check-in desk.
+		const reach = () => {
+			const leg_ = leg(cursor ?? where, where, allowedModes, cursorTerminal, travel);
+			return clock + (cursor ? leg_.minutes : 0) * 60_000 + p.durationMin * 60_000;
+		};
+		offerMeals(reach());
+		const finish = reach();
 
 		// The way home starts from wherever the stop lets the traveller out --
 		// measuring it from the entrance would price a cable car's whole span
@@ -830,7 +882,10 @@ function walkClock(
 		// A stop the traveller pinned is not the planner's to drop. They put it
 		// there; it goes in, and if the day runs long the plan says so rather
 		// than quietly deciding for them.
-		const runsLate = finish + tailCost(leaves) * 60_000 > day.end.getTime();
+		// A pin waits for its moment, so its real end is that moment plus its
+		// length -- not where the route happened to arrive.
+		const ends = held !== null ? Math.max(finish, held + p.durationMin * 60_000) : finish;
+		const runsLate = ends + tailCost(leaves) * 60_000 > day.end.getTime();
 		if (runsLate && !p.pinned) {
 			overflowed.push(p);
 			continue;
@@ -968,8 +1023,23 @@ export function replan(input: PlanInput): PlanResult {
 
 	// Price each day's anchors by scheduling it empty: that run already applies
 	// the real travel table and mode chooser to the transfers.
+	//
+	// With no meals. An empty day still seats breakfast, lunch and dinner, so
+	// measuring to the end of one priced a 09:00-22:00 day at 690 minutes of
+	// anchors and left every day a budget of about an hour -- which meant
+	// rebalancing never ran at all, and a full day never shed anything to an
+	// empty one. Every test fixture ends at 19:00, where dinner does not fit,
+	// which is why nothing caught it.
 	const anchorMin = input.days.map((day) => {
-		const stops = walkClock([], day, input.allowedModes, input.timezone, curves, slots, travel).stops;
+		const stops = walkClock(
+			[],
+			day,
+			input.allowedModes,
+			input.timezone,
+			curves,
+			[],
+			travel
+		).stops;
 		const last = stops[stops.length - 1];
 		return last ? Math.max(0, (last.depart.getTime() - day.start.getTime()) / 60_000) : 0;
 	});
@@ -992,6 +1062,16 @@ export function replan(input: PlanInput): PlanResult {
 		// Sorted most-wanted-first so that when the day runs out of hours, it is
 		// the least wanted stops that fall off the end rather than whichever
 		// happened to be furthest along the route.
+		// The slots as the real walk will see them, so 2-opt is scoring the day
+		// that is actually going to happen.
+		const says = input.meals ?? new Map();
+		const picked = new Map<string, PlanPoi>();
+		for (const meal of MEAL_NAMES) {
+			const id = says.get(mealKey(dayIndex, meal))?.poi_id;
+			const chosen = id ? input.pois.find((p) => p.id === id) : undefined;
+			if (chosen) picked.set(meal, chosen);
+		}
+
 		const ordered = orderDay(
 			route.sort(byWant),
 			input.days[dayIndex],
@@ -999,14 +1079,56 @@ export function replan(input: PlanInput): PlanResult {
 			input.timezone,
 			curves,
 			slots,
-			travel
+			travel,
+			{ diners: seatable, says, dayIndex, picked }
 		);
 		ordered.forEach((p, orderIndex) => assigned.push({ ...p, dayIndex, orderIndex }));
 		// The meal pass places these; they only need to belong to the day.
 		seatable.forEach((p, i) => assigned.push({ ...p, dayIndex, orderIndex: ordered.length + i }));
 	});
 
-	const result = schedule({ ...input, pois: assigned, curves, travel });
+	let placed = assigned;
+	let result = schedule({ ...input, pois: placed, curves, travel });
+
+	// Budgets are an estimate -- minutes of visiting, with a quarter held back
+	// for travel -- and a cluster spread across a city spends more on travel
+	// than that. When the estimate is wrong the day sheds its last stop, and
+	// nothing was checking whether another day could have taken it.
+	//
+	// So: ask the day that actually got scheduled. Anything it dropped is
+	// offered to whichever day has the most room left, and the day is walked
+	// again. Bounded, and it stops as soon as a pass places nothing, because a
+	// stop that fits nowhere has to be allowed to stay unplaced.
+	for (let pass = 0; pass < 3; pass++) {
+		const dropped = result.unplaced.filter((u) => u.reason === 'day-full' && !u.poi.pinned);
+		if (!dropped.length) break;
+
+		const used = new Map<number, number>();
+		for (const day of result.days) {
+			const end = day.stops[day.stops.length - 1]?.depart.getTime();
+			used.set(day.index, end ? end - input.days[day.index].start.getTime() : 0);
+		}
+		const roomOn = (i: number) =>
+			input.days[i].end.getTime() - input.days[i].start.getTime() - (used.get(i) ?? 0);
+
+		let moved = false;
+		for (const { poi } of dropped) {
+			const target = input.days
+				.map((_, i) => i)
+				.filter((i) => i !== poi.dayIndex && input.days[i].usableMin > 0)
+				.sort((a, b) => roomOn(b) - roomOn(a))[0];
+			if (target === undefined || roomOn(target) < poi.durationMin * 60_000) continue;
+
+			placed = placed.map((p) =>
+				p.id === poi.id ? { ...p, dayIndex: target, orderIndex: 999 } : p
+			);
+			used.set(target, (used.get(target) ?? 0) + poi.durationMin * 60_000);
+			moved = true;
+		}
+		if (!moved) break;
+		result = schedule({ ...input, pois: placed, curves, travel });
+	}
+
 	return {
 		days: result.days,
 		unplaced: [

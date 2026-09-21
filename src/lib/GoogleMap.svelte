@@ -109,6 +109,22 @@
 	 * are the plan's own language and a map that ignores them is a map of
 	 * somewhere else.
 	 */
+	/**
+	 * A colour Google will accept.
+	 *
+	 * The day colours are custom properties, and a pin is a DOM element so the
+	 * browser resolves them for free. A polyline is not: Google parses the
+	 * colour itself, does not know what var(--tm-day-1) means, and draws black.
+	 */
+	function resolved(colour: string): string {
+		const named = /^var\((--[^),]+)/.exec(colour.trim());
+		if (!named) return colour;
+		const value = getComputedStyle(document.documentElement)
+			.getPropertyValue(named[1])
+			.trim();
+		return value || '#888';
+	}
+
 	function pinFor(m: MapMarker): HTMLElement {
 		const el = document.createElement('div');
 		el.className = 'tm-pin-el';
@@ -143,7 +159,7 @@
 					new google.maps.Polyline({
 						map,
 						path: r.points,
-						strokeColor: r.color,
+						strokeColor: resolved(r.color),
 						strokeOpacity: 0.85,
 						strokeWeight: 4
 					})
