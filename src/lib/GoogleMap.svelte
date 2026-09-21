@@ -57,6 +57,7 @@
 	let ready = $state(false);
 	/** No map to show: offline, blocked, or the script would not load. */
 	let down = $state(false);
+	let reason = $state<string | null>(null);
 
 	/**
 	 * Load the Maps script once for the whole app, however many maps are on
@@ -68,13 +69,23 @@
 		if (typeof window.google?.maps?.importLibrary === 'function') return Promise.resolve();
 		if (booting) return booting;
 		booting = new Promise((resolve, reject) => {
+			if (!PUBLIC_GOOGLE_MAPS_BROWSER_KEY) {
+				reject(new Error('No PUBLIC_GOOGLE_MAPS_BROWSER_KEY in this build'));
+				return;
+			}
+			// Google's own error channel: it reports a bad key or a referrer it
+			// will not serve here rather than in the script's onerror.
+			(window as unknown as Record<string, unknown>).gm_authFailure = () => {
+				reject(new Error('Google refused the key for this address'));
+			};
 			const tag = document.createElement('script');
 			tag.src =
 				`https://maps.googleapis.com/maps/api/js?key=${PUBLIC_GOOGLE_MAPS_BROWSER_KEY}` +
 				'&loading=async&v=weekly';
 			tag.async = true;
 			tag.onload = () => resolve();
-			tag.onerror = () => reject(new Error('Google Maps failed to load'));
+			tag.onerror = () =>
+				reject(new Error('maps.googleapis.com did not load (offline, or blocked here)'));
 			document.head.appendChild(tag);
 		});
 		return booting;
@@ -149,10 +160,15 @@
 		let api;
 		try {
 			api = await loadMaps();
-		} catch {
+		} catch (e) {
 			// Offline, blocked, or Google is having a bad day. The screen says
 			// so and everything else on it goes on working: a plan is worth
 			// more than the map of it, and a traveller reads this on a train.
+			//
+			// Reported rather than swallowed: 'no map' with no reason is the
+			// hardest kind of bug to be told about.
+			reason = e instanceof Error ? e.message : String(e);
+			console.error('[map]', reason);
 			down = true;
 			return;
 		}
@@ -219,6 +235,7 @@
 			{markers.length}
 			{markers.length === 1 ? 'place' : 'places'} here. The plan works without the map.
 		</p>
+		{#if reason}<p class="tm-hint mt-2">{reason}</p>{/if}
 	</div>
 {:else}
 	<div bind:this={host} style="width:100%;height:{height}"></div>
