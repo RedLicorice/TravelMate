@@ -135,3 +135,36 @@ describe('an exit point on a stored stop', () => {
 		expect(day.stops[0].exitAt).toBeNull();
 	});
 });
+
+describe('a meal the plan supplied itself', () => {
+	it('survives being stored and read back', () => {
+		const [only] = toPlannedDays(
+			[
+				row({
+					day_index: 0,
+					order_index: 0,
+					anchor: true,
+					anchor_kind: 'meal',
+					name: 'Lunch',
+					duration_min: 60,
+					poi_id: null
+				})
+			],
+			[aDay('2026-10-03')]
+		);
+		const lunch = only.stops[0];
+		expect(lunch.name).toBe('Lunch');
+		expect(lunch.anchorKind).toBe('meal');
+		expect(lunch.durationMin).toBe(60);
+	});
+
+	it('is not mistaken for the hotel when the day has no waypoint by that name', () => {
+		// The kind is stored, so the fallback that guesses from the day's own
+		// anchors must not overwrite it.
+		const [only] = toPlannedDays(
+			[row({ day_index: 0, order_index: 0, anchor: true, anchor_kind: 'meal', name: 'Dinner' })],
+			[aDay('2026-10-03', [{ name: 'Hotel', at: { lat: 0, lng: 0 }, dwellMin: 0, kind: 'hotel' }])]
+		);
+		expect(only.stops[0].anchorKind).toBe('meal');
+	});
+});
