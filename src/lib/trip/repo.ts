@@ -2,6 +2,7 @@ import { supabase } from '$lib/supabase';
 import type { BBox } from '$lib/poi';
 import type { Place, Trip } from './days';
 import type { PoiRow } from './pois';
+import type { PlanStopRow } from './plan';
 
 export type TripRow = {
 	id: string;
@@ -273,11 +274,11 @@ export async function setShareToken(id: string, token: string | null): Promise<v
  */
 export async function getSharedTrip(
 	token: string
-): Promise<{ trip: TripRow; pois: PoiRow[] } | null> {
+): Promise<{ trip: TripRow; pois: PoiRow[]; plan: PlanStopRow[] } | null> {
 	const { data, error } = await supabase.rpc('get_shared_trip', { token });
 	if (error) throw new Error(error.message);
 	if (!data?.trip) return null;
-	return data as { trip: TripRow; pois: PoiRow[] };
+	return data as { trip: TripRow; pois: PoiRow[]; plan: PlanStopRow[] };
 }
 
 /**

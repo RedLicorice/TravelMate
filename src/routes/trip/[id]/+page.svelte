@@ -15,11 +15,21 @@
 	} from '$lib/trip/repo';
 	import { listPois, saveAssignments, toPlanPoi, type PoiRow } from '$lib/trip/pois';
 	import { tripDays, type Day } from '$lib/trip/days';
-	import { replan, schedule, REASON_TEXT, type PlanResult, type UnplacedReason } from '$lib/plan/planner';
+	import {
+		replan,
+		schedule,
+		REASON_TEXT,
+		type PlanResult,
+		type PlannedDay,
+		type Unplaced,
+		type UnplacedReason
+	} from '$lib/plan/planner';
+	import { loadPlan, savePlan, staleCount, toPlannedDays, type PlanStopRow } from '$lib/trip/plan';
 	import { effectiveDayStart, isMeal, latestReady, tightest, type MealWindows } from '$lib/plan/meals';
 	import { resolveCurves, type CrowdCurves } from '$lib/plan/crowd';
 	import { routeShape } from '$lib/plan/route';
 	import { firstOf, resolveTravel, type TravelTable } from '$lib/plan/travel';
+	import { routedTable } from '$lib/plan/refine';
 	import { avatarDataUri } from '$lib/avatar';
 	import { displayName, loadTripProfiles, type Profile } from '$lib/profile.svelte';
 	import type { Mode } from '$lib/plan/modes';
@@ -53,14 +63,26 @@
 	let curves = $state<CrowdCurves | undefined>(undefined);
 	let travel = $state<TravelTable | undefined>(undefined);
 
+	/** The plan of record, as Regenerate last wrote it. */
+	let stored = $state<PlanStopRow[]>([]);
+	let planAt = $state<string | null>(null);
+	/**
+	 * A plan this session has just produced. It wins over `stored` until the
+	 * page is next loaded: the traveller should see a drag land immediately
+	 * rather than after the write has been read back.
+	 */
+	let fresh = $state<PlannedDay[] | null>(null);
+
 	onMount(async () => {
 		try {
-			[row, pois, people] = await Promise.all([
+			[row, pois, people, stored] = await Promise.all([
 				getTrip(tripId),
 				listPois(tripId),
-				loadTripProfiles(tripId)
+				loadTripProfiles(tripId),
+				loadPlan(tripId)
 			]);
 			if (!row) return;
+			planAt = row.plan_generated_at;
 			if (row.share_token) shareUrl = linkFor(row.share_token);
 			bbox = cityBBox(row);
 			if (!bbox) {
@@ -176,19 +198,38 @@
 	 */
 	const agreed = $derived(tightest(people.map((p) => p.mealWindows)));
 
+	/**
+	 * Why a wishlist stop is not on the plan. Derived rather than stored: a
+	 * stop with no day is either newer than the plan or was left out by it,
+	 * and the trip itself answers the other two cases.
+	 */
+	const reasonFor = (p: PoiRow): UnplacedReason => {
+		if (row && hotelMissing(row)) return 'hotel-unknown';
+		if (!days.some((d) => d.usableMin > 0)) return 'no-usable-days';
+		if (!planAt || Date.parse(p.created_at) > Date.parse(planAt)) return 'not-planned-yet';
+		return 'day-full';
+	};
+
+	const unplaced = $derived<Unplaced[]>(
+		pois
+			.filter((p) => p.day_index === null)
+			.map((p) => ({ poi: toPlanPoi(p), reason: reasonFor(p) }))
+	);
+
+	/**
+	 * The plan on screen is the plan that was stored, not one re-derived on
+	 * load. Re-running the scheduler here would silently re-time a settled trip
+	 * whenever a provider answered differently or the page was opened on
+	 * another day.
+	 */
 	const result = $derived<PlanResult | null>(
 		row && days.length
-			? schedule({
-					pois: pois.map(toPlanPoi),
-					days,
-					allowedModes: row.allowed_modes as Mode[],
-					timezone: row.timezone,
-					mealWindows: agreed.windows,
-					curves,
-					travel
-				})
+			? { days: fresh ?? toPlannedDays(stored, days.map((d) => d.date)), unplaced }
 			: null
 	);
+
+	/** How far the plan is behind the wishlist. */
+	const stale = $derived(planAt ? staleCount(pois, planAt) : 0);
 
 	const current = $derived(result?.days[dayIndex] ?? null);
 
@@ -243,33 +284,90 @@
 		);
 		try {
 			await saveAssignments(rows);
+			await restore();
 		} catch (e) {
 			error = (e as Error).message;
 			pois = await listPois(tripId);
 		}
 	}
 
+	/**
+	 * Re-time the plan after a manual move -- steps 3-5 only, since the
+	 * traveller has just stated the assignment and the order. The stored plan
+	 * is the plan of record, so a drag has to be written back to it or the
+	 * move survives only until the page reloads.
+	 */
+	async function restore() {
+		if (!row || !days.length) return;
+		const input = {
+			pois: pois.map(toPlanPoi),
+			days,
+			allowedModes: row.allowed_modes as Mode[],
+			timezone: row.timezone,
+			mealWindows: agreed.windows,
+			curves
+		};
+		const first = schedule({ ...input, travel });
+		const routed = firstOf([await routedTable(first.days), ...(travel ? [travel] : [])]);
+		const next = schedule({ ...input, travel: routed });
+		fresh = next.days;
+		planAt = await savePlan(tripId, next);
+	}
+
 	const drag = createDrag((id, target) => applyMove(id, target));
+
+	/**
+	 * The day and order replan settled, written back onto the stops so the
+	 * second pass re-times that same plan rather than reshuffling it.
+	 */
+	function assignedFrom(planned: PlanResult) {
+		const placed = new Map(
+			planned.days.flatMap((d) =>
+				d.stops
+					.filter((s) => s.poiId)
+					.map((s, i) => [s.poiId!, { dayIndex: d.index, orderIndex: i }] as const)
+			)
+		);
+		return pois.map((p) => ({
+			...toPlanPoi(p),
+			dayIndex: placed.get(p.id)?.dayIndex ?? null,
+			orderIndex: placed.get(p.id)?.orderIndex ?? null
+		}));
+	}
 
 	async function doReplan() {
 		if (!row || !days.length) return;
 		busy = true;
 		error = null;
 		try {
-			const next = replan({
+			const input = {
 				pois: pois.map(toPlanPoi),
 				days,
 				allowedModes: row.allowed_modes as Mode[],
 				timezone: row.timezone,
 				mealWindows: agreed.windows,
-				curves,
-				travel
+				curves
+			};
+			const ordered = replan({ ...input, travel });
+
+			// Tier 2. The matrix priced every pair it might need; now that the
+			// order is fixed, route the n-1 legs that survived and re-walk the
+			// clock on those figures. Without this the board runs on the
+			// estimate -- and on an airport transfer the two are an hour apart.
+			const routed = firstOf([await routedTable(ordered.days), ...(travel ? [travel] : [])]);
+			const next = schedule({
+				...input,
+				pois: assignedFrom(ordered),
+				travel: routed
 			});
+
 			const assignments = next.days.flatMap((d) =>
 				d.stops.filter((s) => s.poiId).map((s, i) => ({ id: s.poiId!, dayIndex: d.index, orderIndex: i }))
 			);
 			const cleared = next.unplaced.map((u) => ({ id: u.poi.id, dayIndex: null, orderIndex: null }));
 			await saveAssignments([...assignments, ...cleared]);
+			planAt = await savePlan(tripId, next);
+			fresh = next.days;
 			pois = await listPois(tripId);
 		} catch (e) {
 			error = (e as Error).message;
@@ -460,6 +558,14 @@
 					</button>
 				</div>
 			</div>
+
+			<!-- Said once, not per stop: the wishlist already marks which stop
+			     is which. This only has to answer "is the plan behind". -->
+			{#if stale > 0}
+				<p class="tm-hint" style="margin-top:-4px">
+					{stale} change{stale === 1 ? '' : 's'} since this plan was made.
+				</p>
+			{/if}
 
 			{#if showDetails}
 				<div class="tm-card" style="background: var(--tm-surface-2)">

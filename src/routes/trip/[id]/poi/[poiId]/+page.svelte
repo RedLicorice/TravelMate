@@ -3,29 +3,22 @@
 	import { page } from '$app/state';
 	import { base } from '$app/paths';
 	import { goto } from '$app/navigation';
-	import { getTrip, toTrip, type TripRow } from '$lib/trip/repo';
+	import { getTrip, hotelMissing, toTrip, type TripRow } from '$lib/trip/repo';
 	import {
 		getPoi,
 		listPois,
 		removePoi,
 		saveAssignments,
-		toPlanPoi,
 		updatePoi,
 		type PoiRow
 	} from '$lib/trip/pois';
 	import { tripDays } from '$lib/trip/days';
-	import { schedule, REASON_TEXT, type PlannedStop } from '$lib/plan/planner';
-	import {
-		busyWindows,
-		categoryBusyness,
-		hourLabel,
-		resolveCurves,
-		type CrowdCurves
-	} from '$lib/plan/crowd';
-	import { effectiveDayStart, isMeal, latestReady, tightest } from '$lib/plan/meals';
+	import { REASON_TEXT, type PlannedStop, type UnplacedReason } from '$lib/plan/planner';
+	import { loadPlan, toPlannedDays, type PlanStopRow } from '$lib/trip/plan';
+	import { busyWindows, categoryBusyness, hourLabel } from '$lib/plan/crowd';
+	import { effectiveDayStart, isMeal, latestReady } from '$lib/plan/meals';
 	import { haversineKm } from '$lib/plan/geo';
 	import { loadTripProfiles } from '$lib/profile.svelte';
-	import type { Mode } from '$lib/plan/modes';
 	import { safePhone, safeUrl } from '$lib/poi/photon';
 	import Stars from '$lib/Stars.svelte';
 
@@ -35,13 +28,11 @@
 	let trip = $state<TripRow | null>(null);
 	let poi = $state<PoiRow | null>(null);
 	let all = $state<PoiRow[]>([]);
-	let windows = $state(tightest([]).windows);
 	let ready = $state<string | null>(null);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
 	let saving = $state(false);
 	let confirmRemove = $state(false);
-	let curves = $state<CrowdCurves | undefined>(undefined);
 
 	let duration = $state(60);
 	let notes = $state('');
@@ -57,19 +48,12 @@
 			trip = t;
 			poi = p;
 			all = list;
-			windows = tightest(people.map((x) => x.mealWindows)).windows;
 			ready = latestReady(people.map((x) => ({ wakeAt: x.wakeAt, prepMin: x.prepMin })));
-			if (t) {
-				curves = await resolveCurves(
-					list.map((x) => ({ id: x.id, category: x.category })),
-					tripDays(toTrip(t)),
-					t.timezone
-				);
-			}
 			if (p) {
 				duration = p.duration_min;
 				notes = p.notes ?? '';
 			}
+			stored = await loadPlan(tripId);
 		} catch (e) {
 			error = (e as Error).message;
 		} finally {
@@ -77,35 +61,42 @@
 		}
 	});
 
+	let stored = $state<PlanStopRow[]>([]);
+
 	const days = $derived(
 		trip
 			? tripDays({ ...toTrip(trip), dayStart: effectiveDayStart(toTrip(trip).dayStart, ready) })
 			: []
 	);
 
+	// The stored plan, not a fresh one: this page must agree with the times the
+	// trip page is showing, down to the minute.
 	const plan = $derived(
-		trip && days.length
-			? schedule({
-					pois: all.map(toPlanPoi),
-					days,
-					allowedModes: trip.allowed_modes as Mode[],
-					timezone: trip.timezone,
-					mealWindows: windows,
-					curves
-				})
-			: null
+		trip && days.length ? toPlannedDays(stored, days.map((d) => d.date)) : null
 	);
 
 	/** Where this stop landed, if it landed. */
 	const placed = $derived(
 		plan
-			? (plan.days
+			? (plan
 					.flatMap((d) => d.stops.map((s) => ({ stop: s, dayIndex: d.index })))
 					.find((x) => x.stop.poiId === poiId) ?? null)
 			: null
 	);
 
-	const reason = $derived(plan?.unplaced.find((u) => u.poi.id === poiId)?.reason ?? null);
+	/** Why it is not on the plan. Same rule as the wishlist uses. */
+	const reason = $derived<UnplacedReason | null>(
+		!poi || placed
+			? null
+			: trip && hotelMissing(trip)
+				? 'hotel-unknown'
+				: !days.some((d) => d.usableMin > 0)
+					? 'no-usable-days'
+					: !trip?.plan_generated_at ||
+						  Date.parse(poi.created_at) > Date.parse(trip.plan_generated_at)
+						? 'not-planned-yet'
+						: 'day-full'
+	);
 
 	const kmFromHotel = $derived(
 		trip && poi ? haversineKm({ lat: trip.hotel_lat, lng: trip.hotel_lng }, poi).toFixed(1) : null

@@ -32,6 +32,7 @@ const row: TripRow = {
 	day_start: '09:00:00',
 	day_end: '19:00:00',
 	share_token: null,
+	plan_generated_at: null,
 	created_at: '2026-03-01T00:00:00Z'
 };
 

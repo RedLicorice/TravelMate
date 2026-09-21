@@ -1,15 +1,17 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
+	import type { PoiRow } from '$lib/trip/pois';
 	import { getSharedTrip, joinTrip, toTrip, type TripRow } from '$lib/trip/repo';
 	import { goto } from '$app/navigation';
 	import { base } from '$app/paths';
 	import { session } from '$lib/session.svelte';
-	import { toPlanPoi, type PoiRow } from '$lib/trip/pois';
+
 	import { tripDays } from '$lib/trip/days';
-	import { schedule, type PlanResult } from '$lib/plan/planner';
-	import { resolveCurves, type CrowdCurves } from '$lib/plan/crowd';
-	import type { Mode } from '$lib/plan/modes';
+	import { type PlanResult } from '$lib/plan/planner';
+	import { toPlannedDays, type PlanStopRow } from '$lib/trip/plan';
+
+
 
 	let row = $state<TripRow | null>(null);
 	let pois = $state<PoiRow[]>([]);
@@ -17,7 +19,7 @@
 	let gone = $state(false);
 	let error = $state<string | null>(null);
 	let joining = $state(false);
-	let curves = $state<CrowdCurves | undefined>(undefined);
+	let stored = $state<PlanStopRow[]>([]);
 
 	onMount(async () => {
 		try {
@@ -28,11 +30,7 @@
 			}
 			row = shared.trip;
 			pois = shared.pois ?? [];
-			curves = await resolveCurves(
-				pois.map((x) => ({ id: x.id, category: x.category })),
-				tripDays(toTrip(row)),
-				row.timezone
-			);
+			stored = shared.plan ?? [];
 		} catch (e) {
 			error = (e as Error).message;
 		} finally {
@@ -58,15 +56,14 @@
 
 	const days = $derived(row ? tripDays(toTrip(row)) : []);
 
+	/**
+	 * The plan as the traveller stored it. Re-running the scheduler here would
+	 * show a guest different times than the person who sent them the link --
+	 * different providers, a different day, a different answer.
+	 */
 	const result = $derived<PlanResult | null>(
 		row && days.length
-			? schedule({
-					pois: pois.map(toPlanPoi),
-					days,
-					allowedModes: row.allowed_modes as Mode[],
-					timezone: row.timezone,
-					curves
-				})
+			? { days: toPlannedDays(stored, days.map((d) => d.date)), unplaced: [] }
 			: null
 	);
 
