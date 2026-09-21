@@ -756,7 +756,7 @@
 		{/if}
 
 		{#if view === 'board'}
-			<div class="flex-1 overflow-hidden">
+			<div class="min-h-0 min-w-0 flex-1 overflow-hidden">
 				{#if !pois.length}
 					<div class="tm-card m-4" style="background: var(--tm-surface-2)">
 						<p class="tm-card__title">Nothing to plan yet</p>

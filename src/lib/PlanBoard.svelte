@@ -32,6 +32,21 @@
 		onadd
 	}: Props = $props();
 
+	/**
+	 * Hotel or terminal. Stored plans written before the plan carried the kind
+	 * have none, so fall back to the day's own waypoints, which always do --
+	 * otherwise every anchor on an existing trip reads as the hotel until the
+	 * traveller regenerates.
+	 */
+	function anchorKind(stop: PlannedStop, dayIndex: number): 'hotel' | 'terminal' {
+		if (stop.anchorKind) return stop.anchorKind;
+		const window = days[dayIndex];
+		const match = [...(window?.fixedStart ?? []), ...(window?.fixedEnd ?? [])].find(
+			(w) => w.name === stop.name
+		);
+		return match?.kind ?? 'hotel';
+	}
+
 	type Card = {
 		key: string;
 		top: number;
@@ -78,7 +93,7 @@
 
 			const height = Math.max(MIN_BLOCK_PX, stop.durationMin * PX_PER_MIN);
 			if (stop.anchor) {
-				const tone = stop.anchorKind === 'terminal' ? 'peach' : 'butter';
+				const tone = anchorKind(stop, dayIndex) === 'terminal' ? 'peach' : 'butter';
 				out.push({
 					key: `stop:${j}`,
 					top: top(startMin),
@@ -273,7 +288,7 @@
 
 <div class="flex h-full flex-col">
 	<div class="flex-1 overflow-auto" style="-webkit-overflow-scrolling: touch">
-		<div class="flex" style="min-width: max-content">
+		<div class="flex" style="width: max-content; min-width: 100%">
 			<!-- Hour gutter -->
 			<div style="width: 46px; flex: none; position: sticky; left: 0; z-index: 2; background: var(--tm-bg)">
 				<div style="height: 30px"></div>
@@ -291,9 +306,12 @@
 
 			{#each planned as day, i (day.date)}
 				{@const window = days[i]}
+				<!-- Share whatever width is going, down to a floor. Fixed columns
+				     left half a desktop empty; a floor keeps a card readable, and
+				     a week of days simply scrolls. -->
 				<div
 					data-drop-day={i}
-					style="width: 138px; flex: none; border-left: 1px solid var(--tm-border)"
+					style="flex: 1 1 0; min-width: 116px; border-left: 1px solid var(--tm-border)"
 				>
 					<div
 						style="height:30px;position:sticky;top:0;z-index:1;background:var(--tm-bg);
