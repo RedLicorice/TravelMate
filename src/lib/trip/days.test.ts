@@ -12,6 +12,8 @@ const base: Trip = {
 	departureAt: '2026-04-13T16:00:00Z', // 18:00 Rome
 	arrivalPoint: { name: 'Fiumicino', at: fco },
 	departurePoint: { name: 'Fiumicino', at: fco },
+	arrivalLegs: [],
+	departureLegs: [],
 	arrivalBufferMin: 45,
 	departureBufferMin: 120,
 	bagDropMin: 30,
@@ -147,5 +149,65 @@ describe('local input conversion', () => {
 
 	it('renders midnight as 00:00, not 24:00', () => {
 		expect(toLocalInput('2026-04-09T22:00:00.000Z', 'Europe/Rome')).toBe('2026-04-10T00:00');
+	});
+});
+
+describe('the journey shows on the plan', () => {
+	const withLegs = (): Trip => ({
+		...base,
+		arrivalPoint: { name: 'Stansted', at: { lat: 51.886, lng: 0.2389 } },
+		departurePoint: { name: 'Stansted', at: { lat: 51.886, lng: 0.2389 } },
+		arrivalLegs: [
+			{ from: { name: 'Roma Termini', lat: 41.9, lng: 12.5, kind: 'train' },
+			  to: { name: 'Milano Centrale', lat: 45.4, lng: 9.2, kind: 'train' },
+			  service: 'FR 9612', bookingRef: null, departLocal: null, arriveLocal: null },
+			{ from: { name: 'Malpensa', lat: 45.6, lng: 8.7, kind: 'airport' },
+			  to: { name: 'Stansted', lat: 51.886, lng: 0.2389, kind: 'airport' },
+			  service: 'FR 8012', bookingRef: null, departLocal: null, arriveLocal: null }
+		],
+		departureLegs: [
+			{ from: { name: 'Stansted', lat: 51.886, lng: 0.2389, kind: 'airport' },
+			  to: { name: 'Ciampino', lat: 41.8, lng: 12.6, kind: 'airport' },
+			  service: 'FR 8013', bookingRef: null, departLocal: null, arriveLocal: null }
+		]
+	});
+
+	it('puts each arriving service before the airport, in the order flown', () => {
+		const [first] = tripDays(withLegs());
+		expect(first.fixedStart.map((w) => w.name)).toEqual([
+			'FR 9612 · Roma Termini → Milano Centrale',
+			'FR 8012 · Malpensa → Stansted',
+			'Stansted',
+			base.hotelName
+		]);
+	});
+
+	it('puts the leaving service after the airport', () => {
+		const days = tripDays(withLegs());
+		const last = days[days.length - 1];
+		expect(last.fixedEnd.map((w) => w.name)).toEqual([
+			base.hotelName,
+			'Stansted',
+			'FR 8013 · Stansted → Ciampino'
+		]);
+	});
+
+	it('costs no travel: a service sits at its own terminal', () => {
+		const [first] = tripDays(withLegs());
+		const service = first.fixedStart.find((w) => w.kind === 'service')!;
+		expect(service.at).toEqual({ lat: 51.886, lng: 0.2389 });
+		expect(service.dwellMin).toBe(0);
+	});
+
+	it('says the route when the ticket has no number on it', () => {
+		const t = withLegs();
+		t.arrivalLegs = [{ ...t.arrivalLegs[1], service: null }];
+		const [first] = tripDays(t);
+		expect(first.fixedStart[0].name).toBe('Malpensa → Stansted');
+	});
+
+	it('adds nothing when there is no journey', () => {
+		const [first] = tripDays({ ...withLegs(), arrivalLegs: [] });
+		expect(first.fixedStart.some((w) => w.kind === 'service')).toBe(false);
 	});
 });

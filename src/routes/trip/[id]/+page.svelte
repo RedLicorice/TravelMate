@@ -953,6 +953,7 @@
 						<div
 							class="tm-stop"
 							class:tm-stop--anchor={stop.anchor}
+							class:tm-stop--service={stop.anchorKind === 'service'}
 							class:tm-stop--pinned={stop.poiId ? pinnedIds.has(stop.poiId) : false}
 							data-drop-stop={stop.poiId ?? undefined}
 							style={drag.state.id === stop.poiId
@@ -977,7 +978,13 @@
 								</p>
 								<p class="tm-stop__sub" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
 									<span>
-										{stop.anchor ? (stop.durationMin ? `${stop.durationMin} min stop` : 'anchor') : `${stop.durationMin} min`}
+										{stop.anchorKind === 'service'
+											? 'your journey'
+											: stop.anchor
+												? stop.durationMin
+													? `${stop.durationMin} min stop`
+													: 'anchor'
+												: `${stop.durationMin} min`}
 									</span>
 									{#if stop.exitAt}
 										<span class="tm-chip tm-chip--sky" style="font-size:10px">

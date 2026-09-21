@@ -35,7 +35,7 @@
 	 * otherwise every anchor on an existing trip reads as the hotel until the
 	 * traveller regenerates.
 	 */
-	function anchorKind(stop: PlannedStop, dayIndex: number): 'hotel' | 'terminal' {
+	function anchorKind(stop: PlannedStop, dayIndex: number): 'hotel' | 'terminal' | 'service' {
 		if (stop.anchorKind) return stop.anchorKind;
 		const window = days[dayIndex];
 		const match = [...(window?.fixedStart ?? []), ...(window?.fixedEnd ?? [])].find(
@@ -90,7 +90,8 @@
 
 			const height = Math.max(MIN_BLOCK_PX, stop.durationMin * PX_PER_MIN);
 			if (stop.anchor) {
-				const tone = anchorKind(stop, dayIndex) === 'terminal' ? 'peach' : 'sky';
+				const kind = anchorKind(stop, dayIndex);
+				const tone = kind === 'terminal' ? 'peach' : kind === 'service' ? 'mint' : 'sky';
 				out.push({
 					key: `stop:${j}`,
 					top: top(startMin),
@@ -367,7 +368,12 @@
 			style="display:inline-block;width:10px;height:10px;border-radius:2px;
 			background:var(--tm-peach-soft);border-left:3px solid var(--tm-peach);vertical-align:-1px"
 		></span>
-		terminal · hold ⠿ to move a stop between days · tap empty time to add
+		terminal ·
+		<span
+			style="display:inline-block;width:10px;height:10px;border-radius:2px;
+			background:var(--tm-mint-soft);border-left:3px solid var(--tm-mint);vertical-align:-1px"
+		></span>
+		flight or train · hold ⠿ to move a stop between days · tap empty time to add
 	</p>
 </div>
 

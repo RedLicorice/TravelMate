@@ -16,7 +16,7 @@ export type PlanStopRow = {
 	lat: number;
 	lng: number;
 	anchor: boolean;
-	anchor_kind: 'hotel' | 'terminal' | null;
+	anchor_kind: 'hotel' | 'terminal' | 'service' | null;
 	starts_at: string;
 	ends_at: string;
 	duration_min: number;

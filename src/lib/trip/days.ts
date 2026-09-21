@@ -1,3 +1,5 @@
+import type { JourneyLeg } from './journey';
+
 export type LatLng = { lat: number; lng: number };
 export type Place = { name: string; at: LatLng };
 
@@ -6,7 +8,17 @@ export type Place = { name: string; at: LatLng };
  * travelling. `kind` exists so the mode chooser can tell an airport transfer
  * from a walk back to the hotel -- nobody walks 25km from a terminal.
  */
-export type Waypoint = { name: string; at: LatLng; dwellMin: number; kind: 'hotel' | 'terminal' };
+export type Waypoint = {
+	name: string;
+	at: LatLng;
+	dwellMin: number;
+	/**
+	 * 'service' is the flight, train or sailing itself rather than a place: it
+	 * sits at the terminal's own coordinates so it costs no travel, and takes
+	 * no time in the day because it happens outside the day's window.
+	 */
+	kind: 'hotel' | 'terminal' | 'service';
+};
 
 export type Trip = {
 	hotelName: string;
@@ -18,6 +30,9 @@ export type Trip = {
 	departureAt: string;
 	arrivalPoint: Place | null;
 	departurePoint: Place | null;
+	/** The journey in and the journey out, shown alongside their terminals. */
+	arrivalLegs: JourneyLeg[];
+	departureLegs: JourneyLeg[];
 	arrivalBufferMin: number;
 	departureBufferMin: number;
 	bagDropMin: number;
@@ -126,6 +141,24 @@ export function tripDays(trip: Trip): Day[] {
 		kind: 'terminal'
 	});
 
+	/**
+	 * The services themselves, at the terminal's coordinates so the walk to
+	 * them is nothing. Arriving they come before the terminal -- you fly, then
+	 * you are at the airport -- and leaving they come after it.
+	 */
+	const serviceStops = (legs: JourneyLeg[], at: LatLng): Waypoint[] =>
+		legs
+			.filter((l) => l.service || l.from || l.to)
+			.map((l) => {
+				const route = [l.from?.name, l.to?.name].filter(Boolean).join(' → ');
+				return {
+					name: l.service ? (route ? `${l.service} · ${route}` : l.service) : route,
+					at,
+					dwellMin: 0,
+					kind: 'service' as const
+				};
+			});
+
 	return dates.map((date, i) => {
 		const windowStart = zonedInstant(date, trip.dayStart, tz);
 		const windowEnd = zonedInstant(date, trip.dayEnd, tz);
@@ -148,6 +181,7 @@ export function tripDays(trip: Trip): Day[] {
 
 		const fixedStart: Waypoint[] = [];
 		if (i === 0 && trip.arrivalPoint) {
+			fixedStart.push(...serviceStops(trip.arrivalLegs, trip.arrivalPoint.at));
 			fixedStart.push(placeStop(trip.arrivalPoint));
 			// You cannot drag a suitcase around the Colosseum.
 			if (trip.bagDropMin > 0) fixedStart.push(hotelStop(trip.bagDropMin));
@@ -159,6 +193,7 @@ export function tripDays(trip: Trip): Day[] {
 		if (i === lastIndex && trip.departurePoint) {
 			if (trip.bagDropMin > 0) fixedEnd.push(hotelStop(trip.bagDropMin));
 			fixedEnd.push(placeStop(trip.departurePoint));
+			fixedEnd.push(...serviceStops(trip.departureLegs, trip.departurePoint.at));
 		} else {
 			fixedEnd.push(hotelStop(0));
 		}

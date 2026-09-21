@@ -154,9 +154,6 @@ export const terminalsOf = (row: TripRow): Terminals => ({
 	bagDropMin: row.bag_drop_min
 });
 
-const named = (name: string | null, service: string | null) =>
-	name === null ? null : service ? `${name} · ${service}` : name;
-
 function place(name: string | null, lat: number | null, lng: number | null): Place | null {
 	// The column constraint forbids a half-set pair, so either all three are
 	// present or the point is genuinely absent.
@@ -173,18 +170,16 @@ export function toTrip(row: TripRow): Trip {
 		timezone: row.timezone,
 		arrivalAt: row.arrival_at,
 		departureAt: row.departure_at,
-		// The service number travels as part of the terminal's name, so every
-		// view that already draws a waypoint shows it without being told.
-		arrivalPoint: place(
-			named(row.arrival_point_name, row.arrival_service),
-			row.arrival_point_lat,
-			row.arrival_point_lng
-		),
+		arrivalPoint: place(row.arrival_point_name, row.arrival_point_lat, row.arrival_point_lng),
 		departurePoint: place(
-			named(row.departure_point_name, row.departure_service),
+			row.departure_point_name,
 			row.departure_point_lat,
 			row.departure_point_lng
 		),
+		// The services get cards of their own beside their terminals, so the
+		// terminal keeps its own plain name.
+		arrivalLegs: row.arrival_legs ?? [],
+		departureLegs: row.departure_legs ?? [],
 		arrivalBufferMin: row.arrival_buffer_min,
 		departureBufferMin: row.departure_buffer_min,
 		bagDropMin: row.bag_drop_min,

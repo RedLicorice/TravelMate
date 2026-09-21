@@ -11,6 +11,8 @@ const trip: Trip = {
 	departureAt: '2026-10-02T17:00:00Z', // 18:00 London
 	arrivalPoint: null,
 	departurePoint: { name: 'Stansted', at: { lat: 51.886, lng: 0.2389 } },
+	arrivalLegs: [],
+	departureLegs: [],
 	arrivalBufferMin: 0,
 	departureBufferMin: 120,
 	bagDropMin: 30,

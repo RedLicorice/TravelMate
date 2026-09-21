@@ -66,7 +66,7 @@ export type PlannedStop = {
 	legIn: Leg | null;
 	anchor: boolean;
 	/** For an anchor, which kind. Null for a real stop. */
-	anchorKind?: 'hotel' | 'terminal' | null;
+	anchorKind?: 'hotel' | 'terminal' | 'service' | null;
 	busyness: number | null;
 	warnings: Warning[];
 	/** Where the next leg departs from, when that is not `at`. */
@@ -420,7 +420,7 @@ function walkClock(
 		category: string | null,
 		terminal: boolean,
 		exitAt: LatLng | null = null,
-		anchorKind: 'hotel' | 'terminal' | null = null
+		anchorKind: 'hotel' | 'terminal' | 'service' | null = null
 	) => {
 		let legIn: Leg | null = null;
 		if (cursor) {

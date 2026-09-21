@@ -168,5 +168,8 @@
   opacity: 1; color: var(--tm-text-muted); border-color: var(--tm-border-strong);
 }
 
+/* The flight or train itself, not a place you spend time. */
+.tm-stop--service { border-left-color: var(--tm-mint); background: var(--tm-mint-soft); }
+
 /* A pinned stop keeps a butter edge, matching its pin chip. */
 .tm-stop--pinned { border-left-color: var(--tm-butter); }
