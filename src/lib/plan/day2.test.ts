@@ -324,3 +324,59 @@ describe('meal slots are containers', () => {
 		expect(seated).toHaveLength(1);
 	});
 });
+
+describe('assigning a slot by hand', () => {
+	const far = (id: string): PlanPoi => ({
+		id,
+		name: id,
+		// Miles away, and on no day: neither should matter.
+		lat: 51.6,
+		lng: 0.1,
+		category: 'cafe',
+		durationMin: 20,
+		priority: 3,
+		dayIndex: null,
+		orderIndex: null,
+		pinned: false
+	});
+
+	const run = (poiId: string | null) =>
+		schedule({
+			pois: [stop('Notting Hill', 51.509, -0.196, 'suburb', 60, 0), far('starbucks')],
+			days: tripDays(trip),
+			allowedModes: ['walk', 'transit'],
+			timezone: 'Europe/London',
+			mealWindows: tightest([A]).windows,
+			meals: new Map([
+				[
+					'1:breakfast',
+					{
+						day_index: 1,
+						meal: 'breakfast',
+						poi_id: poiId,
+						at: null,
+						skipped: false
+					} as MealSlotRow
+				]
+			])
+		});
+
+	it('seats exactly what was assigned, however far off the path', () => {
+		const names = run('starbucks').days[1].stops.map((s) => s.name);
+		expect(names).toContain('starbucks');
+		expect(names).not.toContain('Breakfast');
+	});
+
+	it('does not need the place to belong to that day first', () => {
+		// dayIndex null, which is what the wishlist looks like.
+		expect(run('starbucks').days[1].stops.some((s) => s.poiId === 'starbucks')).toBe(true);
+	});
+
+	it('does not then report it as unplaced', () => {
+		expect(run('starbucks').unplaced.map((u) => u.poi.id)).not.toContain('starbucks');
+	});
+
+	it('leaves the container empty when nothing is assigned', () => {
+		expect(run(null).days[1].stops.map((s) => s.name)).toContain('Breakfast');
+	});
+});

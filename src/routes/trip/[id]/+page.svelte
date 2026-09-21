@@ -54,6 +54,8 @@
 		latestReady,
 		MEAL_LABEL,
 		MEAL_NAMES,
+		slotAt,
+		slotsFrom,
 		tightest,
 		type MealName,
 		type MealWindows
@@ -128,6 +130,15 @@
 		try {
 			if (change === 'reset') await resetMeal(tripId, dayIdx, meal);
 			else await saveMeal(tripId, { dayIndex: dayIdx, meal, ...change });
+
+			// The slot holds it; it needs no day of its own. Unpinned, because a
+			// pinned meal is one placed outside a slot and this one is in one.
+			if (change !== 'reset' && change.poiId) {
+				await saveAssignments([{ id: change.poiId, dayIndex: null, orderIndex: null }]);
+				await updatePoi(change.poiId, { pinned: false, pinned_at: null });
+				pois = await listPois(tripId);
+			}
+
 			mealRows = await loadMeals(tripId);
 			await restore();
 		} catch (e) {
@@ -155,9 +166,19 @@
 	const mealOf = (name: string) =>
 		(MEAL_NAMES.find((m) => MEAL_LABEL[m] === name) ?? null) as MealName | null;
 
+	/**
+	 * Which meal a container is. An empty one says so in its name; a filled one
+	 * wears the name of what fills it, so its hour answers instead.
+	 */
+	function mealFor(stop: PlannedStop): MealName | null {
+		return mealOf(stop.name) ?? slotAt(stop.arrive, row!.timezone, slotsFrom(agreed.windows));
+	}
+
 	function holdMeal(stop: PlannedStop, dayIdx: number) {
-		const meal = mealOf(stop.name);
-		if (meal) mealed = { day: dayIdx, meal, name: stop.name, poiId: null };
+		const meal = mealFor(stop);
+		if (meal) {
+			mealed = { day: dayIdx, meal, name: MEAL_LABEL[meal], poiId: stop.poiId };
+		}
 	}
 
 	function holdAllowance(stop: PlannedStop, dayIdx: number) {
@@ -1450,7 +1471,9 @@
 								<p class="tm-stop__sub" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
 									<span>
 										{#if stop.anchorKind === 'meal'}
-											{stop.durationMin} min · somewhere near here
+											{MEAL_LABEL[mealFor(stop) ?? 'lunch']} · {stop.durationMin} min{stop.poiId
+												? ''
+												: ' · nothing chosen yet'}
 										{:else if stop.anchorKind === 'service'}
 											your journey
 										{:else if stop.durationMin}

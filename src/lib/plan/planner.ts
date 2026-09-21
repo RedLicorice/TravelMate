@@ -10,6 +10,7 @@ import {
 	isMeal,
 	mealFit,
 	MEAL_LABEL,
+	MEAL_NAMES,
 	MEAL_MINUTES,
 	MEALS_PER_DAY,
 	mealMiss,
@@ -527,7 +528,13 @@ function walkClock(
 	diners: PlanPoi[] = [],
 	/** What the traveller has said about this day's meals. */
 	says: Map<string, MealSlotRow> = new Map(),
-	dayIndex = 0
+	dayIndex = 0,
+	/**
+	 * Places the traveller put in a slot themselves, already resolved. Seated
+	 * as given: an assignment is not a candidate to be weighed against the
+	 * ones nearby, it is the answer.
+	 */
+	picked: Map<string, PlanPoi> = new Map()
 ): ClockResult {
 	const stops: PlannedStop[] = [];
 	const overflowed: PlanPoi[] = [];
@@ -703,13 +710,9 @@ function walkClock(
 			if (!here) continue;
 
 			// A place the traveller put in this slot themselves. It goes in
-			// whatever the distance: they chose it.
-			let chosen: PlanPoi | null = null;
-			let chosenAt: LatLng = here;
-			if (say?.poi_id) {
-				chosen = unseated.find((d) => d.id === say.poi_id) ?? null;
-				if (chosen) chosenAt = nearestBranch(chosen, here, haversineKm);
-			}
+			// whatever the distance and whatever else is nearer: they chose it.
+			let chosen: PlanPoi | null = picked.get(slot.name) ?? null;
+			let chosenAt: LatLng = chosen ? nearestBranch(chosen, here, haversineKm) : here;
 
 			// Otherwise whichever of the day's restaurants is nearest, if any
 			// is near enough to be worth the detour.
@@ -751,8 +754,9 @@ function walkClock(
 			served.add(slot.name);
 
 			if (chosen) {
-				unseated.splice(unseated.indexOf(chosen), 1);
-				push(chosen.name, chosenAt, minutes, false, chosen.id, chosen.category, false, null);
+				const i = unseated.indexOf(chosen);
+				if (i >= 0) unseated.splice(i, 1);
+				push(chosen.name, chosenAt, minutes, false, chosen.id, chosen.category, false, null, 'meal');
 			} else {
 				// An empty container. It keeps its place and its time, because
 				// a meal nobody has chosen yet is still a meal that will happen.
@@ -862,7 +866,16 @@ export function schedule(input: PlanInput): PlanResult {
 	input.days.forEach((_, i) => byDay.set(i, []));
 	const unplaced: Unplaced[] = [];
 
+	// Places the traveller put in a meal slot. They belong to the slot rather
+	// than to a day, so they are neither waiting for a plan nor missing from
+	// one -- they are already where they were put.
+	const says = input.meals ?? new Map();
+	const inSlots = new Set(
+		[...says.values()].map((r) => r.poi_id).filter((id): id is string => !!id)
+	);
+
 	for (const p of input.pois) {
+		if (inSlots.has(p.id)) continue;
 		if (p.dayIndex === null || !byDay.has(p.dayIndex)) {
 			// Never been through the planner, or points at a day that no longer
 			// exists because the dates moved.
@@ -877,6 +890,16 @@ export function schedule(input: PlanInput): PlanResult {
 
 	const days = input.days.map((day, i) => {
 		const { route, diners } = split(byDay.get(i)!);
+
+		// Slots the traveller filled themselves, resolved against every place on
+		// the trip rather than against this day's candidates: an assignment is
+		// what goes there, whether or not the day would have chosen it.
+		const picked = new Map<string, PlanPoi>();
+		for (const meal of MEAL_NAMES) {
+			const id = says.get(mealKey(i, meal))?.poi_id;
+			const poi = id ? input.pois.find((p) => p.id === id) : undefined;
+			if (poi) picked.set(meal, poi);
+		}
 		const result = walkClock(
 			route,
 			day,
@@ -886,12 +909,14 @@ export function schedule(input: PlanInput): PlanResult {
 			slots,
 			travel,
 			diners,
-			input.meals ?? new Map(),
-			i
+			says,
+			i,
+			picked
 		);
 		unplaced.push(...result.overflowed.map((poi) => ({ poi, reason: 'day-full' as const })));
 		// A restaurant no mealtime came near enough to reach.
 		const seated = new Set(result.stops.map((st) => st.poiId));
+		picked.forEach((p) => seated.add(p.id));
 		unplaced.push(
 			...diners
 				.filter((d) => !seated.has(d.id))
