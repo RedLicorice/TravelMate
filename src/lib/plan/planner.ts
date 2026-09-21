@@ -53,11 +53,6 @@ export type PlanPoi = {
 	 * nearest to where the day already has the traveller is the one they go to.
 	 */
 	branches?: LatLng[] | null;
-	/**
-	 * Wanted on every day it suits rather than on one of them. Coffee on the
-	 * way out is not a stop, it is a habit.
-	 */
-	repeats?: boolean;
 };
 
 export type Warning = { kind: 'crowded' | 'overflow' | 'off-hours'; message: string };
@@ -814,9 +809,6 @@ function split(list: PlanPoi[]): { route: PlanPoi[]; diners: PlanPoi[] } {
 	return { route: list.filter((p) => !diners.includes(p)), diners };
 }
 
-/** Places wanted every day, which belong to no single one. */
-const everyDay = (pois: PlanPoi[]) => pois.filter((p) => p.repeats && isMeal(p.category));
-
 // ------------------------------------------------------------------ entrypoints
 
 /** Steps 3-5. Respects the day/order the traveller already chose. */
@@ -827,14 +819,8 @@ export function schedule(input: PlanInput): PlanResult {
 	const byDay = new Map<number, PlanPoi[]>();
 	input.days.forEach((_, i) => byDay.set(i, []));
 	const unplaced: Unplaced[] = [];
-	const everSeated = new Set<string>();
-
-	const daily = everyDay(input.pois);
 
 	for (const p of input.pois) {
-		// Wanted every morning, so it belongs to no single day: handed to all
-		// of them and seated wherever each one's meal pass finds room.
-		if (daily.includes(p)) continue;
 		if (p.dayIndex === null || !byDay.has(p.dayIndex)) {
 			// Never been through the planner, or points at a day that no longer
 			// exists because the dates moved.
@@ -857,14 +843,11 @@ export function schedule(input: PlanInput): PlanResult {
 			curves,
 			slots,
 			travel,
-			[...diners, ...daily]
+			diners
 		);
 		unplaced.push(...result.overflowed.map((poi) => ({ poi, reason: 'day-full' as const })));
-		// A restaurant no mealtime came near enough to reach. A daily one is
-		// judged across the whole trip rather than day by day: missing it on
-		// Tuesday is not news when it was had on Monday and Wednesday.
+		// A restaurant no mealtime came near enough to reach.
 		const seated = new Set(result.stops.map((st) => st.poiId));
-		seated.forEach((id) => id && everSeated.add(id));
 		unplaced.push(
 			...diners
 				.filter((d) => !seated.has(d.id))
@@ -872,12 +855,6 @@ export function schedule(input: PlanInput): PlanResult {
 		);
 		return { index: i, date: day.date, stops: result.stops, overflowed: result.overflowed };
 	});
-
-	unplaced.push(
-		...daily
-			.filter((p) => !everSeated.has(p.id))
-			.map((poi) => ({ poi, reason: 'no-mealtime' as const }))
-	);
 
 	return { days, unplaced };
 }
@@ -910,14 +887,7 @@ export function replan(input: PlanInput): PlanResult {
 		return last ? Math.max(0, (last.depart.getTime() - day.start.getTime()) / 60_000) : 0;
 	});
 
-	// A place wanted every day is not clustered onto one: it is offered to all
-	// of them, and the meal pass on each decides.
-	const daily = everyDay(input.pois);
-	const buckets = assignDays(
-		input.pois.filter((p) => !daily.includes(p)),
-		input.days,
-		anchorMin
-	);
+	const buckets = assignDays(input.pois, input.days, anchorMin);
 
 	const assigned: PlanPoi[] = [];
 	const spilled: PlanPoi[] = [];
@@ -949,7 +919,7 @@ export function replan(input: PlanInput): PlanResult {
 		seatable.forEach((p, i) => assigned.push({ ...p, dayIndex, orderIndex: ordered.length + i }));
 	});
 
-	const result = schedule({ ...input, pois: [...assigned, ...daily], curves, travel });
+	const result = schedule({ ...input, pois: assigned, curves, travel });
 	return {
 		days: result.days,
 		unplaced: [
