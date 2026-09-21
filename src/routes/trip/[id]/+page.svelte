@@ -16,7 +16,14 @@
 		updateHotel,
 		type TripRow
 	} from '$lib/trip/repo';
-	import { listPois, saveAssignments, toPlanPoi, updatePoi, type PoiRow } from '$lib/trip/pois';
+	import {
+		addPoi,
+		listPois,
+		saveAssignments,
+		toPlanPoi,
+		updatePoi,
+		type PoiRow
+	} from '$lib/trip/pois';
 	import { describe as describeJourney } from '$lib/trip/journey';
 	import { tripDays, type Day } from '$lib/trip/days';
 	import {
@@ -41,6 +48,7 @@
 	import { routeShape } from '$lib/plan/route';
 	import { firstOf, resolveTravel, type TravelTable } from '$lib/plan/travel';
 	import { routedTable } from '$lib/plan/refine';
+	import { BLOCK_CATEGORY } from '$lib/plan/planner';
 	import { pool } from '$lib/pool';
 	import { avatarDataUri } from '$lib/avatar';
 	import { displayName, loadTripProfiles, type Profile } from '$lib/profile.svelte';
@@ -49,7 +57,7 @@
 	import Stars from '$lib/Stars.svelte';
 	import LegDetail from '$lib/LegDetail.svelte';
 	import { dayTruncated, dayUrl, routePoints } from '$lib/maps';
-	import { createDrag, reorder } from '$lib/dnd.svelte';
+	import { createDrag, insertInto, reorder } from '$lib/dnd.svelte';
 	import { cardTime } from '$lib/board';
 	import PlanBoard from '$lib/PlanBoard.svelte';
 	import TripAvatar from '$lib/TripAvatar.svelte';
@@ -456,6 +464,82 @@
 	/** Where an Add tapped below `stop` should land: above whatever follows it. */
 	const slotHref = (dayIdx: number, beforeId: string | null) =>
 		`${base}/trip/${tripId}/add?day=${dayIdx}` + (beforeId ? `&before=${beforeId}` : '');
+
+	/**
+	 * The slot the traveller tapped, while they choose what goes in it. Most of
+	 * the time the place is already on the wishlist waiting for a day, so
+	 * searching for it again is the wrong first offer.
+	 */
+	let slot = $state<{ day: number; before: string | null } | null>(null);
+
+	/** Everything captured but not yet on a day. */
+	const unassigned = $derived(pois.filter((p) => p.day_index === null));
+
+	let blockName = $state('');
+	let blockMin = $state(60);
+
+	/** A named stretch of time with no place: a rest, an errand, a nap. */
+	async function addBlock() {
+		if (!slot || !row || !blockName.trim()) return;
+		const target = slot;
+		const name = blockName.trim();
+		const minutes = blockMin;
+		slot = null;
+		blockName = '';
+		busy = true;
+		try {
+			const created = await addPoi(tripId, {
+				name,
+				label: '',
+				// The coordinates are a formality: the planner puts a block
+				// wherever the traveller already is. The hotel is the honest
+				// stand-in for a day that has not started yet.
+				lat: row.hotel_lat,
+				lng: row.hotel_lng,
+				category: BLOCK_CATEGORY,
+				durationMin: minutes,
+				openingHours: null,
+				website: null,
+				phone: null,
+				osmId: null
+			});
+			pois = [...pois, created];
+			// Pinned: the traveller put it at a particular point in the day, and
+			// a block has no geography for Regenerate to reason about.
+			await updatePoi(created.id, { pinned: true });
+			await placeInto(created.id, target);
+		} catch (e) {
+			error = (e as Error).message;
+			busy = false;
+		}
+	}
+
+	async function placeHere(poiId: string) {
+		if (!slot) return;
+		const target = slot;
+		slot = null;
+		busy = true;
+		await placeInto(poiId, target);
+	}
+
+	async function placeInto(poiId: string, target: { day: number; before: string | null }) {
+		try {
+			const rows = insertInto(
+				pois.map((p) => ({ id: p.id, dayIndex: p.day_index, orderIndex: p.order_index })),
+				poiId,
+				target.day,
+				target.before
+			);
+			await saveAssignments(rows);
+			pois = await listPois(tripId);
+			dayIndex = target.day;
+			await restore();
+		} catch (e) {
+			error = (e as Error).message;
+		} finally {
+			busy = false;
+		}
+	}
 
 	/**
 	 * The day and order replan settled, written back onto the stops so the
@@ -936,7 +1020,7 @@
 						pinned={pinnedIds}
 						onpick={(id) => goto(`${base}/trip/${tripId}/poi/${id}`)}
 						onpin={(id) => togglePin(id)}
-						onadd={(dayIdx, beforeId) => goto(slotHref(dayIdx, beforeId))}
+						onadd={(dayIdx, beforeId) => (slot = { day: dayIdx, before: beforeId })}
 					/>
 				{/if}
 			</div>
@@ -1091,12 +1175,92 @@
 						     are added on the trip's edit screen. -->
 						{#if stop.anchorKind !== 'terminal' && stop.anchorKind !== 'service'}
 							{@const following = current.stops.slice(i + 1).find((x) => x.poiId)}
-							<a class="tm-slot" href={slotHref(dayIndex, following?.poiId ?? null)}>
+							<button
+								class="tm-slot"
+								onclick={() => (slot = { day: dayIndex, before: following?.poiId ?? null })}
+							>
 								<span aria-hidden="true">+</span> Add a stop here
-							</a>
+							</button>
 						{/if}
 					{/each}
 				{/if}
+			</div>
+		{/if}
+
+		{#if slot}
+			{@const target = slot}
+			<div
+				role="presentation"
+				style="position:fixed;inset:0;z-index:60;background:rgba(0,0,0,0.35)"
+				onclick={() => (slot = null)}
+			></div>
+			<div class="tm-sheet" style="position:fixed;z-index:61;max-height:76vh;overflow-y:auto">
+				<div class="tm-sheet__grip"></div>
+				<p class="tm-label mb-2">
+					Add to {dayLabel(days[target.day].date, row.timezone)}
+				</p>
+
+				{#if unassigned.length}
+					<p class="tm-hint mb-2">From your wishlist</p>
+					<div class="flex flex-col gap-1" style="margin: 0 calc(-1 * var(--tm-space-2))">
+						{#each unassigned as p (p.id)}
+							<button class="tm-result" style="text-align:left" onclick={() => placeHere(p.id)}>
+								<span>
+									<span class="tm-result__name">{p.name}</span>
+									<span class="tm-result__meta" style="display:block">
+										{p.category ?? 'place'} · {p.duration_min} min
+									</span>
+								</span>
+								<span style="color: var(--tm-text-faint)">+</span>
+							</button>
+						{/each}
+					</div>
+				{:else}
+					<p class="tm-hint mb-2">Nothing waiting on your wishlist.</p>
+				{/if}
+
+				<p class="tm-hint mt-4 mb-2">Or a stretch of time</p>
+				<div class="tm-field">
+					<input
+						class="tm-input"
+						bind:value={blockName}
+						placeholder="Rest, shopping, a nap…"
+						aria-label="What the time is for"
+					/>
+					<div class="flex flex-wrap gap-2">
+						{#each [30, 60, 90, 120] as m}
+							<button
+								class="tm-chip"
+								aria-pressed={blockMin === m}
+								style={blockMin === m
+									? 'background: var(--tm-peach-soft); color: var(--tm-peach-ink)'
+									: 'opacity: 0.6'}
+								onclick={() => (blockMin = m)}
+							>
+								{m < 60 ? `${m} min` : `${m / 60} h`}
+							</button>
+						{/each}
+					</div>
+					<button
+						class="tm-btn tm-btn--secondary tm-btn--block"
+						disabled={!blockName.trim() || busy}
+						onclick={addBlock}
+					>
+						Add {blockName.trim() || 'a block'}
+					</button>
+					<span class="tm-hint">
+						No place of its own: it happens wherever the day has you at the time, and stays
+						where you put it.
+					</span>
+				</div>
+
+				<a
+					class="tm-btn tm-btn--primary tm-btn--block mt-4"
+					style="text-decoration:none"
+					href={slotHref(target.day, target.before)}
+				>
+					Find a new place
+				</a>
 			</div>
 		{/if}
 

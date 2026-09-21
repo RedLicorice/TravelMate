@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { tripDays, type Trip } from '$lib/trip/days';
-import { replan, schedule, REASON_TEXT, type PlanPoi } from './planner';
+import { assignDays, BLOCK_CATEGORY, replan, schedule, REASON_TEXT, type PlanPoi } from './planner';
 import { chooseMode, leg, type Mode } from './modes';
 import {
 	categoryBusyness,
@@ -934,5 +934,77 @@ describe('meals the plan supplies itself', () => {
 			timezone: 'Europe/London'
 		});
 		expect(mealsOn(result)).toEqual([]);
+	});
+});
+
+describe('a block of time the traveller added', () => {
+	const blockTrip: Trip = {
+		hotelName: 'Hotel',
+		hotel: { lat: 51.5145, lng: -0.127 },
+		timezone: 'Europe/London',
+		arrivalAt: '2026-10-02T06:00:00Z',
+		departureAt: '2026-10-02T21:00:00Z',
+		arrivalPoint: null,
+		departurePoint: null,
+		arrivalLegs: [],
+		departureLegs: [],
+		prep: null,
+		arrivalBufferMin: 0,
+		departureBufferMin: 0,
+		bagDropMin: 0,
+		dayStart: '09:00',
+		dayEnd: '19:00'
+	};
+
+	const far: PlanPoi = {
+		id: 'far',
+		name: 'Tower',
+		lat: 51.5081,
+		lng: -0.0759,
+		category: 'attraction',
+		durationMin: 60,
+		priority: 3,
+		dayIndex: 0,
+		orderIndex: 0,
+		pinned: false
+	};
+	/** Stored at the hotel, but the day is nowhere near it by then. */
+	const rest: PlanPoi = {
+		...far,
+		id: 'rest',
+		name: 'Rest',
+		category: BLOCK_CATEGORY,
+		lat: 51.5145,
+		lng: -0.127,
+		durationMin: 45,
+		orderIndex: 1,
+		pinned: true
+	};
+
+	const day = () =>
+		schedule({
+			pois: [far, rest],
+			days: tripDays(blockTrip),
+			allowedModes: ['walk', 'transit'],
+			timezone: 'Europe/London'
+		}).days[0];
+
+	it('costs nothing to reach: it happens where the day already is', () => {
+		const block = day().stops.find((s) => s.poiId === 'rest')!;
+		expect(block.legIn?.minutes ?? 0).toBe(0);
+	});
+
+	it('takes the time it was given', () => {
+		const block = day().stops.find((s) => s.poiId === 'rest')!;
+		expect(block.durationMin).toBe(45);
+		expect(block.depart.getTime() - block.arrive.getTime()).toBe(45 * 60_000);
+	});
+
+	it('does not drag the next stop back to where it was stored', () => {
+		// Its coordinates are the hotel, but the walk out of it must start from
+		// the Tower, where the traveller actually is.
+		const stops = day().stops;
+		const block = stops.find((s) => s.poiId === 'rest')!;
+		expect(block.at).toEqual({ lat: far.lat, lng: far.lng });
 	});
 });

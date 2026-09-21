@@ -151,6 +151,12 @@ const PRIORITY_ORDER_WEIGHT_MIN = 2;
  */
 const MAX_MEAL_WAIT_MIN = 45;
 
+/**
+ * A stretch of time the traveller put on the day themselves, with a name and a
+ * length but no place: a rest, a nap, an errand. Held where they put it.
+ */
+export const BLOCK_CATEGORY = 'block';
+
 /** The default when nobody has rated a stop: wanting it averagely. */
 const NEUTRAL_PRIORITY = 3;
 
@@ -642,7 +648,11 @@ function walkClock(
 		// Would this stop, plus getting to the day's final anchor, run past the
 		// end of the day? If so it does not fit -- and neither will anything
 		// after it, since the route is ordered.
-		const probe = leg(cursor ?? at(p), at(p), allowedModes, cursorTerminal, travel);
+		// A block of time the traveller added themselves -- a rest, an errand,
+		// a nap -- happens wherever they already are, the same as a meal the
+		// plan supplies. Its stored coordinates are a formality.
+		const where = p.category === BLOCK_CATEGORY ? (cursor ?? at(p)) : at(p);
+		const probe = leg(cursor ?? where, where, allowedModes, cursorTerminal, travel);
 		const finish = clock + (cursor ? probe.minutes : 0) * 60_000 + p.durationMin * 60_000;
 		// Anything whose window opens before this stop would end. Offered here so
 		// the day fills in order rather than saving every meal until the end.
@@ -651,12 +661,12 @@ function walkClock(
 		// The way home starts from wherever the stop lets the traveller out --
 		// measuring it from the entrance would price a cable car's whole span
 		// at zero.
-		const leaves = p.exitAt ?? at(p);
+		const leaves = p.exitAt ?? where;
 		if (finish + tailCost(leaves) * 60_000 > day.end.getTime()) {
 			overflowed.push(p);
 			continue;
 		}
-		push(p.name, at(p), p.durationMin, false, p.id, p.category, false, p.exitAt ?? null);
+		push(p.name, where, p.durationMin, false, p.id, p.category, false, p.exitAt ?? null);
 	}
 
 	// Whatever the day never got round to, while there is still room for it.
