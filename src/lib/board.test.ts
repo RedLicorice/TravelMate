@@ -77,3 +77,75 @@ describe('spanOf', () => {
 		expect(spanOf(null)).toBeNull();
 	});
 });
+
+/**
+ * The board's own layout arithmetic, in the shape PlanBoard uses it: a journey
+ * of moment-cards and a flight that must land on its own time.
+ */
+describe('a journey laid out on the board', () => {
+	const PX = 1.1;
+	const MIN_BLOCK = 26;
+	type C = { key: string; top: number; height: number; from?: number; to?: number };
+
+	/** Mirrors cardsFor: label gives the start, span or dwell gives the length. */
+	const card = (key: string, from: number, to: number, dwell = 0): C => {
+		const runs = to > from ? to - from : dwell;
+		return { key, top: from * PX, height: Math.max(MIN_BLOCK, runs * PX), from, to: from + runs };
+	};
+
+	const lay = (cards: C[]) => {
+		const ordered = [...cards].sort((a, b) => a.top - b.top);
+		for (let i = 0; i < ordered.length - 1; i++) {
+			const c = ordered[i];
+			const n = ordered[i + 1];
+			if (c.from === undefined || c.to !== c.from) continue;
+			if (n.from !== c.from) continue;
+			c.top -= c.height + 2;
+		}
+		return stack(ordered.sort((a, b) => a.top - b.top));
+	};
+
+	const reggio = 17 * 60 + 25;
+	const stansted = 19 * 60 + 35;
+
+	it('puts the flight on its own departure time, not below it', () => {
+		const out = lay([card('reggio', reggio, reggio), card('flight', reggio, stansted)]);
+		expect(out.find((c) => c.key === 'flight')!.top).toBe(reggio * PX);
+	});
+
+	it('hangs the boarding terminal above the line it shares', () => {
+		const out = lay([card('reggio', reggio, reggio), card('flight', reggio, stansted)]);
+		const r = out.find((c) => c.key === 'reggio')!;
+		expect(r.top + r.height).toBeLessThanOrEqual(reggio * PX);
+	});
+
+	it('sizes the arrival airport by the time it takes to get out of it', () => {
+		// Landing at 19:35 with 45 minutes of passport queue is a 45 minute
+		// block, not a minimum-height one followed by a gap.
+		const out = lay([card('flight', reggio, stansted), card('stansted', stansted, stansted, 45)]);
+		expect(out.find((c) => c.key === 'stansted')!.height).toBeCloseTo(45 * PX, 5);
+	});
+
+	it('leaves no gap between the flight landing and the airport block', () => {
+		const out = lay([card('flight', reggio, stansted), card('stansted', stansted, stansted, 45)]);
+		const f = out.find((c) => c.key === 'flight')!;
+		const s = out.find((c) => c.key === 'stansted')!;
+		expect(s.top - (f.top + f.height)).toBeLessThanOrEqual(2);
+	});
+
+	it('does not drift across a whole journey', () => {
+		const malpensa = 13 * 60 + 40;
+		const out = lay([
+			card('reggio', reggio, reggio),
+			card('flight', reggio, stansted),
+			card('stansted', stansted, stansted, 45)
+		]);
+		void malpensa;
+		expect(out.find((c) => c.key === 'flight')!.top).toBe(reggio * PX);
+		// Within the 2px the cards are separated by, not the hours the old
+		// layout drifted by.
+		const landed = out.find((c) => c.key === 'stansted')!.top;
+		expect(landed).toBeGreaterThanOrEqual(stansted * PX);
+		expect(landed - stansted * PX).toBeLessThanOrEqual(2);
+	});
+});

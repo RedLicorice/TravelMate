@@ -55,6 +55,9 @@
 		sub: string | null;
 		icon: string | null;
 		stop: PlannedStop | null;
+		/** Minutes past midnight this card's own label claims, when it has one. */
+		from?: number;
+		to?: number;
 	};
 
 	/**
@@ -95,10 +98,14 @@
 			// gives the journey no length, because it costs the day nothing --
 			// but a two hour flight is two hours on the board.
 			const own = spanOf(stop.timeLabel);
-			const height = own
-				? Math.max(MIN_BLOCK_PX, (own.to - own.from) * PX_PER_MIN)
-				: Math.max(MIN_BLOCK_PX, stop.durationMin * PX_PER_MIN);
+			// The label says when the card starts; a span says how long it runs,
+			// and where there is no span the dwell does. Landing at 19:35 and
+			// spending 45 minutes getting out of the airport is a 45 minute
+			// card at 19:35, not a minimum-height one.
+			const runsFor = own && own.to > own.from ? own.to - own.from : stop.durationMin;
+			const height = Math.max(MIN_BLOCK_PX, runsFor * PX_PER_MIN);
 			const at = own ? top(own.from) : top(startMin);
+			const bounds = own ? { from: own.from, to: own.from + runsFor } : {};
 
 			if (stop.anchor) {
 				const kind = anchorKind(stop, dayIndex);
@@ -123,7 +130,8 @@
 					// every one of them the same minute.
 					sub: stop.timeLabel ?? (stop.durationMin ? `${stop.durationMin} min` : null),
 					icon: null,
-					stop: null
+					stop: null,
+					...bounds
 				});
 			} else {
 				out.push({
@@ -136,14 +144,28 @@
 					title: stop.name,
 					sub: `${stop.durationMin} min${stop.exitAt ? ' · ends elsewhere' : ''}`,
 					icon: null,
-					stop
+					stop,
+					...bounds
 				});
 			}
 		});
 
-		// Sorted before stacking: a journey card sits at its own hour, which can
-		// be earlier than anything the planner scheduled.
-		return stack([...out].sort((a, b) => a.top - b.top));
+		const ordered = [...out].sort((a, b) => a.top - b.top);
+
+		// A card that is a single moment -- "at Reggio Calabria at 17:25" -- and
+		// is followed by something starting at that same minute hangs above the
+		// line instead of sitting on it. Otherwise stacking pushes the flight
+		// down past its own departure time, and over a seven card journey the
+		// drift runs to hours.
+		for (let i = 0; i < ordered.length - 1; i++) {
+			const card = ordered[i];
+			const next = ordered[i + 1];
+			if (card.from === undefined || card.to !== card.from) continue;
+			if (next.from !== card.from) continue;
+			card.top -= card.height + 2;
+		}
+
+		return stack(ordered.sort((a, b) => a.top - b.top));
 	}
 
 	/**
