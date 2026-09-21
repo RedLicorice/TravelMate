@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { legRoute, type LegRoute } from '$lib/plan/route';
+	import { groupSteps, legRoute, type LegRoute } from '$lib/plan/route';
 	import { legUrl } from '$lib/maps';
 	import type { LatLng } from '$lib/trip/days';
 	import type { Mode } from '$lib/plan/modes';
@@ -62,8 +62,9 @@
 			{#if loading}
 				<p class="tm-hint">Looking up the journey…</p>
 			{:else if route?.steps?.length}
+				{@const shown = groupSteps(route.steps)}
 				<ul style="list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:7px">
-					{#each route.steps as step, i (i)}
+					{#each shown as step, i (i)}
 						<li style="display:flex;gap:8px;align-items:baseline">
 							<span
 								style="font:600 var(--tm-text-xs)/1.4 var(--tm-font);color:var(--tm-text-faint);

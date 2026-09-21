@@ -33,6 +33,8 @@ export type TripRow = {
 	day_start: string;
 	day_end: string;
 	share_token: string | null;
+	/** When Regenerate last produced a plan. Null before the first one. */
+	plan_generated_at: string | null;
 	created_at: string;
 };
 

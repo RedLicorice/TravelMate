@@ -130,6 +130,37 @@ export type RouteStep = {
 	instruction?: string;
 };
 
+/**
+ * Collapse a run of walking (or driving) into one step. Turn-by-turn belongs to
+ * the maps app the Open in Maps button hands off to; what this panel is for is
+ * what to catch and when, and twenty "turn left" lines bury that.
+ *
+ * Seconds are summed and re-rounded once, so a fifteen-leg walk still totals
+ * what the route said rather than fifteen roundings of it.
+ */
+export function groupSteps(steps: RouteStep[]): RouteStep[] {
+	const out: RouteStep[] = [];
+	for (const step of steps) {
+		const prev = out[out.length - 1];
+		const mergeable = step.kind === 'walk' || step.kind === 'drive';
+		if (prev && mergeable && prev.kind === step.kind) {
+			const seconds = prev.seconds + step.seconds;
+			out[out.length - 1] = {
+				kind: prev.kind,
+				seconds,
+				minutes: Math.round(seconds / 60),
+				// Where the run started and where it ends up; the turns between
+				// them are the part being dropped.
+				from: prev.from,
+				to: step.to ?? prev.to
+			};
+		} else {
+			out.push(mergeable ? { ...step, instruction: undefined } : step);
+		}
+	}
+	return out;
+}
+
 export type LegRoute = {
 	/** Door to door, waits included -- what the leg actually costs. */
 	minutes: number;
