@@ -782,3 +782,59 @@ describe('a leg that goes nowhere', () => {
 		expect(leg(here, { lat: 51.5145, lng: -0.127 }, ['transit'], true).minutes).toBeGreaterThan(0);
 	});
 });
+
+describe('rating does not buy detours', () => {
+	const cityTrip: Trip = {
+		hotelName: 'Hotel',
+		hotel: { lat: 51.5145, lng: -0.127 },
+		timezone: 'Europe/London',
+		arrivalAt: '2026-10-02T06:00:00Z',
+		departureAt: '2026-10-03T21:00:00Z',
+		arrivalPoint: null,
+		departurePoint: null,
+		arrivalLegs: [],
+		departureLegs: [],
+		prep: null,
+		arrivalBufferMin: 0,
+		departureBufferMin: 0,
+		bagDropMin: 0,
+		dayStart: '09:00',
+		dayEnd: '19:00'
+	};
+
+	/** Five places along one road, west to east, so the short route is obvious. */
+	const along = (i: number, priority: number): PlanPoi => ({
+		id: `s${i}`,
+		name: `s${i}`,
+		lat: 51.5145,
+		lng: -0.19 + i * 0.02,
+		category: 'attraction',
+		durationMin: 45,
+		priority,
+		dayIndex: null,
+		orderIndex: null
+	});
+
+	const travelOf = (priorities: number[]) =>
+		replan({
+			pois: priorities.map((p, i) => along(i, p)),
+			days: tripDays(cityTrip),
+			allowedModes: ['walk', 'transit'],
+			timezone: 'Europe/London'
+		})
+			.days.flatMap((d) => d.stops)
+			.reduce((sum, s) => sum + (s.legIn?.minutes ?? 0), 0);
+
+	it('walks no further to put the wanted stops first', () => {
+		// Rating the road east-to-west used to be worth about a hundred minutes
+		// of pretend cost across five stops, so 2-opt paid for rating order
+		// with a real detour back down the road.
+		expect(travelOf([1, 2, 3, 4, 5])).toBeLessThanOrEqual(travelOf([3, 3, 3, 3, 3]) + 5);
+	});
+
+	it('is the same however the ratings fall', () => {
+		const flat = travelOf([3, 3, 3, 3, 3]);
+		expect(travelOf([5, 4, 3, 2, 1])).toBeLessThanOrEqual(flat + 5);
+		expect(travelOf([1, 5, 1, 5, 1])).toBeLessThanOrEqual(flat + 5);
+	});
+});

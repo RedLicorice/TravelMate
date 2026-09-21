@@ -121,12 +121,20 @@ const CROWD_WEIGHT_MIN = 20;
 const MEAL_WEIGHT_MIN_PER_HOUR = 90;
 
 /**
- * Minutes of detour worth accepting to move a wanted stop one place earlier in
- * the day. Small: priority decides what gets in and which day it lands on, and
- * only nudges the order once it is there. Making it large would march the
- * traveller back and forth across town in rating order.
+ * How much detour is worth accepting to move a wanted stop earlier in the day.
+ *
+ * Priority decides what gets in and which day it lands on; here it only breaks
+ * ties between routes that cost about the same. It must stay small, and at 3
+ * minutes a position it was not: the term is weight x rating x position summed
+ * over the day, so across six stops it spanned some hundred minutes of
+ * pretend cost -- more than any real difference in walking inside a cluster --
+ * and 2-opt bought rating order with genuine detours. Exactly the marching
+ * back and forth across town this constant exists to prevent.
+ *
+ * Divided by the number of stops, so a long day does not weigh rating more
+ * heavily than a short one.
  */
-const PRIORITY_ORDER_WEIGHT_MIN = 3;
+const PRIORITY_ORDER_WEIGHT_MIN = 2;
 
 /** The default when nobody has rated a stop: wanting it averagely. */
 const NEUTRAL_PRIORITY = 3;
@@ -243,30 +251,58 @@ export function assignDays(
 	// for nothing, and handing it stops only drops them at schedule time.
 	const budget = (i: number) => Math.max(0, days[i].usableMin - (anchorMin[i] ?? 0)) * 0.75;
 
+	/**
+	 * Move stops off a day that is over its budget, onto a day that has room
+	 * for them, choosing the stop that is most out of place: nearest where it
+	 * is going, relative to where it currently sits.
+	 *
+	 * Two things this gets right that the earlier version did not.
+	 *
+	 * It chooses by geography rather than by rating. Shedding the least wanted
+	 * stop wherever it happened to be is what sent a traveller back across the
+	 * city: a day's overflow landed on whichever day had room, not on the day
+	 * already going that way. Rating now only separates stops equally misplaced.
+	 *
+	 * It only makes a move that holds. Moving onto a day with no room for it
+	 * pushed that day over in turn, which pushed something back, and the two
+	 * traded stops until the guard ran out -- leaving whatever arrangement the
+	 * last iteration happened to produce. Every move now strictly empties the
+	 * full day without filling another past its budget, so the loop settles.
+	 */
 	for (let guard = 0; guard < pois.length * 2; guard++) {
 		const over = usable.find(({ i }) => load(buckets.get(i)!) > budget(i));
 		if (!over) break;
-		const under = usable
-			.filter(({ i }) => i !== over.i && load(buckets.get(i)!) < budget(i))
-			.sort((a, b) => load(buckets.get(a.i)!) - load(buckets.get(b.i)!))[0];
-		if (!under) break;
 
-		const centre = centroid(buckets.get(under.i)!) ?? at(buckets.get(over.i)![0]);
 		const list = buckets.get(over.i)!;
-		// Move the least wanted first, and among equals the one closest to where
-		// it is going. A full day should shed what the traveller cares least
-		// about, not whatever happens to sit nearest the other cluster.
-		const moved = list
-			.map((p, idx) => ({ p, idx, d: haversineKm(centre, at(p)) }))
+		const home = centroid(list);
+		let best: { poi: PlanPoi; from: number; to: number; pull: number } | null = null;
+
+		for (const poi of list) {
 			// A pin is the one thing rebalancing may not touch.
-			.filter((x) => !x.p.pinned)
-			.sort(
-				(a, b) =>
-					(a.p.priority ?? NEUTRAL_PRIORITY) - (b.p.priority ?? NEUTRAL_PRIORITY) || a.d - b.d
-			)[0];
-		if (!moved) break;
-		list.splice(moved.idx, 1);
-		buckets.get(under.i)!.push(moved.p);
+			if (poi.pinned) continue;
+			for (const { i } of usable) {
+				if (i === over.i) continue;
+				const target = buckets.get(i)!;
+				if (load(target) + poi.durationMin > budget(i)) continue;
+
+				const centre = centroid(target) ?? at(poi);
+				const pull = haversineKm(centre, at(poi)) - haversineKm(home ?? centre, at(poi));
+				const better =
+					!best ||
+					pull < best.pull ||
+					(pull === best.pull &&
+						(poi.priority ?? NEUTRAL_PRIORITY) < (best.poi.priority ?? NEUTRAL_PRIORITY));
+				if (better) best = { poi, from: over.i, to: i, pull };
+			}
+		}
+
+		// Nowhere for anything to go. The day stays full, and walkClock will
+		// report what did not fit rather than the buckets churning.
+		if (!best) break;
+
+		const from = buckets.get(best.from)!;
+		from.splice(from.indexOf(best.poi), 1);
+		buckets.get(best.to)!.push(best.poi);
 	}
 	return buckets;
 }
@@ -348,10 +384,17 @@ export function orderDay(
 			// wrong time: prefer the order that arrives closer to the slot.
 			0.5 * sim.waitedMin +
 			// A wanted stop earlier in the day, when it is nearly free to do so.
-			PRIORITY_ORDER_WEIGHT_MIN *
-				order.reduce((sum, p, i) => sum + (p.priority ?? NEUTRAL_PRIORITY) * i, 0) +
-			// Anything that did not fit is worse than any amount of walking.
-			10_000 * sim.overflowed.length
+			(PRIORITY_ORDER_WEIGHT_MIN *
+				order.reduce((sum, p, i) => sum + (p.priority ?? NEUTRAL_PRIORITY) * i, 0)) /
+				Math.max(1, order.length) +
+			// Anything that did not fit is worse than any amount of walking, and
+			// of two orders that drop the same number of stops, the one that
+			// drops the least wanted wins. Rating belongs here rather than in
+			// the ordering term: it decides what gets left behind, not how far
+			// the traveller walks to reach what does not.
+			10_000 * sim.overflowed.length +
+			1_000 *
+				sim.overflowed.reduce((sum, p) => sum + (p.priority ?? NEUTRAL_PRIORITY), 0)
 		);
 	};
 
