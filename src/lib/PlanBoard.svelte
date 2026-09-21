@@ -11,10 +11,36 @@
 		mealWindows: MealWindows;
 		dayColor: (index: number) => string;
 		drag: ReturnType<typeof createDrag>;
+		pinned?: Set<string>;
 		onpick?: (poiId: string) => void;
+		onpin?: (poiId: string) => void;
+		/** Tapped empty time. `beforeId` is the stop the new one should precede. */
+		onadd?: (dayIndex: number, beforeId: string | null) => void;
 	};
 
-	let { days, planned, timezone, mealWindows, dayColor, drag, onpick }: Props = $props();
+	let {
+		days,
+		planned,
+		timezone,
+		mealWindows,
+		dayColor,
+		drag,
+		pinned = new Set<string>(),
+		onpick,
+		onpin,
+		onadd
+	}: Props = $props();
+
+	/**
+	 * Which stop a tap at this height should land above. The first real stop
+	 * that has not started yet; null when the tap is after all of them, which
+	 * means the end of the day.
+	 */
+	function slotAtHeight(day: PlannedDay, offsetY: number): string | null {
+		const minutes = range.from + offsetY / PX_PER_MIN;
+		const next = day.stops.find((s) => s.poiId && minutesOf(s.arrive) >= minutes);
+		return next?.poiId ?? null;
+	}
 
 	/** Minutes past local midnight. The grid's only unit. */
 	function minutesOf(at: Date): number {
@@ -139,6 +165,16 @@
 							></div>
 						{/each}
 
+						<!-- Empty time is a place to put something. Drawn before the
+						     blocks so it only catches taps that miss them. -->
+						{#if onadd}
+							<button
+								class="tm-board-empty"
+								aria-label="Add a stop to {dayLabel(day.date)}"
+								onclick={(e) => onadd?.(i, slotAtHeight(day, e.offsetY))}
+							></button>
+						{/if}
+
 						{#each day.stops as stop, j (stop.name + j)}
 							{@const startMin = minutesOf(stop.arrive)}
 							{#if stop.legIn && j > 0}
@@ -180,7 +216,8 @@
 									data-drop-stop={stop.poiId}
 									style="position:absolute;left:4px;right:4px;top:{top(startMin)}px;
 									height:{blockHeight}px;border-radius:8px;overflow:hidden;
-									background:var(--tm-surface);border-left:3px solid {dayColor(i)};
+									background:var(--tm-surface);
+									border-left:3px solid {stop.poiId && pinned.has(stop.poiId) ? 'var(--tm-butter)' : dayColor(i)};
 									border-top:1px solid var(--tm-border);border-right:1px solid var(--tm-border);
 									border-bottom:1px solid var(--tm-border);padding:4px 6px;
 									{drag.state.id === stop.poiId ? 'opacity:0.35;' : ''}
@@ -198,10 +235,26 @@
 										<button
 											onclick={() => stop.poiId && onpick?.(stop.poiId)}
 											style="background:none;border:none;padding:0;text-align:left;cursor:pointer;
-											color:inherit;font:600 11px/1.2 var(--tm-font);overflow:hidden"
+											color:inherit;font:600 11px/1.2 var(--tm-font);overflow:hidden;flex:1"
 										>
 											{stop.name}
 										</button>
+										{#if onpin && stop.poiId}
+											{@const held = pinned.has(stop.poiId)}
+											<button
+												class="tm-board-pin"
+												class:tm-board-pin--on={held}
+												aria-pressed={held}
+												aria-label={held ? 'Unpin {stop.name}' : 'Pin {stop.name}'}
+												title={held ? 'Replan may not move this' : 'Hold this where it is'}
+												onclick={() => onpin?.(stop.poiId!)}
+											>
+												<svg width="10" height="10" viewBox="0 0 24 24" fill={held ? 'currentColor' : 'none'}
+													stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+													<path d="M12 17v5M9 3h6l-1 6 3 3v2H7v-2l3-3z" />
+												</svg>
+											</button>
+										{/if}
 									</div>
 									{#if blockHeight > 38}
 										<p style="font:400 9.5px/1.2 var(--tm-font);color:var(--tm-text-faint);margin-top:2px">
@@ -233,6 +286,46 @@
 			background:var(--tm-surface-2);
 			border:1px solid var(--tm-border);vertical-align:-1px"
 		></span>
-		travelling · hold ⠿ to move a stop between days
+		travelling · hold ⠿ to move a stop between days · tap empty time to add
 	</p>
 </div>
+
+<style>
+	/* Covers the whole column so any gap between blocks is tappable. It sits
+	   under them in paint order, so it never steals a tap meant for a stop. */
+	.tm-board-empty {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		background: none;
+		border: none;
+		padding: 0;
+		cursor: copy;
+	}
+
+	.tm-board-pin {
+		flex: none;
+		display: grid;
+		place-items: center;
+		width: 18px;
+		height: 18px;
+		padding: 0;
+		border: none;
+		border-radius: 50%;
+		background: none;
+		cursor: pointer;
+		color: var(--tm-text-faint);
+		opacity: 0.5;
+	}
+
+	.tm-board-pin:hover,
+	.tm-board-pin:focus-visible {
+		opacity: 1;
+	}
+
+	.tm-board-pin--on {
+		opacity: 1;
+		color: var(--tm-butter-ink);
+		background: var(--tm-butter-soft);
+	}
+</style>

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { tripDays, type Trip } from '$lib/trip/days';
 import { replan, schedule, REASON_TEXT, type PlanPoi } from './planner';
-import { chooseMode, leg } from './modes';
+import { chooseMode, leg, type Mode } from './modes';
 import {
 	categoryBusyness,
 	categoryCrowd,
@@ -532,5 +532,135 @@ describe('arrival day capacity', () => {
 		});
 
 		expect(result.unplaced).toEqual([]);
+	});
+});
+
+describe('pinned stops', () => {
+	const pinTrip: Trip = {
+		hotelName: 'Hotel',
+		hotel: { lat: 51.5145, lng: -0.127 },
+		timezone: 'Europe/London',
+		arrivalAt: '2026-10-02T06:00:00Z',
+		departureAt: '2026-10-04T20:00:00Z',
+		arrivalPoint: null,
+		departurePoint: null,
+		arrivalBufferMin: 0,
+		departureBufferMin: 0,
+		bagDropMin: 0,
+		dayStart: '09:00',
+		dayEnd: '19:00'
+	};
+	const place = (id: string, lat: number, lng: number, extra: Partial<PlanPoi> = {}): PlanPoi => ({
+		id,
+		name: id,
+		lat,
+		lng,
+		category: 'attraction',
+		durationMin: 60,
+		priority: 3,
+		dayIndex: null,
+		orderIndex: null,
+		...extra
+	});
+
+	// Far east, far west: geography alone would never put these together, which
+	// is what makes them a fair test of whether the pin actually held.
+	const east = (id: string, extra: Partial<PlanPoi> = {}) => place(id, 51.5081, -0.0759, extra);
+	const west = (id: string, extra: Partial<PlanPoi> = {}) => place(id, 51.5007, -0.1974, extra);
+
+	const dayOfIn = (result: ReturnType<typeof replan>, id: string) =>
+		result.days.find((d) => d.stops.some((s) => s.poiId === id))?.index ?? null;
+	const orderIn = (result: ReturnType<typeof replan>, dayIndex: number) =>
+		result.days[dayIndex].stops.filter((s) => s.poiId).map((s) => s.poiId);
+
+	it('keeps a pinned stop on the day it was pinned to', () => {
+		const days = tripDays(pinTrip);
+		const pois = [
+			// Pinned to day 1 despite sitting in the middle of day 0's cluster.
+			east('pinned', { dayIndex: 1, orderIndex: 0, pinned: true }),
+			east('e1'),
+			east('e2'),
+			west('w1'),
+			west('w2')
+		];
+		const result = replan({ pois, days, allowedModes: ['walk', 'transit'], timezone: 'Europe/London' });
+		expect(dayOfIn(result, 'pinned')).toBe(1);
+	});
+
+	it('keeps a pinned stop at the place in the day it was pinned to', () => {
+		const days = tripDays(pinTrip);
+		const pois = [
+			west('first', { dayIndex: 0, orderIndex: 0, pinned: true }),
+			east('e1', { dayIndex: 0, orderIndex: 1 }),
+			east('e2', { dayIndex: 0, orderIndex: 2 }),
+			east('e3', { dayIndex: 0, orderIndex: 3 })
+		];
+		const result = replan({ pois, days, allowedModes: ['walk'], timezone: 'Europe/London' });
+		// Nearest-neighbour from the hotel would never open in the far west.
+		expect(orderIn(result, 0)[0]).toBe('first');
+	});
+
+	it('plans the free stops around the pin rather than ignoring it', () => {
+		const days = tripDays(pinTrip);
+		const pois = [
+			east('pinned', { dayIndex: 0, orderIndex: 0, pinned: true }),
+			east('e1'),
+			west('w1')
+		];
+		const result = replan({ pois, days, allowedModes: ['walk', 'transit'], timezone: 'Europe/London' });
+		// It is on the plan exactly once, and the others found homes too.
+		const all = result.days.flatMap((d) => d.stops.map((s) => s.poiId)).filter(Boolean);
+		expect(all.filter((id) => id === 'pinned')).toHaveLength(1);
+		expect(result.unplaced).toEqual([]);
+	});
+
+	it('leaves an unpinned trip planned exactly as before', () => {
+		const days = tripDays(pinTrip);
+		const pois = [east('e1'), east('e2'), west('w1'), west('w2')];
+		const input = { pois, days, allowedModes: ['walk', 'transit'] as Mode[], timezone: 'Europe/London' };
+		expect(replan(input)).toEqual(replan(input));
+	});
+});
+
+describe('a pin the day cannot fit', () => {
+	it('is reported as unplaced but keeps its pin, so the caller can leave it be', () => {
+		const tight: Trip = {
+			hotelName: 'Hotel',
+			hotel: { lat: 51.5145, lng: -0.127 },
+			timezone: 'Europe/London',
+			arrivalAt: '2026-10-02T06:00:00Z',
+			departureAt: '2026-10-02T20:00:00Z',
+			arrivalPoint: null,
+			departurePoint: null,
+			arrivalBufferMin: 0,
+			departureBufferMin: 0,
+			bagDropMin: 0,
+			// Half an hour of usable day, and a stop that wants eight times that.
+			dayStart: '09:00',
+			dayEnd: '09:30'
+		};
+		const days = tripDays(tight);
+		const result = replan({
+			pois: [
+				{
+					id: 'long',
+					name: 'long',
+					lat: 51.5081,
+					lng: -0.0759,
+					category: 'attraction',
+					durationMin: 240,
+					priority: 3,
+					dayIndex: 0,
+					orderIndex: 0,
+					pinned: true
+				}
+			],
+			days,
+			allowedModes: ['walk'],
+			timezone: 'Europe/London'
+		});
+		const [out] = result.unplaced;
+		expect(out?.reason).toBe('day-full');
+		expect(out?.poi.pinned).toBe(true);
 	});
 });

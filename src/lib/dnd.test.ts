@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { reorder } from './dnd.svelte';
+import { insertInto, reorder } from './dnd.svelte';
 
 type Row = { id: string; dayIndex: number | null; orderIndex: number | null };
 
@@ -85,5 +85,53 @@ describe('drop position when moving down', () => {
 	it('still inserts before when the stop comes from another day', () => {
 		// Nothing shifts in the destination, so there is no slot to compensate.
 		expect(orderOf(reorder(rows(), 'x', { kind: 'stop', id: 'b' }), 0)).toEqual(['a', 'x', 'b', 'c']);
+	});
+});
+
+describe('insertInto', () => {
+	const day = (n: number) => [
+		{ id: 'a', dayIndex: n, orderIndex: 0 },
+		{ id: 'b', dayIndex: n, orderIndex: 1 },
+		{ id: 'c', dayIndex: n, orderIndex: 2 }
+	];
+	const fresh = { id: 'new', dayIndex: null, orderIndex: null };
+
+	it('lands the stop above the one it was added under', () => {
+		const rows = insertInto([...day(1), fresh], 'new', 1, 'b');
+		expect(rows.map((r) => r.id)).toEqual(['a', 'new', 'b', 'c']);
+		expect(rows.map((r) => r.orderIndex)).toEqual([0, 1, 2, 3]);
+	});
+
+	it('appends when no stop follows the slot', () => {
+		expect(insertInto([...day(1), fresh], 'new', 1, null).map((r) => r.id)).toEqual([
+			'a',
+			'b',
+			'c',
+			'new'
+		]);
+	});
+
+	it('goes first when the slot is above every stop', () => {
+		expect(insertInto([...day(1), fresh], 'new', 1, 'a').map((r) => r.id)).toEqual([
+			'new',
+			'a',
+			'b',
+			'c'
+		]);
+	});
+
+	it('leaves the other days alone', () => {
+		const rows = insertInto([...day(0), ...day(1).map((p) => ({ ...p, id: p.id + '1' })), fresh], 'new', 1, null);
+		expect(rows.every((r) => r.dayIndex === 1)).toBe(true);
+	});
+
+	it('is the only stop on an empty day', () => {
+		expect(insertInto([fresh], 'new', 2, null)).toEqual([
+			{ id: 'new', dayIndex: 2, orderIndex: 0 }
+		]);
+	});
+
+	it('does nothing for a stop it cannot find', () => {
+		expect(insertInto(day(1), 'ghost', 1, null)).toEqual([]);
 	});
 });

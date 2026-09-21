@@ -25,6 +25,11 @@ export type PlanPoi = {
 	priority: number;
 	dayIndex: number | null;
 	orderIndex: number | null;
+	/**
+	 * Held where the traveller put it. Regenerate reshuffles everything around
+	 * it rather than moving it.
+	 */
+	pinned?: boolean;
 };
 
 export type Warning = { kind: 'crowded' | 'overflow' | 'off-hours'; message: string };
@@ -172,11 +177,15 @@ function kmeans(pois: PlanPoi[], k: number, rounds = 8): number[] {
  * Split POIs across days by geography, then rebalance by *available minutes*
  * rather than by equal counts: a last day with ninety usable minutes must not
  * be handed five stops because the arithmetic said so.
- */
-/**
+ *
  * `anchorMin[i]` is the time day `i` spends on its own anchors -- the airport
  * transfer, the bag drop, the walk home. Omitted, it is assumed free, which is
  * only true of a day whose anchors are the hotel at both ends.
+ *
+ * Pinned stops are not distributed. They are placed on the day they are already
+ * on, and the free stops are clustered around them -- so a pin both keeps its
+ * day and spends that day's minutes, which is what stops the rest of the day
+ * being planned as though the pin were not there.
  */
 export function assignDays(
 	pois: PlanPoi[],
@@ -188,7 +197,13 @@ export function assignDays(
 	days.forEach((_, i) => buckets.set(i, []));
 	if (!pois.length || !usable.length) return buckets;
 
-	const labels = kmeans(pois, Math.min(usable.length, pois.length));
+	const held = pois.filter((p) => p.pinned && p.dayIndex !== null && buckets.has(p.dayIndex));
+	for (const p of held) buckets.get(p.dayIndex!)!.push(p);
+
+	const free = pois.filter((p) => !held.includes(p));
+	if (!free.length) return buckets;
+
+	const labels = kmeans(free, Math.min(usable.length, free.length));
 
 	// Clusters carrying the most wanted stops go to the earliest days. A rained
 	// out final day should cost the trip its least wanted stops, not its best.
@@ -196,7 +211,7 @@ export function assignDays(
 	labels.forEach((label, j) => {
 		const key = Math.min(label, usable.length - 1);
 		if (!clusters.has(key)) clusters.set(key, []);
-		clusters.get(key)!.push(pois[j]);
+		clusters.get(key)!.push(free[j]);
 	});
 	const wanted = (list: PlanPoi[]) =>
 		list.reduce((sum, p) => sum + (p.priority ?? NEUTRAL_PRIORITY), 0) / (list.length || 1);
@@ -231,10 +246,13 @@ export function assignDays(
 		// about, not whatever happens to sit nearest the other cluster.
 		const moved = list
 			.map((p, idx) => ({ p, idx, d: haversineKm(centre, at(p)) }))
+			// A pin is the one thing rebalancing may not touch.
+			.filter((x) => !x.p.pinned)
 			.sort(
 				(a, b) =>
 					(a.p.priority ?? NEUTRAL_PRIORITY) - (b.p.priority ?? NEUTRAL_PRIORITY) || a.d - b.d
 			)[0];
+		if (!moved) break;
 		list.splice(moved.idx, 1);
 		buckets.get(under.i)!.push(moved.p);
 	}
@@ -268,10 +286,25 @@ export function orderDay(
 	if (pois.length < 2) return pois;
 
 	const start = day.fixedStart.at(-1)!.at;
-	const remaining = [...pois];
+	// Pinned stops hold their place; only the rest are ordered. Nearest
+	// neighbour from wherever the day currently stands, which for a slot that
+	// follows a pin is the pin itself.
+	const remaining = pois.filter((p) => !p.pinned);
+	const pins = pois
+		.filter((p) => p.pinned)
+		.sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0));
+
 	const route: PlanPoi[] = [];
+	const held = new Map(pins.map((p, i) => [Math.min(p.orderIndex ?? i, pois.length - 1), p]));
 	let cursor = start;
-	while (remaining.length) {
+	for (let slot = 0; slot < pois.length; slot++) {
+		const pin = held.get(slot);
+		if (pin) {
+			route.push(pin);
+			cursor = at(pin);
+			continue;
+		}
+		if (!remaining.length) continue;
 		let bestI = 0;
 		let bestD = Infinity;
 		remaining.forEach((p, i) => {
@@ -285,6 +318,10 @@ export function orderDay(
 		route.push(next);
 		cursor = at(next);
 	}
+	// A pin whose index landed past the end of a shorter day, or two pins
+	// claiming one slot: whatever the map could not place still belongs here.
+	for (const pin of pins) if (!route.includes(pin)) route.push(pin);
+	for (const free of remaining) route.push(free);
 
 	// 2-opt on the real objective: travel minutes plus a soft crowd cost. This
 	// is what lets a museum move out of its 11-15 peak, and what stops it moving
@@ -313,6 +350,10 @@ export function orderDay(
 		improved = false;
 		for (let i = 0; i < best.length - 1; i++) {
 			for (let j = i + 1; j < best.length; j++) {
+				// Reversing a segment that contains a pin moves the pin. Only
+				// free stops are permuted, so every pin keeps the index the
+				// seeding gave it.
+				if (best.slice(i, j + 1).some((p) => p.pinned)) continue;
 				const candidate = [...best.slice(0, i), ...best.slice(i, j + 1).reverse(), ...best.slice(j + 1)];
 				const s = score(candidate);
 				if (s < bestScore - 0.01) {

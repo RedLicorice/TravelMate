@@ -3,7 +3,9 @@
 	import { page } from '$app/state';
 	import { base } from '$app/paths';
 	import { cityBBox, getTrip, updateCityBBox, type TripRow } from '$lib/trip/repo';
-	import { addPoi, DuplicatePoiError, listPois, type PoiRow } from '$lib/trip/pois';
+	import { addPoi, DuplicatePoiError, listPois, saveAssignments, type PoiRow } from '$lib/trip/pois';
+	import { insertInto } from '$lib/dnd.svelte';
+	import { goto } from '$app/navigation';
 	import { poi as provider, type City, type Poi } from '$lib/poi';
 	import { durationFor } from '$lib/poi/photon';
 	import { isShortMapLink, parseLatLng } from '$lib/poi/manual';
@@ -12,6 +14,20 @@
 	import LeafletMap from '$lib/Map.svelte';
 
 	const tripId = page.params.id!;
+
+	/**
+	 * Reached from a slot in the plan rather than from the Add places button.
+	 * `day` is the day to land on; `before` is the stop to land above, absent
+	 * meaning the end of that day.
+	 *
+	 * A slot is a single choice, so this adds one place and goes straight back
+	 * -- the multi-add flow is for filling a wishlist, which is a different job.
+	 */
+	const slot = $derived.by(() => {
+		const day = Number(page.url.searchParams.get('day'));
+		if (!page.url.searchParams.has('day') || !Number.isInteger(day) || day < 0) return null;
+		return { day, before: page.url.searchParams.get('before') };
+	});
 
 	let trip = $state<TripRow | null>(null);
 	let saved = $state<PoiRow[]>([]);
@@ -195,7 +211,28 @@
 	async function add(p: Poi) {
 		if (isSaved(p)) return;
 		try {
-			saved = [...saved, await addPoi(tripId, p)];
+			const row = await addPoi(tripId, p);
+			saved = [...saved, row];
+
+			if (slot) {
+				// Put it in the slot it was asked for, then hand the trip page
+				// back the day it landed on so it opens there.
+				await saveAssignments(
+					insertInto(
+						[...saved, row].map((x) => ({
+							id: x.id,
+							dayIndex: x.id === row.id ? null : x.day_index,
+							orderIndex: x.id === row.id ? null : x.order_index
+						})),
+						row.id,
+						slot.day,
+						slot.before
+					)
+				);
+				await goto(`${base}/trip/${tripId}?day=${slot.day}`, { replaceState: true });
+				return;
+			}
+
 			justAdded = p.name;
 			setTimeout(() => (justAdded = null), 1600);
 			// Clear after adding: the next place is a new search, and leaving the

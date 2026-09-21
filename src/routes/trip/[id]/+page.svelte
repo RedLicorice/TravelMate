@@ -13,7 +13,7 @@
 		updateHotel,
 		type TripRow
 	} from '$lib/trip/repo';
-	import { listPois, saveAssignments, toPlanPoi, type PoiRow } from '$lib/trip/pois';
+	import { listPois, saveAssignments, toPlanPoi, updatePoi, type PoiRow } from '$lib/trip/pois';
 	import { tripDays, type Day } from '$lib/trip/days';
 	import {
 		replan,
@@ -86,6 +86,9 @@
 			]);
 			if (!row) return;
 			planAt = row.plan_generated_at;
+			// Coming back from adding into a slot: open on the day it landed on.
+			const asked = Number(page.url.searchParams.get('day'));
+			if (Number.isInteger(asked) && asked >= 0) dayIndex = asked;
 			if (row.share_token) shareUrl = linkFor(row.share_token);
 			bbox = cityBBox(row);
 			if (!bbox) {
@@ -326,6 +329,39 @@
 	const drag = createDrag((id, target) => applyMove(id, target));
 
 	/**
+	 * A stop that has a day but no place in the stored plan -- added into a slot
+	 * on the last screen. Re-time once so it appears where it was put, without
+	 * making the traveller tap Replan for a stop they have already placed.
+	 */
+	let retimed = false;
+	$effect(() => {
+		if (retimed || busy || !row || !days.length || !stored.length) return;
+		const planned = new Set(stored.map((r) => r.poi_id).filter(Boolean));
+		if (!pois.some((p) => p.day_index !== null && !planned.has(p.id))) return;
+		retimed = true;
+		restore().catch((e) => (error = (e as Error).message));
+	});
+
+	async function togglePin(poiId: string) {
+		const current = pois.find((p) => p.id === poiId);
+		if (!current) return;
+		const next = !current.pinned;
+		pois = pois.map((p) => (p.id === poiId ? { ...p, pinned: next } : p));
+		try {
+			await updatePoi(poiId, { pinned: next });
+		} catch (e) {
+			error = (e as Error).message;
+			pois = pois.map((p) => (p.id === poiId ? { ...p, pinned: !next } : p));
+		}
+	}
+
+	const pinnedIds = $derived(new Set(pois.filter((p) => p.pinned).map((p) => p.id)));
+
+	/** Where an Add tapped below `stop` should land: above whatever follows it. */
+	const slotHref = (dayIdx: number, beforeId: string | null) =>
+		`${base}/trip/${tripId}/add?day=${dayIdx}` + (beforeId ? `&before=${beforeId}` : '');
+
+	/**
 	 * The day and order replan settled, written back onto the stops so the
 	 * second pass re-times that same plan rather than reshuffling it.
 	 */
@@ -378,7 +414,12 @@
 			const assignments = next.days.flatMap((d) =>
 				d.stops.filter((s) => s.poiId).map((s, i) => ({ id: s.poiId!, dayIndex: d.index, orderIndex: i }))
 			);
-			const cleared = next.unplaced.map((u) => ({ id: u.poi.id, dayIndex: null, orderIndex: null }));
+			// A pin the clock could not reach keeps its day anyway. Clearing it
+			// would quietly undo the pin, and the traveller would find the stop
+			// back in the wishlist with no idea why.
+			const cleared = next.unplaced
+				.filter((u) => !u.poi.pinned)
+				.map((u) => ({ id: u.poi.id, dayIndex: null, orderIndex: null }));
 			await saveAssignments([...assignments, ...cleared]);
 			planAt = await savePlan(tripId, next);
 			fresh = next.days;
@@ -720,7 +761,10 @@
 						mealWindows={agreed.windows}
 						{dayColor}
 						{drag}
+						pinned={pinnedIds}
 						onpick={(id) => goto(`${base}/trip/${tripId}/poi/${id}`)}
+						onpin={(id) => togglePin(id)}
+						onadd={(dayIdx, beforeId) => goto(slotHref(dayIdx, beforeId))}
 					/>
 				{/if}
 			</div>
@@ -792,6 +836,7 @@
 						<div
 							class="tm-stop"
 							class:tm-stop--anchor={stop.anchor}
+							class:tm-stop--pinned={stop.poiId ? pinnedIds.has(stop.poiId) : false}
 							data-drop-stop={stop.poiId ?? undefined}
 							style={drag.state.id === stop.poiId
 								? 'opacity:0.35'
@@ -813,14 +858,39 @@
 										>⠿</span>
 									{/if}{stop.name}
 								</p>
-								<p class="tm-stop__sub">
-									{stop.anchor ? (stop.durationMin ? `${stop.durationMin} min stop` : 'anchor') : `${stop.durationMin} min`}
+								<p class="tm-stop__sub" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+									<span>
+										{stop.anchor ? (stop.durationMin ? `${stop.durationMin} min stop` : 'anchor') : `${stop.durationMin} min`}
+									</span>
+									{#if stop.poiId}
+										{@const held = pinnedIds.has(stop.poiId)}
+										<button
+											class="tm-pin"
+											class:tm-pin--on={held}
+											aria-pressed={held}
+											title={held ? 'Replan may not move this' : 'Hold this where it is'}
+											onclick={() => togglePin(stop.poiId!)}
+										>
+											<svg width="11" height="11" viewBox="0 0 24 24" fill={held ? 'currentColor' : 'none'}
+												stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+												<path d="M12 17v5M9 3h6l-1 6 3 3v2H7v-2l3-3z" />
+											</svg>
+											{held ? 'Pinned' : 'Pin'}
+										</button>
+									{/if}
 								</p>
 								{#each stop.warnings as w (w.kind)}
 									<div class="mt-2"><span class="tm-chip tm-chip--warn">{w.message}</span></div>
 								{/each}
 							</div>
 						</div>
+						<!-- The slot under this stop. Whatever is added here lands
+						     above the next real stop, or at the end of the day when
+						     nothing but the walk home follows. -->
+						{@const following = current.stops.slice(i + 1).find((x) => x.poiId)}
+						<a class="tm-slot" href={slotHref(dayIndex, following?.poiId ?? null)}>
+							<span aria-hidden="true">+</span> Add a stop here
+						</a>
 					{/each}
 				{/if}
 			</div>

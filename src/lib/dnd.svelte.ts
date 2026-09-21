@@ -172,3 +172,30 @@ export function reorder<T extends { id: string; dayIndex: number | null; orderIn
 	}
 	return rows;
 }
+
+/**
+ * Where a newly added stop goes when it was added from a slot in the plan
+ * rather than from the wishlist.
+ *
+ * `beforeId` is the stop it should land above; null appends to the end of the
+ * day. Anchors are never named here -- the slot below the hotel is "before the
+ * first real stop", and the slot above the return is an append.
+ */
+export function insertInto<T extends { id: string; dayIndex: number | null; orderIndex: number | null }>(
+	all: T[],
+	newId: string,
+	dayIndex: number,
+	beforeId: string | null
+): { id: string; dayIndex: number; orderIndex: number }[] {
+	const added = all.find((p) => p.id === newId);
+	if (!added) return [];
+
+	const destination = all
+		.filter((p) => p.dayIndex === dayIndex && p.id !== newId)
+		.sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0));
+
+	const slot = beforeId ? destination.findIndex((p) => p.id === beforeId) : -1;
+	destination.splice(slot < 0 ? destination.length : slot, 0, added);
+
+	return destination.map((p, i) => ({ id: p.id, dayIndex, orderIndex: i }));
+}

@@ -19,7 +19,10 @@ export type PoiRow = {
 	notes: string | null;
 	day_index: number | null;
 	order_index: number | null;
+	/** Held where the traveller put it; Replan plans around it. */
+	pinned: boolean;
 	created_at: string;
+	updated_at: string | null;
 };
 
 export const toPlanPoi = (row: PoiRow): PlanPoi => ({
@@ -31,7 +34,8 @@ export const toPlanPoi = (row: PoiRow): PlanPoi => ({
 	durationMin: row.duration_min,
 	priority: row.priority ?? 3,
 	dayIndex: row.day_index,
-	orderIndex: row.order_index
+	orderIndex: row.order_index,
+	pinned: row.pinned ?? false
 });
 
 export async function listPois(tripId: string): Promise<PoiRow[]> {
@@ -86,7 +90,13 @@ export async function getPoi(id: string): Promise<PoiRow | null> {
 
 export async function updatePoi(
 	id: string,
-	patch: { duration_min?: number; notes?: string | null; name?: string; priority?: number }
+	patch: {
+		duration_min?: number;
+		notes?: string | null;
+		name?: string;
+		priority?: number;
+		pinned?: boolean;
+	}
 ): Promise<PoiRow> {
 	const { data, error } = await supabase
 		.from('pois')

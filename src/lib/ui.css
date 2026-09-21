@@ -17,7 +17,9 @@
 .tm-btn--secondary { background: var(--tm-surface); color: var(--tm-text); border-color: var(--tm-border-strong); }
 .tm-btn--ghost     { background: transparent; color: var(--tm-text-muted); }
 .tm-btn:disabled   { opacity: 0.4; cursor: not-allowed; }
-.tm-btn--block     { width: 100%; }
+/* display:flex, not the inherited inline-flex: an inline-level box ignores
+   auto margins, so a capped-width block button would not centre. */
+.tm-btn--block     { width: 100%; display: flex; }
 
 .tm-field { display: flex; flex-direction: column; gap: var(--tm-space-2); }
 .tm-label { font: 600 var(--tm-text-sm)/1 var(--tm-font); color: var(--tm-text); }
@@ -133,3 +135,35 @@
   margin: 0 auto var(--tm-space-3);
 }
 .tm-attrib { font: 400 10px/1 var(--tm-font); color: var(--tm-text-faint); }
+
+/* A pin control on a stop: quiet until it is on, because most stops are not. */
+.tm-pin {
+  display: inline-flex; align-items: center; gap: 4px;
+  font: 600 var(--tm-text-xs)/1 var(--tm-font);
+  padding: 4px 8px; border-radius: 999px; cursor: pointer;
+  background: transparent; color: var(--tm-text-faint);
+  border: 1px solid var(--tm-border);
+  transition: color var(--tm-motion), border-color var(--tm-motion), background var(--tm-motion);
+}
+.tm-pin:hover { color: var(--tm-text-muted); border-color: var(--tm-border-strong); }
+.tm-pin--on {
+  background: var(--tm-butter-soft); color: var(--tm-butter-ink); border-color: var(--tm-butter);
+}
+
+/* The gap between two stops, offered as a place to add one. Deliberately faint:
+   there is one after every stop, and they must not read as content. */
+.tm-slot {
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  min-height: 34px; margin: 2px 0;
+  font: 600 var(--tm-text-xs)/1 var(--tm-font);
+  color: var(--tm-text-faint); text-decoration: none;
+  border: 1px dashed var(--tm-border); border-radius: var(--tm-r-md);
+  opacity: 0.55;
+  transition: opacity var(--tm-motion), border-color var(--tm-motion), color var(--tm-motion);
+}
+.tm-slot:hover, .tm-slot:focus-visible {
+  opacity: 1; color: var(--tm-text-muted); border-color: var(--tm-border-strong);
+}
+
+/* A pinned stop keeps a butter edge, matching its pin chip. */
+.tm-stop--pinned { border-left-color: var(--tm-butter); }
