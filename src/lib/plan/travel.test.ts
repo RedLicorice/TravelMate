@@ -114,3 +114,4 @@ describe('firstOf', () => {
 		expect(firstOf([silent, silent]).get(a, b, 'walk')).toBeNull();
 	});
 });
+

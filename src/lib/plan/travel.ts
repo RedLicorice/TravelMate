@@ -147,9 +147,16 @@ export async function resolveTravel(
 	const google = await resolveFromFunction(points, modes, departAt ?? null);
 
 	// Valhalla fills whatever Google could not answer -- a city it does not
-	// cover, or a request that was refused.
-	const valhalla = await resolveFromValhalla(points, modes, signal);
+	// cover, or a request that was refused. Skipped entirely when Google has
+	// answered every mode already: it is a shared courtesy service, and when
+	// it is down the browser logs a failed request for every call whether the
+	// result is needed or not.
+	const unanswered = [...new Set(modes)].filter(
+		(mode) => !google.get(points[0], points[1], mode)
+	);
+	if (!unanswered.length) return google;
 
+	const valhalla = await resolveFromValhalla(points, unanswered, signal);
 	return firstOf([google, valhalla]);
 }
 

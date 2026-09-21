@@ -388,6 +388,8 @@
 		try {
 			await saveAssignments(rows);
 			// Moved by hand is held by hand: Regenerate plans around it.
+			await updatePoi(draggedId, { pinned: true });
+			pois = pois.map((p) => (p.id === draggedId ? { ...p, pinned: true } : p));
 			await restore({ hold: draggedId });
 		} catch (e) {
 			error = (e as Error).message;
@@ -576,10 +578,13 @@
 				target.before
 			);
 			await saveAssignments(rows);
+			// Pinned before the plan is worked out, not after: the scheduler has
+			// to already know this one is the traveller's, or it drops it for not
+			// fitting and the reconciliation then takes its day away -- which is
+			// how a restaurant placed into a full evening vanished again.
+			await updatePoi(poiId, { pinned: true });
 			pois = await listPois(tripId);
 			dayIndex = target.day;
-			// Put there on purpose, so it is held there -- at the time the
-			// re-timed plan gives it, not merely in that position.
 			await restore({ hold: poiId });
 		} catch (e) {
 			error = (e as Error).message;
