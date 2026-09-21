@@ -42,4 +42,8 @@ export interface PoiProvider {
 	searchPlaces(query: string, city: City, signal?: AbortSignal): Promise<Poi[]>;
 	/** Bounded loosely: an airport often sits outside the city's own box. */
 	searchTerminals(query: string, city: City | null, signal?: AbortSignal): Promise<Terminal[]>;
+	/** Houses and streets included -- the opposite of searchPlaces. */
+	searchAddresses(query: string, city: City | null, signal?: AbortSignal): Promise<Poi[]>;
+	/** What is at this point, for naming a dropped pin. */
+	reverse(lat: number, lng: number, signal?: AbortSignal): Promise<Poi | null>;
 }

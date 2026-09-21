@@ -27,9 +27,19 @@
 		zoom?: number;
 		height?: string;
 		onselect?: (id: string) => void;
+		/** Long-press on touch, right-click on desktop: drop a pin here. */
+		onlongpress?: (point: { lat: number; lng: number }) => void;
 	};
 
-	let { markers, routes = [], center, zoom = 13, height = '100%', onselect }: Props = $props();
+	let {
+		markers,
+		routes = [],
+		center,
+		zoom = 13,
+		height = '100%',
+		onselect,
+		onlongpress
+	}: Props = $props();
 
 	let host: HTMLDivElement;
 	let map: LeafletMap | null = null;
@@ -48,6 +58,11 @@
 			zoom
 		);
 		L.control.zoom({ position: 'bottomright' }).addTo(map);
+		// Leaflet raises contextmenu for both a right-click and a touch
+		// long-press, which is exactly the gesture wanted here.
+		map.on('contextmenu', (e: { latlng: { lat: number; lng: number } }) =>
+			onlongpress?.({ lat: e.latlng.lat, lng: e.latlng.lng })
+		);
 		L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
 			maxZoom: 19,
 			// Required by the OSM tile usage policy, not decoration.

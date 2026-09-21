@@ -211,6 +211,29 @@ export const photon: PoiProvider = {
 		return features.map(toPlace);
 	},
 
+	async searchAddresses(query, city, signal) {
+		// Deliberately unfiltered: NOT_A_STOP exists to keep houses and streets
+		// out of a "what shall we see" search, and an address search is exactly
+		// the case where a house number is the answer.
+		const params: Record<string, string> = { q: query, limit: '8' };
+		if (city?.bbox) params.bbox = asParam(city.bbox);
+		return (await get(params, signal)).map(toPoi);
+	},
+
+	async reverse(lat, lng, signal) {
+		const url = `https://photon.komoot.io/reverse?${new URLSearchParams({
+			lat: String(lat),
+			lon: String(lng),
+			limit: '1',
+			lang: 'en'
+		})}`;
+		const res = await fetch(url, { signal, headers: { Accept: 'application/json' } });
+		if (!res.ok) return null;
+		const body = await res.json();
+		const [feature] = (body.features ?? []) as PhotonFeature[];
+		return feature ? toPoi(feature) : null;
+	},
+
 	async searchTerminals(query, city, signal) {
 		// Repeated osm_tag params are OR'd by Photon, so one request covers
 		// airports, rail, coach and ferry rather than four round trips.

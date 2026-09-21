@@ -5,6 +5,9 @@
 	import { cityBBox, getTrip, updateCityBBox, type TripRow } from '$lib/trip/repo';
 	import { addPoi, DuplicatePoiError, listPois, type PoiRow } from '$lib/trip/pois';
 	import { poi as provider, type City, type Poi } from '$lib/poi';
+	import { durationFor } from '$lib/poi/photon';
+	import { isShortMapLink, parseLatLng } from '$lib/poi/manual';
+	import Autocomplete from '$lib/Autocomplete.svelte';
 	import { haversineKm } from '$lib/plan/geo';
 	import LeafletMap from '$lib/Map.svelte';
 
@@ -14,7 +17,7 @@
 	let saved = $state<PoiRow[]>([]);
 	let results = $state<Poi[]>([]);
 	let query = $state('');
-	let view = $state<'list' | 'map'>('list');
+	let view = $state<'list' | 'map' | 'custom'>('list');
 	let status = $state<'idle' | 'searching' | 'done'>('idle');
 	let error = $state<string | null>(null);
 	let selectedId = $state<string | null>(null);
@@ -107,6 +110,79 @@
 		}, 250);
 	}
 
+	// ---- adding a place the provider has never heard of ----
+	const CATEGORIES = [
+		['attraction', 'Attraction'],
+		['museum', 'Museum'],
+		['gallery', 'Gallery'],
+		['viewpoint', 'Viewpoint'],
+		['park', 'Park'],
+		['restaurant', 'Restaurant'],
+		['cafe', 'Cafe'],
+		['bar', 'Bar'],
+		['marketplace', 'Market'],
+		['theatre', 'Theatre']
+	] as const;
+
+	let customName = $state('');
+	let customCategory = $state<string>('attraction');
+	let customPoint = $state<{ lat: number; lng: number } | null>(null);
+	let customContext = $state<string | null>(null);
+	let pasted = $state('');
+	let pasteError = $state<string | null>(null);
+
+	const customDuration = $derived(durationFor(customCategory));
+
+	async function locate(point: { lat: number; lng: number }, fallbackName?: string) {
+		customPoint = point;
+		customContext = null;
+		try {
+			// Reverse geocode purely for context: it tells the traveller which
+			// street the pin landed on, which is how they know it is the right
+			// one. The name stays theirs.
+			const nearby = await provider.reverse(point.lat, point.lng);
+			customContext = nearby?.label ?? null;
+			if (!customName && fallbackName) customName = fallbackName;
+		} catch {
+			// Context is a nicety; a pin with no address is still a pin.
+		}
+	}
+
+	function usePasted() {
+		pasteError = null;
+		const point = parseLatLng(pasted);
+		if (point) {
+			locate(point);
+			return;
+		}
+		pasteError = isShortMapLink(pasted)
+			? 'Short map links cannot be opened from here. Open it once, then paste the full address bar, or paste the coordinates.'
+			: 'No coordinates in that. Paste a full map link, or something like 51.5109, -0.1395.';
+	}
+
+	async function addCustom() {
+		if (!customPoint || !customName.trim()) return;
+		await add({
+			name: customName.trim(),
+			label: customContext ?? '',
+			lat: customPoint.lat,
+			lng: customPoint.lng,
+			category: customCategory,
+			durationMin: customDuration,
+			openingHours: null,
+			website: null,
+			phone: null,
+			// No osm_id: this is not an OSM place, and the per-trip uniqueness
+			// index only covers rows that have one.
+			osmId: null
+		});
+		customName = '';
+		customPoint = null;
+		customContext = null;
+		pasted = '';
+		view = 'list';
+	}
+
 	function clearSearch() {
 		clearTimeout(timer);
 		inflight?.abort();
@@ -175,8 +251,9 @@
 		</div>
 
 		<div class="tm-seg" role="tablist" aria-label="View">
-			<button role="tab" aria-selected={view === 'list'} onclick={() => (view = 'list')}>List</button>
+			<button role="tab" aria-selected={view === 'list'} onclick={() => (view = 'list')}>Search</button>
 			<button role="tab" aria-selected={view === 'map'} onclick={() => (view = 'map')}>Map</button>
+			<button role="tab" aria-selected={view === 'custom'} onclick={() => (view = 'custom')}>Add your own</button>
 		</div>
 
 		<div class="tm-search">
@@ -231,12 +308,16 @@
 			{/each}
 
 		</div>
-	{:else if trip}
+	{:else if view === 'map' && trip}
 		<div class="relative flex-1">
 			<LeafletMap
 				{markers}
 				center={centre}
 				onselect={(id) => (selectedId = id)}
+				onlongpress={(point) => {
+					locate(point);
+					view = 'custom';
+				}}
 			/>
 			{#if selected}
 				<div class="tm-sheet">
@@ -262,6 +343,86 @@
 					{/if}
 				</div>
 			{/if}
+		</div>
+	{/if}
+
+	{#if view === 'custom'}
+		<div class="flex-1 overflow-y-auto px-4 pb-4">
+			<p class="tm-hint mb-4">
+				Some places are not in OpenStreetMap, or are still listed under the name of whoever had
+				the building last. Put those in by hand.
+			</p>
+
+			<div class="tm-field mb-4">
+				<label class="tm-label" for="cname">What is it called?</label>
+				<input class="tm-input" id="cname" bind:value={customName} placeholder="The Starman" />
+			</div>
+
+			<p class="tm-label mb-2">Where is it?</p>
+
+			{#if city}
+				<Autocomplete
+					label="By address"
+					placeholder="15 Heddon Street, London"
+					hint="Street and number, not just the name."
+					search={(q, signal) => provider.searchAddresses(q, city!, signal)}
+					onpick={(hit) => locate({ lat: hit.lat, lng: hit.lng }, customName || hit.name)}
+				/>
+			{/if}
+
+			<div class="tm-field mt-4">
+				<label class="tm-label" for="paste">Or paste a map link</label>
+				<input
+					class="tm-input"
+					id="paste"
+					bind:value={pasted}
+					oninput={() => (pasteError = null)}
+					placeholder="Map link, or 51.5109, -0.1395"
+				/>
+				{#if pasteError}<span class="tm-hint tm-hint--error">{pasteError}</span>{/if}
+				<button class="tm-btn tm-btn--secondary mt-2" disabled={!pasted.trim()} onclick={usePasted}>
+					Use this location
+				</button>
+			</div>
+
+			<p class="tm-hint mt-3">Or switch to the map and hold your finger on the spot.</p>
+
+			{#if customPoint}
+				<div class="tm-card mt-4" style="background: var(--tm-ok-soft); border-color: transparent">
+					<p class="tm-card__title" style="color: var(--tm-ok-ink)">Location set</p>
+					<p class="tm-card__meta" style="color: var(--tm-ok-ink)">
+						{customContext ?? `${customPoint.lat.toFixed(5)}, ${customPoint.lng.toFixed(5)}`}
+					</p>
+				</div>
+			{/if}
+
+			<p class="tm-label mt-5 mb-2">What kind of place?</p>
+			<div class="flex flex-wrap gap-2">
+				{#each CATEGORIES as [value, label]}
+					<button
+						class="tm-chip"
+						aria-pressed={customCategory === value}
+						style={customCategory === value
+							? 'background: var(--tm-peach-soft); color: var(--tm-peach-ink)'
+							: 'opacity: 0.6'}
+						onclick={() => (customCategory = value)}
+					>
+						{label}
+					</button>
+				{/each}
+			</div>
+			<p class="tm-hint mt-2">
+				Sets how long to allow ({customDuration} min) and when it is usually busy. Both editable
+				later.
+			</p>
+
+			<button
+				class="tm-btn tm-btn--primary tm-btn--block mt-5"
+				disabled={!customPoint || !customName.trim()}
+				onclick={addCustom}
+			>
+				Add to wishlist
+			</button>
 		</div>
 	{/if}
 
