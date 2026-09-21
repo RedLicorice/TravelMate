@@ -70,6 +70,39 @@ Valhalla stays as the fallback for road and foot geometry, and the haversine
 model stays beneath that. Neither is removed: a provider being down must
 degrade the plan, never break it.
 
+### Two tiers of routing
+
+Routing serves two different jobs, at different shapes and costs.
+
+**Tier 1 — ordering, a matrix per day.** `computeRouteMatrix` supports
+`TRANSIT`, capped at 100 elements against 625 for road modes. A day of stops
+plus its anchors is around ten points, so 10×10 fits a day exactly. 2-opt then
+reorders against real timetabled times rather than a speed model.
+
+Resolving **per day rather than per trip** is also what removes the 20-point
+cliff by construction: every request is inside the cap because a day is, so
+there is no oversized request to silently give up on.
+
+**Tier 2 — itinerary detail, once the plan is settled.** `computeRoutes` per
+leg on the finished plan. A settled day has *n−1* legs rather than *n²* pairs,
+so this is linear and cheap, and it is the only point at which the plan is
+concrete enough to route at all.
+
+This is what turns `72 min · transit` into "09:43 Stansted Express to
+Liverpool Street, Central line to Holborn, arrive 10:48" -- departure times,
+line names, transfers, and the walk at each end. It also yields the one
+warning no heuristic can produce: the last service has gone.
+
+Tier 1 is the recurring cost and the thing to watch: one transit matrix per
+day per Regenerate. Tier 2 is linear and only runs when a plan is produced.
+
+### Coverage is not uniform
+
+Google's transit data is excellent in large cities and thin or absent in small
+ones. The fallback chain is what makes that survivable: a city Google does not
+cover degrades to Valhalla road times and then to the speed model, rather than
+failing.
+
 ### Why a 24×7 curve is not needed
 
 The planner consumes exactly one thing: a 0-1 busyness for a place at a time,
@@ -153,6 +186,72 @@ Two indexes carry real weight:
 
 Claiming uses `for update skip locked`, so two workers never take one job.
 
+## The plan is stored, not derived
+
+An earlier design stated that clock times are never stored, because they are a
+pure function of order, durations and the day window. That held while times
+were purely derived. Two things ended it.
+
+**Transit pins the plan to real services.** Once a leg resolves to *the 09:43*,
+the plan depends on that departure; re-deriving from order and durations would
+drift off the service actually being caught.
+
+**Regenerate makes the plan an artifact.** The product is three steps -- create
+the trip, fill the wishlist, tap Regenerate. The plan is what Regenerate
+produces, not a view that recomputes whenever a page opens. Today `schedule()`
+runs on every load, so opening a trip can silently re-time the day. That is a
+bug the stored plan removes.
+
+```sql
+plan_stops (
+  id           uuid primary key,
+  trip_id      uuid not null references trips on delete cascade,
+  day_index    int not null,
+  order_index  int not null,
+  poi_id       uuid references pois on delete cascade,  -- null for anchors
+  name         text not null,        -- anchors have no poi row
+  lat, lng     double precision not null,
+
+  starts_at    timestamptz not null,
+  -- Not always starts_at + duration: a meal waits for its window, and the end
+  -- of the day truncates.
+  ends_at      timestamptz not null,
+  -- A time the traveller fixed -- a booked table -- which the planner must
+  -- honour rather than cheerfully reschedule.
+  pinned       boolean not null default false,
+
+  -- The leg INTO this stop.
+  leg_mode     text,
+  leg_minutes  int,
+  leg_km       numeric,
+  leg_detail   jsonb,   -- tier 2: lines, departures, transfers
+
+  warnings     jsonb,
+  generated_at timestamptz not null
+)
+```
+
+`duration_min` stays on `pois`: it is an input, a preference. `starts_at` and
+`ends_at` are output. This is the `plan_items` table the original design
+rejected, and it now earns its place because it holds what those two columns
+cannot -- real times, pins, resolved transit legs and warnings.
+
+### What this unlocks
+
+- **Pinned times.** A booked table at 20:00 becomes a constraint.
+- **Shared plans stop re-planning in the viewer's browser.** Today `/shared/`
+  re-runs the planner client-side, so a viewer can see different times than the
+  owner. It becomes a read.
+- **Drag edits persist as times**, not only as order.
+- **Offline is real.** A stored plan renders with no computation.
+
+### The cost: staleness
+
+A stored plan can fall behind the wishlist. Adding a place changes nothing
+until Regenerate is tapped. That must be visible -- "3 places added since this
+plan was made", with the button beside it -- or the app looks like it is
+ignoring the traveller.
+
 ## The read path
 
 An Edge Function per concern, each the same shape: look in the cache, call the
@@ -181,9 +280,11 @@ With paid providers the cache stops being a nicety:
   busy hours are not news.
 - Routes are requested as a **matrix**, not per leg. A day of ten stops is a
   hundred pairs; 2-opt needs all of them because it reorders freely.
-- The current 20-point cap must become chunking. Today a trip above it silently
-  falls back to straight lines everywhere, which is the worst failure mode
-  available: worse numbers the bigger the trip, with no indication.
+- The current 20-point cap disappears rather than becoming chunking: resolving
+  per day keeps every request inside the transit matrix's 100-element limit by
+  construction. Today a trip above 20 points silently falls back to straight
+  lines everywhere, which is the worst failure mode available -- worse numbers
+  the bigger the trip, with no indication.
 
 ## Time-dependent travel
 
@@ -222,12 +323,17 @@ well as in git, and this repository is public.
 
 ## Build order
 
-1. Schema: `places`, `busyness`, `travel_cache`, `scrape_jobs`, with dedupe and TTL.
-2. `travel` Edge Function on Google Routes, cached, matrix-shaped, chunked.
-3. `busyness` Edge Function on Foursquare, cached, windows and popularity.
-4. Maps handoff buttons.
-5. Live adjustment.
-6. Housekeeping: rename Replan to Regenerate.
+1. Schema: `places`, `busyness`, `travel_cache`, `plan_stops`, with dedupe and TTL.
+2. `travel` Edge Function on Google Routes, tier 1: a transit matrix per day,
+   cached, replacing the speed model for ordering.
+3. Stored plan: Regenerate writes `plan_stops`; every view reads it; the
+   staleness indicator ships with it.
+4. `busyness` Edge Function on Foursquare, cached, windows and popularity.
+5. Tier 2 itinerary detail: per-leg `computeRoutes` on the settled plan.
+6. Maps handoff buttons.
+7. Pinned times.
+8. Live adjustment.
+9. Housekeeping: rename Replan to Regenerate.
 
 Deferred, to be taken on only if something needs it: the local scraper and the
 `scrape_jobs` queue that feeds it.
