@@ -577,7 +577,9 @@ function walkClock(
 		timeLabel: string | null = null,
 		runsLate = false,
 		/** A pinned moment. The clock is set to it rather than arriving at it. */
-		heldAt: number | null = null
+		heldAt: number | null = null,
+		/** Anything else worth saying about this stop. */
+		note: Warning | null = null
 	) => {
 		let legIn: Leg | null = null;
 		if (cursor) {
@@ -621,6 +623,7 @@ function walkClock(
 		if (late) {
 			warnings.push({ kind: 'overflow', message: 'The day does not reach this in time' });
 		}
+		if (note) warnings.push(note);
 		if (busyness !== null && busyness >= 0.8) {
 			warnings.push({ kind: 'crowded', message: 'Usually packed at this hour' });
 		}
@@ -696,8 +699,16 @@ function walkClock(
 			const closes = moved
 				? moved + 12 * 3_600_000
 				: zonedInstant(day.date, toHHMM(slot.to), timezone).getTime();
-			// Not yet, or the window closed before the day even started.
-			if (opens > until || closes < clock) continue;
+			if (opens > until) continue;
+
+			// The window has closed. On the last sweep a meal the day opened
+			// before is still had, late, rather than quietly dropped: the
+			// British Museum runs from six to eight and takes the whole of
+			// dinner with it, and the honest answer is a late dinner, not no
+			// dinner at all. A window that had already closed when the day
+			// started is a different thing and stays gone.
+			const late = closes < clock;
+			if (late && !(patient && opens >= day.start.getTime())) continue;
 
 			// Not worth standing about for while there are still stops to make:
 			// skipped now, offered again after the next one, by which time the
@@ -742,7 +753,7 @@ function walkClock(
 			const to = chosen ? chosenAt : here;
 			const minutes = chosen?.durationMin ?? MEAL_MINUTES[slot.name];
 			const hop = chosen ? leg(here, to, allowedModes, cursorTerminal, travel).minutes : 0;
-			const start = Math.max(clock + hop * 60_000, opens);
+			const start = late ? clock + hop * 60_000 : Math.max(clock + hop * 60_000, opens);
 			// Only when it actually fits, the way home included.
 			if (start + (minutes + tailCost(to)) * 60_000 > dayEndMs) continue;
 

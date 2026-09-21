@@ -380,3 +380,42 @@ describe('assigning a slot by hand', () => {
 		expect(run(null).days[1].stops.map((s) => s.name)).toContain('Breakfast');
 	});
 });
+
+describe('a day that runs through its own dinner', () => {
+	/** The British Museum, six until eight, straddling a 19:00-20:00 window. */
+	const run = () =>
+		schedule({
+			pois: [
+				stop('Notting Hill', 51.509, -0.196, 'suburb', 60, 0),
+				stop('British Museum', 51.5194, -0.127, 'museum', 480, 1)
+			],
+			days: tripDays(trip),
+			allowedModes: ['walk', 'transit'],
+			timezone: 'Europe/London',
+			mealWindows: tightest([A, B]).windows
+		}).days[1];
+
+	it('still has its dinner, pushed down the day', () => {
+		expect(run().stops.map((s) => s.name)).toContain('Dinner');
+	});
+
+	it('puts it after the stop that swallowed the window', () => {
+		const stops = run().stops;
+		const museum = stops.findIndex((s) => s.name === 'British Museum');
+		const dinner = stops.findIndex((s) => s.name === 'Dinner');
+		expect(dinner).toBeGreaterThan(museum);
+	});
+
+	it('does not invent a meal whose window closed before the day began', () => {
+		// A day starting at 10:30 has missed breakfast, and no amount of
+		// pushing down makes it breakfast.
+		const late = schedule({
+			pois: [stop('Notting Hill', 51.509, -0.196, 'suburb', 60, 0)],
+			days: tripDays({ ...trip, dayStart: '10:30', prep: null }),
+			allowedModes: ['walk'],
+			timezone: 'Europe/London',
+			mealWindows: tightest([B]).windows
+		}).days[1];
+		expect(late.stops.map((s) => s.name)).not.toContain('Breakfast');
+	});
+});
