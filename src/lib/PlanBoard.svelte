@@ -35,7 +35,7 @@
 	 * otherwise every anchor on an existing trip reads as the hotel until the
 	 * traveller regenerates.
 	 */
-	function anchorKind(stop: PlannedStop, dayIndex: number): 'hotel' | 'terminal' | 'service' | 'chore' {
+	function anchorKind(stop: PlannedStop, dayIndex: number): NonNullable<PlannedStop['anchorKind']> {
 		if (stop.anchorKind) return stop.anchorKind;
 		const window = days[dayIndex];
 		const match = [...(window?.fixedStart ?? []), ...(window?.fixedEnd ?? [])].find(
@@ -116,7 +116,9 @@
 							? 'mint'
 							: kind === 'chore'
 								? 'lilac'
-								: 'sky';
+								: kind === 'meal'
+									? 'blush'
+									: 'sky';
 				out.push({
 					key: `stop:${j}`,
 					top: at,
@@ -429,6 +431,12 @@
 			border-left:3px solid var(--tm-mint);vertical-align:-1px"
 		></span>
 		flight or train ·
+		<span
+			style="display:inline-block;width:10px;height:10px;border-radius:2px;
+			background:var(--tm-blush-soft);border:1px solid var(--tm-border);
+			border-left:3px solid var(--tm-blush);vertical-align:-1px"
+		></span>
+		a meal ·
 		<span
 			style="display:inline-block;width:10px;height:10px;border-radius:2px;
 			background:var(--tm-lilac-soft);border:1px solid var(--tm-border);

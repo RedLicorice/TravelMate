@@ -838,3 +838,100 @@ describe('rating does not buy detours', () => {
 		expect(travelOf([1, 5, 1, 5, 1])).toBeLessThanOrEqual(flat + 5);
 	});
 });
+
+describe('meals the plan supplies itself', () => {
+	const mealTrip: Trip = {
+		hotelName: 'Hotel',
+		hotel: { lat: 51.5145, lng: -0.127 },
+		timezone: 'Europe/London',
+		arrivalAt: '2026-10-02T05:00:00Z',
+		departureAt: '2026-10-02T21:30:00Z',
+		arrivalPoint: null,
+		departurePoint: null,
+		arrivalLegs: [],
+		departureLegs: [],
+		prep: null,
+		arrivalBufferMin: 0,
+		departureBufferMin: 0,
+		bagDropMin: 0,
+		dayStart: '08:00',
+		dayEnd: '22:00'
+	};
+
+	const sight = (id: string, durationMin = 60): PlanPoi => ({
+		id,
+		name: id,
+		lat: 51.5081,
+		lng: -0.0759,
+		category: 'attraction',
+		durationMin,
+		priority: 3,
+		dayIndex: 0,
+		orderIndex: Number(id.slice(1)),
+		pinned: false
+	});
+
+	const mealsOn = (result: ReturnType<typeof schedule>) =>
+		result.days[0].stops.filter((s) => s.anchorKind === 'meal').map((s) => s.name);
+
+	const run = (pois: PlanPoi[]) =>
+		schedule({
+			pois,
+			days: tripDays(mealTrip),
+			allowedModes: ['walk', 'transit'],
+			timezone: 'Europe/London'
+		});
+
+	it('offers each meal once, in its own window', () => {
+		const result = run([sight('s0'), sight('s1'), sight('s2')]);
+		expect(mealsOn(result)).toEqual(['Breakfast', 'Lunch', 'Dinner']);
+
+		for (const stop of result.days[0].stops.filter((s) => s.anchorKind === 'meal')) {
+			expect(slotAt(stop.arrive, 'Europe/London', slotsFrom(DEFAULT_WINDOWS))).not.toBeNull();
+		}
+	});
+
+	it('takes real time, so the day is not a lie about what is left', () => {
+		const lunch = run([sight('s0')]).days[0].stops.find((s) => s.name === 'Lunch')!;
+		expect(lunch.durationMin).toBe(60);
+		expect(lunch.depart.getTime() - lunch.arrive.getTime()).toBe(60 * 60_000);
+	});
+
+	it('costs nothing to reach: you eat where you already are', () => {
+		const stops = run([sight('s0')]).days[0].stops;
+		const lunch = stops.find((s) => s.name === 'Lunch')!;
+		expect(lunch.legIn?.minutes ?? 0).toBe(0);
+	});
+
+	it('steps aside for a restaurant from the wishlist', () => {
+		const restaurant: PlanPoi = {
+			...sight('s1', 75),
+			id: 'trattoria',
+			name: 'Trattoria',
+			category: 'restaurant',
+			orderIndex: 1
+		};
+		const result = run([sight('s0'), restaurant, sight('s2')]);
+		const names = result.days[0].stops.map((s) => s.name);
+
+		expect(names).toContain('Trattoria');
+		// Whichever window it landed in is filled; the plan does not offer a
+		// second sitting for the same meal.
+		const served = result.days[0].stops.find((s) => s.poiId === 'trattoria')!;
+		const slot = slotAt(served.arrive, 'Europe/London', slotsFrom(DEFAULT_WINDOWS));
+		if (slot) {
+			expect(mealsOn(result)).not.toContain(slot[0].toUpperCase() + slot.slice(1));
+		}
+	});
+
+	it('offers nothing on a day too short to reach a window', () => {
+		const brief: Trip = { ...mealTrip, dayStart: '10:30', dayEnd: '11:30' };
+		const result = schedule({
+			pois: [],
+			days: tripDays(brief),
+			allowedModes: ['walk'],
+			timezone: 'Europe/London'
+		});
+		expect(mealsOn(result)).toEqual([]);
+	});
+});

@@ -1013,6 +1013,7 @@
 							class:tm-stop--terminal={stop.anchorKind === 'terminal'}
 							class:tm-stop--service={stop.anchorKind === 'service'}
 							class:tm-stop--chore={stop.anchorKind === 'chore'}
+							class:tm-stop--meal={stop.anchorKind === 'meal'}
 							class:tm-stop--pinned={stop.poiId ? pinnedIds.has(stop.poiId) : false}
 							data-drop-stop={stop.poiId ?? undefined}
 							style={stop.poiId && drag.state.id === stop.poiId
@@ -1041,7 +1042,9 @@
 								</p>
 								<p class="tm-stop__sub" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
 									<span>
-										{#if stop.anchorKind === 'service'}
+										{#if stop.anchorKind === 'meal'}
+											{stop.durationMin} min · somewhere near here
+										{:else if stop.anchorKind === 'service'}
 											your journey
 										{:else if stop.durationMin}
 											{stop.durationMin} min

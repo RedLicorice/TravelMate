@@ -1,4 +1,4 @@
-import type { Day, LatLng } from '$lib/trip/days';
+import { zonedInstant, type Day, type LatLng } from '$lib/trip/days';
 import { haversineKm } from './geo';
 import { leg, type Leg, type Mode } from './modes';
 import { noTravel, type TravelTable } from './travel';
@@ -6,9 +6,13 @@ import { categoryCurves, type CrowdCurves } from './crowd';
 import {
 	DEFAULT_WINDOWS,
 	isMeal,
+	MEAL_LABEL,
+	MEAL_MINUTES,
 	MEALS_PER_DAY,
 	mealMiss,
+	slotAt,
 	slotsFrom,
+	toHHMM,
 	waitUntilSlot,
 	type MealSlot,
 	type MealWindows
@@ -66,7 +70,7 @@ export type PlannedStop = {
 	legIn: Leg | null;
 	anchor: boolean;
 	/** For an anchor, which kind. Null for a real stop. */
-	anchorKind?: 'hotel' | 'terminal' | 'service' | 'chore' | null;
+	anchorKind?: 'hotel' | 'terminal' | 'service' | 'chore' | 'meal' | null;
 	/** Shown instead of the planner's clock. See Waypoint.timeLabel. */
 	timeLabel?: string | null;
 	busyness: number | null;
@@ -455,6 +459,8 @@ function walkClock(
 	let clock = day.start.getTime();
 	let cursor: LatLng | null = null;
 	let cursorTerminal = false;
+	/** Meals the day has already had, whether from the wishlist or from us. */
+	const served = new Set<string>();
 
 	const push = (
 		name: string,
@@ -465,7 +471,7 @@ function walkClock(
 		category: string | null,
 		terminal: boolean,
 		exitAt: LatLng | null = null,
-		anchorKind: 'hotel' | 'terminal' | 'service' | 'chore' | null = null,
+		anchorKind: 'hotel' | 'terminal' | 'service' | 'chore' | 'meal' | null = null,
 		timeLabel: string | null = null
 	) => {
 		let legIn: Leg | null = null;
@@ -499,6 +505,10 @@ function walkClock(
 			warnings.push({ kind: 'crowded', message: 'Usually packed at this hour' });
 		}
 		if (!anchor && isMeal(category)) {
+			// A restaurant from the wishlist fills the slot it lands in, so the
+			// plan does not then offer a placeholder for the same meal.
+			const slot = slotAt(arrive, timezone, slots);
+			if (slot) served.add(slot);
 			const miss = mealMiss(arrive, timezone, slots);
 			mealMissHours += miss;
 			if (miss > 0.5) {
@@ -531,6 +541,44 @@ function walkClock(
 	}
 
 	/**
+	 * Offer the meals the day has not had yet, at whichever slot is open.
+	 *
+	 * A placeholder eats where the traveller already is -- the cursor -- so it
+	 * costs nothing to reach, which is also true of how people actually choose
+	 * lunch. It takes real time, because a day that pretends lunch is free is
+	 * lying about how much of it is left.
+	 *
+	 * `until` is the moment the caller is about to spend: a meal is only
+	 * offered if its window is open before then, so the day fills in order
+	 * rather than collecting three meals at the end.
+	 */
+	const offerMeals = (until: number) => {
+		for (const slot of slots) {
+			if (served.has(slot.name)) continue;
+
+			const opens = zonedInstant(day.date, toHHMM(slot.from), timezone).getTime();
+			const closes = zonedInstant(day.date, toHHMM(slot.to), timezone).getTime();
+			// Not yet, or the window closed before the day even started.
+			if (opens > until || closes < clock) continue;
+
+			const where = cursor ?? day.fixedStart[0]?.at;
+			if (!where) continue;
+
+			const minutes = MEAL_MINUTES[slot.name];
+			const at = Math.max(clock, opens);
+			// Only when it actually fits, the way home included: "when possible".
+			if (at + (minutes + tailCost(where)) * 60_000 > dayEndMs) continue;
+
+			if (at > clock) {
+				waitedMin += (at - clock) / 60_000;
+				clock = at;
+			}
+			served.add(slot.name);
+			push(MEAL_LABEL[slot.name], where, minutes, true, null, slot.name, false, null, 'meal');
+		}
+	};
+
+	/**
 	 * Minutes between leaving `from` and being done with the day's closing
 	 * anchors -- the legs as well as the dwell.
 	 *
@@ -558,6 +606,10 @@ function walkClock(
 		// after it, since the route is ordered.
 		const probe = leg(cursor ?? at(p), at(p), allowedModes, cursorTerminal, travel);
 		const finish = clock + (cursor ? probe.minutes : 0) * 60_000 + p.durationMin * 60_000;
+		// Anything whose window opens before this stop would end. Offered here so
+		// the day fills in order rather than saving every meal until the end.
+		offerMeals(finish);
+
 		// The way home starts from wherever the stop lets the traveller out --
 		// measuring it from the entrance would price a cable car's whole span
 		// at zero.
@@ -568,6 +620,9 @@ function walkClock(
 		}
 		push(p.name, at(p), p.durationMin, false, p.id, p.category, false, p.exitAt ?? null);
 	}
+
+	// Whatever the day never got round to, while there is still room for it.
+	offerMeals(dayEndMs);
 
 	for (const w of day.fixedEnd) {
 		push(w.name, w.at, w.dwellMin, true, null, null, w.kind === 'terminal', null, w.kind, w.timeLabel ?? null);

@@ -77,6 +77,7 @@
 .tm-stop--terminal { border-left-color: var(--tm-peach); background: var(--tm-peach-soft); }
 .tm-stop--service  { border-left-color: var(--tm-mint);  background: var(--tm-mint-soft); }
 .tm-stop--chore    { border-left-color: var(--tm-lilac); background: var(--tm-lilac-soft); }
+.tm-stop--meal     { border-left-color: var(--tm-blush); background: var(--tm-blush-soft); }
 
 /* Full-strength text on a tinted card. The faint greys are tuned for the plain
    surface and go washed out on a pastel. */

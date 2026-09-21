@@ -95,6 +95,23 @@ const MEAL_CATEGORIES = new Set([
 export const isMeal = (category: string | null | undefined) => MEAL_CATEGORIES.has(category ?? '');
 
 /** One sitting per named meal. Two dinners in a day is not a plan. */
+/**
+ * How long each meal takes when the plan supplies one itself. A placeholder
+ * has to occupy honest time or the day it sits in is a lie about how much
+ * there is left.
+ */
+export const MEAL_MINUTES: Record<MealName, number> = {
+	breakfast: 30,
+	lunch: 60,
+	dinner: 90
+};
+
+export const MEAL_LABEL: Record<MealName, string> = {
+	breakfast: 'Breakfast',
+	lunch: 'Lunch',
+	dinner: 'Dinner'
+};
+
 export const MEALS_PER_DAY = MEAL_NAMES.length;
 
 /**
