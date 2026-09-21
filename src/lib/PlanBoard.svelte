@@ -93,7 +93,7 @@
 
 			const height = Math.max(MIN_BLOCK_PX, stop.durationMin * PX_PER_MIN);
 			if (stop.anchor) {
-				const tone = anchorKind(stop, dayIndex) === 'terminal' ? 'peach' : 'butter';
+				const tone = anchorKind(stop, dayIndex) === 'terminal' ? 'peach' : 'sky';
 				out.push({
 					key: `stop:${j}`,
 					top: top(startMin),
@@ -386,7 +386,7 @@
 		travelling ·
 		<span
 			style="display:inline-block;width:10px;height:10px;border-radius:2px;
-			background:var(--tm-butter-soft);border-left:3px solid var(--tm-butter);vertical-align:-1px"
+			background:var(--tm-sky-soft);border-left:3px solid var(--tm-sky);vertical-align:-1px"
 		></span>
 		hotel ·
 		<span
