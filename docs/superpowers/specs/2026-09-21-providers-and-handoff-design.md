@@ -41,7 +41,22 @@ Three providers, three jobs:
 | Google Places API | places OSM does not know | `GOOGLE_MAPS_KEY` |
 | Foursquare Places | `popularity` and `hours_popular` | `FOURSQUARE_KEY` |
 | Photon (free) | search and reverse geocode | none |
-| Local scraper | busyness where the APIs have none | none |
+| Local scraper (deferred) | busyness for places Foursquare has never heard of | none |
+
+### Google Cloud: enable exactly two APIs
+
+**Routes API** (`computeRouteMatrix` for all-pairs times, `computeRoutes` for
+transit against real timetables) and **Places API (New)** (places OSM lacks).
+
+Everything else stays off: Distance Matrix and Directions are legacy and
+superseded by Routes; Geocoding is covered by Photon and Places; Maps
+JavaScript and Static Maps are unused because the app renders Leaflet on OSM
+tiles.
+
+Restrict the key to those two APIs. Do not add an IP restriction -- Supabase
+Edge Functions have no stable egress IP, so it would only break. The real
+backstop against a loop in this code running up a bill is a budget alert plus
+per-API quota caps, set in Cloud Console.
 
 ### Why Google for routing
 
@@ -55,15 +70,28 @@ Valhalla stays as the fallback for road and foot geometry, and the haversine
 model stays beneath that. Neither is removed: a provider being down must
 degrade the plan, never break it.
 
-### Why the scraper still exists
+### Why a 24×7 curve is not needed
 
-Google's popular-times data is not exposed by any official API, and Foursquare
-gives `popularity` (a scalar) plus `hours_popular` (busy windows) rather than a
-24×7 curve. A local scrape fills that gap, and only that gap.
+The planner consumes exactly one thing: a 0-1 busyness for a place at a time,
+used as a soft cost to nudge a stop earlier or later. Foursquare's
+`hours_popular` (busy windows per weekday) plus `popularity` (a scalar) supply
+that directly -- inside a window, the popularity; outside it, the baseline.
+Identical in shape to the category table, with real per-place data behind it.
 
-It runs **locally, on a residential connection**, because a datacenter IP is
-blocked. That is the whole reason it is a local batch rather than another Edge
-Function.
+An earlier draft specified a 24×7 intensity curve and a local scraper to fill
+it. Nothing consumes that richness, so both are dropped from the critical path.
+
+### The scraper, deferred
+
+A local scrape is still the only route to busyness for a place no licensed
+source knows. It would run locally on a residential connection, because a
+datacenter IP is blocked -- the only reason it would be a batch rather than
+another Edge Function.
+
+It is deliberately **not** in the build order. Places the providers miss can
+already be added by hand, and a scraper that parses an undocumented payload is
+a maintenance burden that should not be taken on until something actually
+needs it.
 
 ## Data model
 
@@ -83,8 +111,10 @@ places (
 busyness (
   place_id     uuid references places on delete cascade,
   source       text check (source in ('foursquare','scrape')),
-  curve        jsonb,        -- 7x24 intensities when known
-  popularity   numeric,      -- a scalar when that is all there is
+  -- Busy windows per weekday, as the provider gives them:
+  -- [{"day":1,"open":"1200","close":"1500"}, ...]
+  windows      jsonb,
+  popularity   numeric,      -- 0-1, the intensity inside those windows
   observed_at  timestamptz not null,
   expires_at   timestamptz not null,
   primary key (place_id, source)
@@ -102,6 +132,7 @@ travel_cache (
   primary key (from_key, to_key, mode, depart_bucket)
 )
 
+-- Deferred with the scraper; specified here so the shape is settled.
 scrape_jobs (
   id           uuid primary key,
   place_id     uuid references places on delete cascade,
@@ -146,8 +177,8 @@ With paid providers the cache stops being a nicety:
 
 - Travel times are cached per `(from, to, mode, depart_bucket)`. Replanning a
   day hits the same pairs repeatedly and must not re-bill.
-- Busyness is cached 14 days for Foursquare, 30 for scrapes. Weekly patterns
-  barely move.
+- Busyness is cached 14 days. Weekly patterns barely move, and a place's
+  busy hours are not news.
 - Routes are requested as a **matrix**, not per leg. A day of ten stops is a
   hundred pairs; 2-opt needs all of them because it reorders freely.
 - The current 20-point cap must become chunking. Today a trip above it silently
@@ -193,10 +224,12 @@ well as in git, and this repository is public.
 
 1. Schema: `places`, `busyness`, `travel_cache`, `scrape_jobs`, with dedupe and TTL.
 2. `travel` Edge Function on Google Routes, cached, matrix-shaped, chunked.
-3. `busyness` Edge Function on Foursquare, cached, enqueuing misses.
-4. Local worker: claim, scrape, write back, throttle.
-5. Maps handoff buttons.
-6. Live adjustment.
-7. Housekeeping: rename Replan to Regenerate.
+3. `busyness` Edge Function on Foursquare, cached, windows and popularity.
+4. Maps handoff buttons.
+5. Live adjustment.
+6. Housekeeping: rename Replan to Regenerate.
+
+Deferred, to be taken on only if something needs it: the local scraper and the
+`scrape_jobs` queue that feeds it.
 
 Each step is useful alone. Step 2 alone fixes the 222-minute airport leg.
