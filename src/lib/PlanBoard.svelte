@@ -258,7 +258,7 @@
 									</div>
 									{#if blockHeight > 38}
 										<p style="font:400 9.5px/1.2 var(--tm-font);color:var(--tm-text-faint);margin-top:2px">
-											{stop.durationMin} min
+											{stop.durationMin} min{stop.exitAt ? ' · ends elsewhere' : ''}
 										</p>
 									{/if}
 									{#if stop.warnings.length && blockHeight > 54}

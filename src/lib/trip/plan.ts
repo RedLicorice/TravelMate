@@ -25,6 +25,8 @@ export type PlanStopRow = {
 	leg_km: number | null;
 	warnings: Warning[];
 	busyness: number | null;
+	exit_lat: number | null;
+	exit_lng: number | null;
 };
 
 const toRow = (tripId: string, dayIndex: number, orderIndex: number, s: PlannedStop) => ({
@@ -44,7 +46,9 @@ const toRow = (tripId: string, dayIndex: number, orderIndex: number, s: PlannedS
 	leg_minutes: s.legIn?.minutes ?? null,
 	leg_km: s.legIn?.km ?? null,
 	warnings: s.warnings,
-	busyness: s.busyness
+	busyness: s.busyness,
+	exit_lat: s.exitAt?.lat ?? null,
+	exit_lng: s.exitAt?.lng ?? null
 });
 
 /**
@@ -83,7 +87,7 @@ export async function loadPlan(tripId: string): Promise<PlanStopRow[]> {
 	const { data, error } = await supabase
 		.from('plan_stops')
 		.select(
-			'day_index,order_index,poi_id,name,lat,lng,anchor,starts_at,ends_at,duration_min,pinned,leg_mode,leg_minutes,leg_km,warnings,busyness'
+			'day_index,order_index,poi_id,name,lat,lng,anchor,starts_at,ends_at,duration_min,pinned,leg_mode,leg_minutes,leg_km,warnings,busyness,exit_lat,exit_lng'
 		)
 		.eq('trip_id', tripId)
 		.order('day_index', { ascending: true })
@@ -128,7 +132,11 @@ export function toPlannedDays(rows: PlanStopRow[], dates: string[]): PlannedDay[
 			legIn: toLeg(row),
 			anchor: row.anchor,
 			busyness: row.busyness === null ? null : Number(row.busyness),
-			warnings: row.warnings ?? []
+			warnings: row.warnings ?? [],
+			exitAt:
+				row.exit_lat !== null && row.exit_lng !== null
+					? { lat: row.exit_lat, lng: row.exit_lng }
+					: null
 		});
 	}
 	return days;

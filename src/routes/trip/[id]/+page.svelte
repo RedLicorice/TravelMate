@@ -37,7 +37,7 @@
 	import Autocomplete from '$lib/Autocomplete.svelte';
 	import Stars from '$lib/Stars.svelte';
 	import LegDetail from '$lib/LegDetail.svelte';
-	import { dayTruncated, dayUrl } from '$lib/maps';
+	import { dayTruncated, dayUrl, routePoints } from '$lib/maps';
 	import { createDrag, reorder } from '$lib/dnd.svelte';
 	import PlanBoard from '$lib/PlanBoard.svelte';
 	import LeafletMap from '$lib/Map.svelte';
@@ -155,7 +155,16 @@
 			const anchors = [...day.fixedStart, ...day.fixedEnd].map((w) => w.at);
 			const stops = pois
 				.filter((p) => p.day_index === i)
-				.map((p) => ({ lat: p.lat, lng: p.lng }));
+				.flatMap((p) =>
+					// Both ends of a stop you leave from somewhere else: the matrix
+					// is asked about legs out of the exit as well as in to the entrance.
+					p.exit_lat !== null && p.exit_lng !== null
+						? [
+								{ lat: p.lat, lng: p.lng },
+								{ lat: p.exit_lat, lng: p.exit_lng }
+							]
+						: [{ lat: p.lat, lng: p.lng }]
+				);
 
 			const seen = new Set<string>();
 			const points = [...anchors, ...stops].filter((p) => {
@@ -825,7 +834,7 @@
 						{#if stop.legIn && i > 0}
 							{@const previous = current.stops[i - 1]}
 							<LegDetail
-								from={previous.at}
+								from={previous.exitAt ?? previous.at}
 								to={stop.at}
 								mode={stop.legIn.mode}
 								departAt={previous.depart.toISOString()}
@@ -862,6 +871,11 @@
 									<span>
 										{stop.anchor ? (stop.durationMin ? `${stop.durationMin} min stop` : 'anchor') : `${stop.durationMin} min`}
 									</span>
+									{#if stop.exitAt}
+										<span class="tm-chip tm-chip--sky" style="font-size:10px">
+											ends elsewhere
+										</span>
+									{/if}
 									{#if stop.poiId}
 										{@const held = pinnedIds.has(stop.poiId)}
 										<button
@@ -916,7 +930,7 @@
 
 		<div class="tm-safe-bottom flex items-center justify-between px-4 pt-3" style="border-top: 1px solid var(--tm-border)">
 			{#if view === 'plan' && current && current.stops.length > 1}
-				{@const url = dayUrl(current.stops.map((s) => s.at), (current.stops.find((s) => s.legIn)?.legIn?.mode ?? 'walk') as Mode)}
+				{@const url = dayUrl(routePoints(current.stops), (current.stops.find((s) => s.legIn)?.legIn?.mode ?? 'walk') as Mode)}
 				{#if url}
 					<a
 						class="tm-btn tm-btn--secondary"
@@ -924,7 +938,7 @@
 						href={url}
 						target="_blank"
 						rel="noopener noreferrer"
-						title={dayTruncated(current.stops.map((s) => s.at))
+						title={dayTruncated(routePoints(current.stops))
 							? 'Maps takes nine stops; the rest are trimmed'
 							: 'Open the whole day in Maps'}
 					>

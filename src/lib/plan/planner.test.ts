@@ -664,3 +664,84 @@ describe('a pin the day cannot fit', () => {
 		expect(out?.poi.pinned).toBe(true);
 	});
 });
+
+describe('a stop you leave from somewhere else', () => {
+	const cableTrip: Trip = {
+		hotelName: 'Hotel',
+		hotel: { lat: 51.5145, lng: -0.127 },
+		timezone: 'Europe/London',
+		arrivalAt: '2026-10-02T06:00:00Z',
+		departureAt: '2026-10-02T21:00:00Z',
+		arrivalPoint: null,
+		departurePoint: null,
+		arrivalBufferMin: 0,
+		departureBufferMin: 0,
+		bagDropMin: 0,
+		dayStart: '09:00',
+		dayEnd: '20:00'
+	};
+	// The IFS Cloud cable car: board at the Greenwich Peninsula, step off at
+	// the Royal Docks, a kilometre away across the river.
+	const north = { lat: 51.5083, lng: 0.0184 };
+	const south = { lat: 51.5017, lng: 0.0083 };
+
+	const cableCar = (exitAt: { lat: number; lng: number } | null): PlanPoi => ({
+		id: 'cable',
+		name: 'Cable car',
+		lat: south.lat,
+		lng: south.lng,
+		category: 'attraction',
+		durationMin: 20,
+		priority: 3,
+		dayIndex: 0,
+		orderIndex: 0,
+		exitAt
+	});
+	const afterwards: PlanPoi = {
+		id: 'docks',
+		name: 'Royal Docks',
+		lat: 51.5095,
+		lng: 0.0215,
+		category: 'attraction',
+		durationMin: 30,
+		priority: 3,
+		dayIndex: 0,
+		orderIndex: 1
+	};
+
+	const legAfter = (exitAt: { lat: number; lng: number } | null) => {
+		const result = schedule({
+			pois: [cableCar(exitAt), afterwards],
+			days: tripDays(cableTrip),
+			allowedModes: ['walk', 'transit'],
+			timezone: 'Europe/London'
+		});
+		return result.days[0].stops.find((s) => s.poiId === 'docks')!.legIn!;
+	};
+
+	it('measures the next leg from the exit, not the entrance', () => {
+		// The docks are near the north terminal and far from the south one, so
+		// the leg out has to get markedly shorter once the exit is known.
+		expect(legAfter(north).km).toBeLessThan(legAfter(null).km);
+	});
+
+	it('carries the exit point onto the planned stop', () => {
+		const result = schedule({
+			pois: [cableCar(north)],
+			days: tripDays(cableTrip),
+			allowedModes: ['walk'],
+			timezone: 'Europe/London'
+		});
+		expect(result.days[0].stops.find((s) => s.poiId === 'cable')!.exitAt).toEqual(north);
+	});
+
+	it('treats no exit point as ending where it started', () => {
+		const result = schedule({
+			pois: [cableCar(null)],
+			days: tripDays(cableTrip),
+			allowedModes: ['walk'],
+			timezone: 'Europe/London'
+		});
+		expect(result.days[0].stops.find((s) => s.poiId === 'cable')!.exitAt).toBeNull();
+	});
+});

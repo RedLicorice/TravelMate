@@ -51,13 +51,15 @@ export async function routedTable(
 			const mode = to.legIn?.mode;
 			if (!mode) continue;
 
-			const key = `${pointKey(from.at)}>${pointKey(to.at)}|${mode}`;
+			// A stop you leave from somewhere else is left from there.
+			const leaves = from.exitAt ?? from.at;
+			const key = `${pointKey(leaves)}>${pointKey(to.at)}|${mode}`;
 			if (seen.has(key)) continue;
 			seen.add(key);
 
 			// Depart when the plan says the traveller leaves. A transit answer
 			// for the wrong hour is a different journey.
-			legs.push({ from: from.at, to: to.at, mode, departAt: from.depart.toISOString() });
+			legs.push({ from: leaves, to: to.at, mode, departAt: from.depart.toISOString() });
 		}
 	}
 

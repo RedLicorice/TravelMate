@@ -30,6 +30,12 @@ export type PlanPoi = {
 	 * it rather than moving it.
 	 */
 	pinned?: boolean;
+	/**
+	 * Where this stop lets you out, when that is not where you got on. A cable
+	 * car, a ferry, a funicular. Null is the ordinary case, and is also what a
+	 * return trip amounts to -- you end up back where you started.
+	 */
+	exitAt?: LatLng | null;
 };
 
 export type Warning = { kind: 'crowded' | 'overflow' | 'off-hours'; message: string };
@@ -61,6 +67,8 @@ export type PlannedStop = {
 	anchor: boolean;
 	busyness: number | null;
 	warnings: Warning[];
+	/** Where the next leg departs from, when that is not `at`. */
+	exitAt?: LatLng | null;
 };
 
 export type PlannedDay = {
@@ -408,7 +416,8 @@ function walkClock(
 		anchor: boolean,
 		poiId: string | null,
 		category: string | null,
-		terminal: boolean
+		terminal: boolean,
+		exitAt: LatLng | null = null
 	) => {
 		let legIn: Leg | null = null;
 		if (cursor) {
@@ -458,9 +467,11 @@ function walkClock(
 			legIn,
 			anchor,
 			busyness,
-			warnings
+			warnings,
+			exitAt
 		});
-		cursor = point;
+		// The day carries on from wherever this stop let the traveller out.
+		cursor = exitAt ?? point;
 		cursorTerminal = terminal;
 	};
 
@@ -475,15 +486,19 @@ function walkClock(
 		// after it, since the route is ordered.
 		const probe = leg(cursor ?? at(p), at(p), allowedModes, cursorTerminal, travel);
 		const finish = clock + (cursor ? probe.minutes : 0) * 60_000 + p.durationMin * 60_000;
+		// The walk home starts from wherever the stop lets the traveller out --
+		// measuring it from the entrance would price a cable car's whole span
+		// at zero.
+		const leaves = p.exitAt ?? at(p);
 		const home = day.fixedEnd[0]
-			? leg(at(p), day.fixedEnd[0].at, allowedModes, day.fixedEnd[0].kind === 'terminal', travel)
+			? leg(leaves, day.fixedEnd[0].at, allowedModes, day.fixedEnd[0].kind === 'terminal', travel)
 					.minutes
 			: 0;
 		if (finish + (home + tailMin) * 60_000 > day.end.getTime()) {
 			overflowed.push(p);
 			continue;
 		}
-		push(p.name, at(p), p.durationMin, false, p.id, p.category, false);
+		push(p.name, at(p), p.durationMin, false, p.id, p.category, false, p.exitAt ?? null);
 	}
 
 	for (const w of day.fixedEnd) {

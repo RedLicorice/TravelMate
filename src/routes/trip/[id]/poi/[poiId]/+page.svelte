@@ -18,6 +18,7 @@
 	import { busyWindows, categoryBusyness, hourLabel } from '$lib/plan/crowd';
 	import { effectiveDayStart, isMeal, latestReady } from '$lib/plan/meals';
 	import { haversineKm } from '$lib/plan/geo';
+	import { isShortMapLink, parseLatLng } from '$lib/poi/manual';
 	import { loadTripProfiles } from '$lib/profile.svelte';
 	import { safePhone, safeUrl } from '$lib/poi/photon';
 	import Stars from '$lib/Stars.svelte';
@@ -36,6 +37,9 @@
 
 	let duration = $state(60);
 	let notes = $state('');
+	/** Pasted coordinates or map link for where this stop lets you out. */
+	let exitPaste = $state('');
+	let exitError = $state<string | null>(null);
 
 	onMount(async () => {
 		try {
@@ -380,6 +384,62 @@
 		<p class="tm-hint mt-2">
 			Changing this moves everything after it on the day. Tap Replan to reshuffle properly.
 		</p>
+
+		<!-- Some stops let you out somewhere else: a cable car, a ferry, a
+		     funicular. The plan then measures the next leg from that end. -->
+		<h2 class="tm-label mt-6 mb-2">Where it ends</h2>
+		{#if poi.exit_lat !== null && poi.exit_lng !== null}
+			<div class="tm-card" style="background: var(--tm-surface-2)">
+				<p class="tm-card__title">Ends somewhere else</p>
+				<p class="tm-card__meta">
+					{poi.exit_lat.toFixed(5)}, {poi.exit_lng.toFixed(5)} ·
+					{haversineKm({ lat: poi.lat, lng: poi.lng }, { lat: poi.exit_lat, lng: poi.exit_lng }).toFixed(1)} km
+					from where it starts
+				</p>
+				<button
+					class="tm-btn tm-btn--secondary tm-btn--block mt-3"
+					onclick={() => persist({ exit_lat: null, exit_lng: null })}
+				>
+					It ends where it starts
+				</button>
+			</div>
+		{:else}
+			<div class="tm-field">
+				<input
+					class="tm-input"
+					bind:value={exitPaste}
+					placeholder="51.5083, 0.0184 or a map link"
+					aria-label="Where this stop ends"
+					aria-invalid={exitError ? 'true' : undefined}
+				/>
+				<button
+					class="tm-btn tm-btn--secondary tm-btn--block"
+					disabled={!exitPaste.trim()}
+					onclick={() => {
+						const point = parseLatLng(exitPaste);
+						if (!point) {
+							exitError = isShortMapLink(exitPaste)
+								? 'Short map links hide their coordinates. Open it once, then paste the full link.'
+								: 'No coordinates in that. Paste a full map link, or something like 51.5083, 0.0184.';
+							return;
+						}
+						exitError = null;
+						exitPaste = '';
+						persist({ exit_lat: point.lat, exit_lng: point.lng });
+					}}
+				>
+					Set where it ends
+				</button>
+				{#if exitError}
+					<span class="tm-hint tm-hint--error">{exitError}</span>
+				{:else}
+					<span class="tm-hint">
+						For a crossing like a cable car or a ferry. Leave it alone for a return trip —
+						that ends where it began.
+					</span>
+				{/if}
+			</div>
+		{/if}
 
 		<div class="tm-field mt-6">
 			<label class="tm-label" for="notes">Notes</label>

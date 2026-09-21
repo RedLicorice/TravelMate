@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { dayTruncated, dayUrl, legUrl, MAX_WAYPOINTS } from './maps';
+import { dayTruncated, dayUrl, legUrl, MAX_WAYPOINTS, routePoints } from './maps';
 
 const hotel = { lat: 41.8986, lng: 12.4768 };
 const colosseum = { lat: 41.8902, lng: 12.4924 };
@@ -46,5 +46,23 @@ describe('dayUrl', () => {
 
 	it('does not claim to have trimmed a day that fit', () => {
 		expect(dayTruncated([hotel, colosseum, forum, hotel])).toBe(false);
+	});
+});
+
+describe('routePoints', () => {
+	const a = { lat: 51.5, lng: -0.1 };
+	const b = { lat: 51.6, lng: -0.2 };
+	const c = { lat: 51.7, lng: -0.3 };
+
+	it('passes through both ends of a stop you leave from elsewhere', () => {
+		expect(routePoints([{ at: a }, { at: b, exitAt: c }])).toEqual([a, b, c]);
+	});
+
+	it('leaves an ordinary day untouched', () => {
+		expect(routePoints([{ at: a }, { at: b, exitAt: null }, { at: c }])).toEqual([a, b, c]);
+	});
+
+	it('does nothing with nothing', () => {
+		expect(routePoints([])).toEqual([]);
 	});
 });

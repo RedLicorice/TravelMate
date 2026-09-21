@@ -16,6 +16,8 @@ const row = (p: Partial<PlanStopRow> & { day_index: number; order_index: number 
 	leg_km: null,
 	warnings: [],
 	busyness: null,
+	exit_lat: null,
+	exit_lng: null,
 	...p
 });
 
@@ -106,5 +108,20 @@ describe('staleCount', () => {
 
 	it('treats a trip with no plan as entirely stale', () => {
 		expect(staleCount([{ created_at: '2026-09-01T10:00:00.000Z' }], null)).toBe(1);
+	});
+});
+
+describe('an exit point on a stored stop', () => {
+	it('survives the round trip', () => {
+		const [day] = toPlannedDays(
+			[row({ day_index: 0, order_index: 0, exit_lat: 51.5083, exit_lng: 0.0184 })],
+			['2026-10-03']
+		);
+		expect(day.stops[0].exitAt).toEqual({ lat: 51.5083, lng: 0.0184 });
+	});
+
+	it('is null for an ordinary stop', () => {
+		const [day] = toPlannedDays([row({ day_index: 0, order_index: 0 })], ['2026-10-03']);
+		expect(day.stops[0].exitAt).toBeNull();
 	});
 });

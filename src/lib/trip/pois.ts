@@ -21,6 +21,9 @@ export type PoiRow = {
 	order_index: number | null;
 	/** Held where the traveller put it; Replan plans around it. */
 	pinned: boolean;
+	/** Where this stop lets you out, when that differs from where you got on. */
+	exit_lat: number | null;
+	exit_lng: number | null;
 	created_at: string;
 	updated_at: string | null;
 };
@@ -35,7 +38,8 @@ export const toPlanPoi = (row: PoiRow): PlanPoi => ({
 	priority: row.priority ?? 3,
 	dayIndex: row.day_index,
 	orderIndex: row.order_index,
-	pinned: row.pinned ?? false
+	pinned: row.pinned ?? false,
+	exitAt: row.exit_lat !== null && row.exit_lng !== null ? { lat: row.exit_lat, lng: row.exit_lng } : null
 });
 
 export async function listPois(tripId: string): Promise<PoiRow[]> {
@@ -96,6 +100,8 @@ export async function updatePoi(
 		name?: string;
 		priority?: number;
 		pinned?: boolean;
+		exit_lat?: number | null;
+		exit_lng?: number | null;
 	}
 ): Promise<PoiRow> {
 	const { data, error } = await supabase

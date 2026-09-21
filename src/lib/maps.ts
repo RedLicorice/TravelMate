@@ -30,6 +30,17 @@ export function legUrl(from: LatLng, to: LatLng, mode: Mode): string {
 }
 
 /**
+ * The points a day's route actually passes through.
+ *
+ * A stop you leave from somewhere else contributes two: where you got on and
+ * where you got off. Without the second one the handoff would draw a straight
+ * line across the river and the walk out would start from the wrong bank.
+ */
+export function routePoints(stops: { at: LatLng; exitAt?: LatLng | null }[]): LatLng[] {
+	return stops.flatMap((s) => (s.exitAt ? [s.at, s.exitAt] : [s.at]));
+}
+
+/**
  * The whole day as one route. Google takes at most nine waypoints between
  * origin and destination; a longer day is truncated rather than rejected,
  * because most of the day is still more useful than none of it.
