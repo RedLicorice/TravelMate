@@ -150,9 +150,8 @@
 									title="{stop.legIn.minutes} min by {stop.legIn.mode}"
 									style="position:absolute;left:10px;right:10px;top:{top(leaveMin)}px;
 									height:{travelHeight}px;border-radius:6px;
-									background:repeating-linear-gradient(135deg,
-										var(--tm-surface-2) 0 6px, transparent 6px 12px);
-									border:1px dashed var(--tm-border-strong);
+									background:var(--tm-surface-2);
+									border:1px solid var(--tm-border);
 									display:flex;align-items:center;justify-content:center;gap:4px;
 									overflow:hidden;color:var(--tm-text-faint)"
 								>
@@ -170,9 +169,9 @@
 								<div
 									style="position:absolute;left:4px;right:4px;top:{top(startMin)}px;
 									height:{Math.max(18, blockHeight)}px;border-radius:6px;
-									border:1px dashed var(--tm-border-strong);background:var(--tm-surface);
+									background:var(--tm-butter-soft);
 									display:flex;align-items:center;padding:0 6px;
-									font:500 10px/1.1 var(--tm-font);color:var(--tm-text-faint);overflow:hidden"
+									font:500 10px/1.1 var(--tm-font);color:var(--tm-butter-ink);overflow:hidden"
 								>
 									{stop.name}
 								</div>
@@ -231,8 +230,8 @@
 		mealtimes ·
 		<span
 			style="display:inline-block;width:10px;height:10px;border-radius:2px;
-			background:repeating-linear-gradient(135deg,var(--tm-surface-2) 0 3px,transparent 3px 6px);
-			border:1px dashed var(--tm-border-strong);vertical-align:-1px"
+			background:var(--tm-surface-2);
+			border:1px solid var(--tm-border);vertical-align:-1px"
 		></span>
 		travelling · hold ⠿ to move a stop between days
 	</p>
