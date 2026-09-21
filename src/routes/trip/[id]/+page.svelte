@@ -514,6 +514,24 @@
 			hour: '2-digit', minute: '2-digit', hour12: false
 		}).format(new Date(iso));
 
+	/** The trip's own facts. Booking references only appear once entered. */
+	const detailRows = $derived<[string, string][]>(
+		row
+			? ([
+					['City', row.city],
+					['Hotel', row.hotel_name],
+					['Arrival', stamp(row.arrival_at, row.timezone)],
+					row.arrival_service ? ['Arriving on', row.arrival_service] : null,
+					row.arrival_booking_ref ? ['Arrival booking', row.arrival_booking_ref] : null,
+					['Departure', stamp(row.departure_at, row.timezone)],
+					row.departure_service ? ['Leaving on', row.departure_service] : null,
+					row.departure_booking_ref ? ['Departure booking', row.departure_booking_ref] : null,
+					['Timezone', row.timezone],
+					['Getting around', (row.allowed_modes ?? []).join(', ')]
+				].filter(Boolean) as [string, string][])
+			: []
+	);
+
 	const MODE_ICON: Record<Mode, string> = {
 		walk: 'M11 21l2-6-3-3 1-5 3 3 3 1M10 12l-2 9',
 		bike: 'M6 17l5-8h5M14 9l4 8',
@@ -635,7 +653,7 @@
 			{#if showDetails}
 				<div class="tm-card" style="background: var(--tm-surface-2)">
 					<dl class="flex flex-col gap-2">
-						{#each [['City', row.city], ['Hotel', row.hotel_name], ['Arrival', stamp(row.arrival_at, row.timezone)], ['Departure', stamp(row.departure_at, row.timezone)], ['Timezone', row.timezone], ['Getting around', (row.allowed_modes ?? []).join(', ')]] as [label, value]}
+						{#each detailRows as [label, value]}
 							<div class="flex items-baseline justify-between gap-4">
 								<dt style="font: 400 var(--tm-text-sm)/1.3 var(--tm-font); color: var(--tm-text-faint); white-space: nowrap">{label}</dt>
 								<dd style="font: 500 var(--tm-text-base)/1.3 var(--tm-font); text-align: right">{value}</dd>

@@ -23,6 +23,11 @@ export type TripRow = {
 	departure_point_lng: number | null;
 	arrival_kind: string | null;
 	departure_kind: string | null;
+	/** Flight, train or sailing number, as printed on the ticket. */
+	arrival_service: string | null;
+	arrival_booking_ref: string | null;
+	departure_service: string | null;
+	departure_booking_ref: string | null;
 	arrival_buffer_min: number;
 	departure_buffer_min: number;
 	bag_drop_min: number;
@@ -64,11 +69,16 @@ export type Terminals = {
 	arrivalLat: number | null;
 	arrivalLng: number | null;
 	arrivalKind: string | null;
+	/** Flight, train or sailing number, as printed on the ticket. */
+	arrivalService: string | null;
+	arrivalBookingRef: string | null;
 	arrivalBufferMin: number;
 	departureName: string | null;
 	departureLat: number | null;
 	departureLng: number | null;
 	departureKind: string | null;
+	departureService: string | null;
+	departureBookingRef: string | null;
 	departureBufferMin: number;
 	bagDropMin: number;
 };
@@ -78,19 +88,25 @@ const terminalColumns = (t: Terminals) => ({
 	arrival_point_lat: t.arrivalLat,
 	arrival_point_lng: t.arrivalLng,
 	arrival_kind: t.arrivalKind,
+	arrival_service: t.arrivalService,
+	arrival_booking_ref: t.arrivalBookingRef,
 	arrival_buffer_min: t.arrivalBufferMin,
 	departure_point_name: t.departureName,
 	departure_point_lat: t.departureLat,
 	departure_point_lng: t.departureLng,
 	departure_kind: t.departureKind,
+	departure_service: t.departureService,
+	departure_booking_ref: t.departureBookingRef,
 	departure_buffer_min: t.departureBufferMin,
 	bag_drop_min: t.bagDropMin
 });
 
 /** A trip with no terminals: the planner then shapes every day the same way. */
 export const noTerminals = (): Terminals => ({
-	arrivalName: null, arrivalLat: null, arrivalLng: null, arrivalKind: null, arrivalBufferMin: 45,
+	arrivalName: null, arrivalLat: null, arrivalLng: null, arrivalKind: null,
+	arrivalService: null, arrivalBookingRef: null, arrivalBufferMin: 45,
 	departureName: null, departureLat: null, departureLng: null, departureKind: null,
+	departureService: null, departureBookingRef: null,
 	departureBufferMin: 120, bagDropMin: 30
 });
 
@@ -99,14 +115,21 @@ export const terminalsOf = (row: TripRow): Terminals => ({
 	arrivalLat: row.arrival_point_lat,
 	arrivalLng: row.arrival_point_lng,
 	arrivalKind: row.arrival_kind,
+	arrivalService: row.arrival_service,
+	arrivalBookingRef: row.arrival_booking_ref,
 	arrivalBufferMin: row.arrival_buffer_min,
 	departureName: row.departure_point_name,
 	departureLat: row.departure_point_lat,
 	departureLng: row.departure_point_lng,
 	departureKind: row.departure_kind,
+	departureService: row.departure_service,
+	departureBookingRef: row.departure_booking_ref,
 	departureBufferMin: row.departure_buffer_min,
 	bagDropMin: row.bag_drop_min
 });
+
+const named = (name: string | null, service: string | null) =>
+	name === null ? null : service ? `${name} · ${service}` : name;
 
 function place(name: string | null, lat: number | null, lng: number | null): Place | null {
 	// The column constraint forbids a half-set pair, so either all three are
@@ -124,9 +147,15 @@ export function toTrip(row: TripRow): Trip {
 		timezone: row.timezone,
 		arrivalAt: row.arrival_at,
 		departureAt: row.departure_at,
-		arrivalPoint: place(row.arrival_point_name, row.arrival_point_lat, row.arrival_point_lng),
+		// The service number travels as part of the terminal's name, so every
+		// view that already draws a waypoint shows it without being told.
+		arrivalPoint: place(
+			named(row.arrival_point_name, row.arrival_service),
+			row.arrival_point_lat,
+			row.arrival_point_lng
+		),
 		departurePoint: place(
-			row.departure_point_name,
+			named(row.departure_point_name, row.departure_service),
 			row.departure_point_lat,
 			row.departure_point_lng
 		),

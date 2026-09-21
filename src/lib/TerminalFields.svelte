@@ -19,7 +19,9 @@
 			terminals = {
 				...terminals,
 				arrivalName: null, arrivalLat: null, arrivalLng: null, arrivalKind: null,
-				departureName: null, departureLat: null, departureLng: null, departureKind: null
+				arrivalService: null, arrivalBookingRef: null,
+				departureName: null, departureLat: null, departureLng: null, departureKind: null,
+				departureService: null, departureBookingRef: null
 			};
 		}
 	}
@@ -27,6 +29,18 @@
 	const NOUN: Record<string, string> = {
 		airport: 'airport', train: 'station', bus: 'coach station', ferry: 'ferry terminal', other: 'terminal'
 	};
+
+	/** What the ticket calls the service, so the field asks for what they hold. */
+	const SERVICE: Record<string, string> = {
+		airport: 'Flight number', train: 'Train number', bus: 'Coach number',
+		ferry: 'Sailing', other: 'Service number'
+	};
+	const SERVICE_EG: Record<string, string> = {
+		airport: 'BA117', train: 'IC 9612', bus: 'FX010', ferry: 'DFDS 1830', other: ''
+	};
+
+	const arrivalService = $derived(SERVICE[terminals.arrivalKind ?? 'other'] ?? SERVICE.other);
+	const departureService = $derived(SERVICE[terminals.departureKind ?? 'other'] ?? SERVICE.other);
 
 	function pickArrival(t: Terminal) {
 		terminals = { ...terminals, arrivalName: t.name, arrivalLat: t.lat, arrivalLng: t.lng, arrivalKind: t.kind };
@@ -44,6 +58,9 @@
 	}
 
 	let touchedAdvance = $state(false);
+
+	/** Empty means unset, not an empty string: the column is nullable. */
+	const value = (e: Event) => (e.currentTarget as HTMLInputElement).value.trim() || null;
 
 	const advanceLabel = $derived(
 		terminals.departureBufferMin >= 60
@@ -93,6 +110,29 @@
 		/>
 	</div>
 
+	<div class="flex gap-3 mt-4">
+		<div class="tm-field" style="flex:2">
+			<label class="tm-label" for="arrsvc">{arrivalService}</label>
+			<input
+				class="tm-input"
+				id="arrsvc"
+				value={terminals.arrivalService ?? ''}
+				placeholder={SERVICE_EG[terminals.arrivalKind ?? 'other']}
+				oninput={(e) => (terminals = { ...terminals, arrivalService: value(e) })}
+			/>
+		</div>
+		<div class="tm-field" style="flex:1">
+			<label class="tm-label" for="arrref">Booking</label>
+			<input
+				class="tm-input"
+				id="arrref"
+				value={terminals.arrivalBookingRef ?? ''}
+				placeholder="ABC123"
+				oninput={(e) => (terminals = { ...terminals, arrivalBookingRef: value(e) })}
+			/>
+		</div>
+	</div>
+
 	<div class="tm-field mt-4">
 		<label class="tm-label" for="arrbuf">
 			Getting out takes about {terminals.arrivalBufferMin} min
@@ -119,6 +159,29 @@
 		/>
 	</div>
 
+	<div class="flex gap-3 mt-4">
+		<div class="tm-field" style="flex:2">
+			<label class="tm-label" for="depsvc">{departureService}</label>
+			<input
+				class="tm-input"
+				id="depsvc"
+				value={terminals.departureService ?? ''}
+				placeholder={SERVICE_EG[terminals.departureKind ?? 'other']}
+				oninput={(e) => (terminals = { ...terminals, departureService: value(e) })}
+			/>
+		</div>
+		<div class="tm-field" style="flex:1">
+			<label class="tm-label" for="depref">Booking</label>
+			<input
+				class="tm-input"
+				id="depref"
+				value={terminals.departureBookingRef ?? ''}
+				placeholder="ABC123"
+				oninput={(e) => (terminals = { ...terminals, departureBookingRef: value(e) })}
+			/>
+		</div>
+	</div>
+
 	<div class="tm-field mt-4">
 		<label class="tm-label" for="advance">Be there {advanceLabel} in advance</label>
 		<input
@@ -132,8 +195,8 @@
 			style="width:100%;accent-color:var(--tm-primary)"
 		/>
 		<span class="tm-hint">
-			The last day ends {advanceLabel} before you leave, so nothing is scheduled into the journey to
-			the {departureNoun}.
+			Check-in. The plan has you standing in the {departureNoun} {advanceLabel} before you
+			leave -- the journey there is counted, not squeezed in afterwards.
 		</span>
 	</div>
 
