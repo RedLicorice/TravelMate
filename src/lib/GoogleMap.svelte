@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount, onDestroy } from 'svelte';
+	import { onDestroy, onMount, tick } from 'svelte';
 	import { PUBLIC_GOOGLE_MAPS_BROWSER_KEY } from '$env/static/public';
 
 	export type MapMarker = {
@@ -61,51 +61,47 @@
 
 	/**
 	 * Load the Maps script once for the whole app, however many maps are on
-	 * screen. A second <script> tag for the same library is an error rather
-	 * than a no-op, and the place picker shows two maps at once.
+	 * screen: a second tag for the same library is an error, not a no-op, and
+	 * the place picker shows two maps at once.
+	 *
+	 * Resolved from Google's own callback rather than from the script tag's
+	 * onload. Under loading=async the tag fires as soon as the bootstrap byte
+	 * arrives, long before google.maps.Map exists -- which is exactly the
+	 * "not a constructor" this component shipped with. The callback is the one
+	 * signal that means ready.
 	 */
+	const READY_CALLBACK = '__tmGoogleMapsReady';
 	let booting: Promise<void> | null = null;
-	function bootstrap(): Promise<void> {
-		if (typeof window.google?.maps?.importLibrary === 'function') return Promise.resolve();
+
+	function loadMaps(): Promise<void> {
+		if (window.google?.maps?.Map) return Promise.resolve();
 		if (booting) return booting;
-		booting = new Promise((resolve, reject) => {
+
+		booting = new Promise<void>((resolve, reject) => {
 			if (!PUBLIC_GOOGLE_MAPS_BROWSER_KEY) {
 				reject(new Error('No PUBLIC_GOOGLE_MAPS_BROWSER_KEY in this build'));
 				return;
 			}
-			// Google's own error channel: it reports a bad key or a referrer it
-			// will not serve here rather than in the script's onerror.
-			(window as unknown as Record<string, unknown>).gm_authFailure = () => {
-				reject(new Error('Google refused the key for this address'));
-			};
+
+			const w = window as unknown as Record<string, unknown>;
+			// A refused key is reported here, not through the script's onerror.
+			// Without listening for it, a referrer restriction is indis-
+			// tinguishable from being offline.
+			w.gm_authFailure = () => reject(new Error('Google refused the key for this address'));
+			w[READY_CALLBACK] = () => resolve();
+
 			const tag = document.createElement('script');
 			tag.src =
-				`https://maps.googleapis.com/maps/api/js?key=${PUBLIC_GOOGLE_MAPS_BROWSER_KEY}` +
-				'&loading=async&v=weekly';
+				'https://maps.googleapis.com/maps/api/js' +
+				`?key=${PUBLIC_GOOGLE_MAPS_BROWSER_KEY}` +
+				'&v=weekly&loading=async&libraries=marker' +
+				`&callback=${READY_CALLBACK}`;
 			tag.async = true;
-			tag.onload = () => resolve();
 			tag.onerror = () =>
 				reject(new Error('maps.googleapis.com did not load (offline, or blocked here)'));
 			document.head.appendChild(tag);
 		});
 		return booting;
-	}
-
-	/**
-	 * Load the pieces this map needs.
-	 *
-	 * The script's onload only says the bootstrap arrived, not that the API is
-	 * ready -- under loading=async it resolves well before google.maps.Map
-	 * exists, which is why constructing one straight after it threw. Each
-	 * library has to be awaited for in its own right.
-	 */
-	async function loadMaps() {
-		await bootstrap();
-		const [maps, marker] = await Promise.all([
-			google.maps.importLibrary('maps') as Promise<google.maps.MapsLibrary>,
-			google.maps.importLibrary('marker') as Promise<google.maps.MarkerLibrary>
-		]);
-		return { Map: maps.Map, AdvancedMarkerElement: marker.AdvancedMarkerElement };
 	}
 
 	/**
@@ -157,9 +153,14 @@
 	let Pin: typeof google.maps.marker.AdvancedMarkerElement | null = null;
 
 	async function start() {
-		let api;
+		// Put the map's own element back before anything else: while the panel
+		// is showing there is nothing for the map to bind to, so a retry would
+		// otherwise have nowhere to draw.
+		down = false;
+		await tick();
+
 		try {
-			api = await loadMaps();
+			await loadMaps();
 		} catch (e) {
 			// Offline, blocked, or Google is having a bad day. The screen says
 			// so and everything else on it goes on working: a plan is worth
@@ -172,9 +173,13 @@
 			down = true;
 			return;
 		}
-		Pin = api.AdvancedMarkerElement;
-		if (!host) return;
-		map = new api.Map(host, {
+		if (!host) {
+			reason = 'The map had nowhere to draw';
+			down = true;
+			return;
+		}
+		Pin = google.maps.marker.AdvancedMarkerElement;
+		map = new google.maps.Map(host, {
 			center,
 			zoom,
 			mapId: MAP_ID,
