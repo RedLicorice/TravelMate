@@ -260,6 +260,18 @@ export function toLocalInput(iso: string, tz: string): string {
 	return `${g('year')}-${g('month')}-${g('day')}T${String(Number(g('hour')) % 24).padStart(2, '0')}:${g('minute')}`;
 }
 
+/**
+ * The same wall-clock reading, in a different zone.
+ *
+ * For fixing a trip that was stored against the wrong timezone. The traveller
+ * typed 15:45 off a ticket; that has to stay 15:45 when the trip moves from
+ * Europe/Rome to Europe/London, which means moving the instant, not relabelling
+ * it.
+ */
+export function reinterpret(iso: string, fromTz: string, toTz: string): string {
+	return fromLocalInput(toLocalInput(iso, fromTz), toTz);
+}
+
 /** The inverse: a `datetime-local` value read as wall-clock time in `tz`. */
 export function fromLocalInput(value: string, tz: string): string {
 	const [date, time] = value.split('T');

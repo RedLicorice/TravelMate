@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { fromLocalInput, toLocalInput, tripDays, type Trip } from './days';
+import { fromLocalInput, reinterpret, toLocalInput, tripDays, type Trip } from './days';
 
 const hotel = { lat: 41.8986, lng: 12.4768 };
 const fco = { lat: 41.8003, lng: 12.2389 };
@@ -284,5 +284,26 @@ describe('journey cards carry the times off the ticket', () => {
 		t.arrivalLegs[0].arriveLocal = null;
 		const [first] = tripDays(t);
 		expect(first.fixedStart.every((w) => !w.timeLabel)).toBe(true);
+	});
+});
+
+describe('reinterpret', () => {
+	it('keeps the clock reading and moves the instant', () => {
+		// 15:45 in Rome, meant as 15:45 in London: an hour later in real time.
+		const stored = fromLocalInput('2026-04-10T15:45', 'Europe/Rome');
+		const fixed = reinterpret(stored, 'Europe/Rome', 'Europe/London');
+		expect(toLocalInput(fixed, 'Europe/London')).toBe('2026-04-10T15:45');
+		expect(new Date(fixed).getTime() - new Date(stored).getTime()).toBe(60 * 60_000);
+	});
+
+	it('does nothing when the zone is already right', () => {
+		const stored = fromLocalInput('2026-04-10T15:45', 'Europe/London');
+		expect(reinterpret(stored, 'Europe/London', 'Europe/London')).toBe(stored);
+	});
+
+	it('crosses a date line without losing the day', () => {
+		const stored = fromLocalInput('2026-04-10T09:00', 'Europe/Rome');
+		const fixed = reinterpret(stored, 'Europe/Rome', 'Asia/Tokyo');
+		expect(toLocalInput(fixed, 'Asia/Tokyo')).toBe('2026-04-10T09:00');
 	});
 });

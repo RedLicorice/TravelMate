@@ -3,6 +3,7 @@
 	import { base } from '$app/paths';
 	import { createTrip, noTerminals, type Terminals } from '$lib/trip/repo';
 	import TerminalFields from '$lib/TerminalFields.svelte';
+	import { localZone, zoneAt } from '$lib/trip/timezone';
 	import { fromLocalInput } from '$lib/trip/days';
 	import Autocomplete from '$lib/Autocomplete.svelte';
 	import { poi } from '$lib/poi';
@@ -18,7 +19,14 @@
 
 	// The browser's zone is the best guess available without geocoding. Shown,
 	// not hidden, so someone planning from home can correct it.
-	let timezone = $state(Intl.DateTimeFormat().resolvedOptions().timeZone);
+	/**
+	 * The destination's zone, not the traveller's. A ticket quotes every time
+	 * in the local time of the place it happens, so a London trip booked from
+	 * Rome runs on Europe/London -- and used to run an hour out because this
+	 * defaulted to whatever zone the phone was in.
+	 */
+	let timezone = $state(localZone());
+	let timezoneTouched = $state(false);
 	let terminals = $state<Terminals>(noTerminals());
 
 	const titles = ['Where are you going?', 'When?', 'Check and save'];
@@ -82,6 +90,9 @@
 				onpick={(c) => {
 					city = c;
 					hotel = null; // a hotel from the previous city is meaningless here
+					// Unless they have set one by hand, in which case they know
+					// something the map does not.
+					if (!timezoneTouched) timezone = zoneAt(c.lat, c.lng) ?? timezone;
 				}}
 			/>
 		</div>
@@ -105,7 +116,12 @@
 		</div>
 		<div class="tm-field">
 			<label class="tm-label" for="tz">Timezone</label>
-			<input class="tm-input" id="tz" bind:value={timezone} />
+			<input
+				class="tm-input"
+				id="tz"
+				bind:value={timezone}
+				oninput={() => (timezoneTouched = true)}
+			/>
 			<span class="tm-hint">Times are local to the city you're visiting.</span>
 		</div>
 

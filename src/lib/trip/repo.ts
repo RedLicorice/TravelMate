@@ -1,5 +1,6 @@
 import { supabase } from '$lib/supabase';
 import type { BBox } from '$lib/poi';
+import { reinterpret } from './days';
 import type { Place, Trip } from './days';
 import type { PoiRow } from './pois';
 import type { PlanStopRow } from './plan';
@@ -270,6 +271,25 @@ export async function setTripImage(id: string, url: string | null): Promise<void
 export async function updateCountryCode(id: string, code: string): Promise<void> {
 	const { error } = await supabase.from('trips').update({ country_code: code }).eq('id', id);
 	if (error) throw new Error(error.message);
+}
+
+/**
+ * Move a trip onto the right timezone, keeping every time the traveller typed
+ * reading the same on the clock.
+ *
+ * The stored plan is left alone deliberately: its times are now wrong by an
+ * hour and Regenerate is what fixes them, which is also the moment the
+ * traveller sees the plan change rather than finding it silently moved.
+ */
+export async function repairTimezone(row: TripRow, zone: string): Promise<TripRow> {
+	const patch = {
+		timezone: zone,
+		arrival_at: reinterpret(row.arrival_at, row.timezone, zone),
+		departure_at: reinterpret(row.departure_at, row.timezone, zone)
+	};
+	const { error } = await supabase.from('trips').update(patch).eq('id', row.id);
+	if (error) throw new Error(error.message);
+	return { ...row, ...patch };
 }
 
 export async function updateCityBBox(id: string, bbox: BBox): Promise<void> {

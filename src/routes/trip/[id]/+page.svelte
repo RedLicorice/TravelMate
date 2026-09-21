@@ -9,6 +9,7 @@
 		hotelMissing,
 		setShareToken,
 		toTrip,
+		repairTimezone,
 		setTripImage,
 		updateCityBBox,
 		updateCountryCode,
@@ -45,6 +46,7 @@
 	import PlanBoard from '$lib/PlanBoard.svelte';
 	import TripAvatar from '$lib/TripAvatar.svelte';
 	import { supabase } from '$lib/supabase';
+	import { zoneAt } from '$lib/trip/timezone';
 	import LeafletMap from '$lib/Map.svelte';
 	import { poi as provider, type City } from '$lib/poi';
 
@@ -411,6 +413,28 @@
 		} catch (e) {
 			error = (e as Error).message;
 			pois = pois.map((p) => (p.id === poiId ? { ...p, pinned: !next } : p));
+		}
+	}
+
+	/**
+	 * A trip stored against the wrong zone. The commonest cause is the one this
+	 * app used to have: the timezone defaulted to the traveller's own, so a
+	 * London trip booked from Rome ran an hour out on every time in it.
+	 */
+	const zoneShouldBe = $derived(row ? zoneAt(row.hotel_lat, row.hotel_lng) : null);
+	const zoneWrong = $derived(
+		!!row && !!zoneShouldBe && zoneShouldBe !== row.timezone && !hotelMissing(row)
+	);
+
+	async function fixZone() {
+		if (!row || !zoneShouldBe) return;
+		busy = true;
+		try {
+			row = await repairTimezone(row, zoneShouldBe);
+		} catch (e) {
+			error = (e as Error).message;
+		} finally {
+			busy = false;
 		}
 	}
 
@@ -845,6 +869,24 @@
 
 			{#if error}<p class="tm-hint tm-hint--error">{error}</p>{/if}
 		</div>
+
+		{#if zoneWrong}
+			<div class="tm-card m-4" style="background: var(--tm-warn-soft); border-color: transparent">
+				<p class="tm-card__title" style="color: var(--tm-warn-ink)">Wrong timezone</p>
+				<p class="tm-card__meta" style="color: var(--tm-warn-ink)">
+					This trip runs on {row.timezone}, but {row.city} is on {zoneShouldBe}. Every time in
+					it is out by the difference. Fixing keeps the times you typed and moves the trip onto
+					{zoneShouldBe}; tap Replan afterwards.
+				</p>
+				<button
+					class="tm-btn tm-btn--secondary tm-btn--block mt-3"
+					disabled={busy}
+					onclick={fixZone}
+				>
+					Use {zoneShouldBe}
+				</button>
+			</div>
+		{/if}
 
 		{#if hotelMissing(row)}
 			<div class="tm-card m-4" style="background: var(--tm-warn-soft); border-color: transparent">
