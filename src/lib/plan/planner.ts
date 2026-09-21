@@ -1,5 +1,6 @@
 import { zonedInstant, type Day, type LatLng } from '$lib/trip/days';
 import { haversineKm } from './geo';
+import { nearestBranch } from '$lib/poi/branches';
 import { leg, type Leg, type Mode } from './modes';
 import { noTravel, type TravelTable } from './travel';
 import { categoryCurves, type CrowdCurves } from './crowd';
@@ -46,6 +47,11 @@ export type PlanPoi = {
 	 * return trip amounts to -- you end up back where you started.
 	 */
 	exitAt?: LatLng | null;
+	/**
+	 * Other shops of the same name. A chain is not a point: whichever branch is
+	 * nearest to where the day already has the traveller is the one they go to.
+	 */
+	branches?: LatLng[] | null;
 };
 
 export type Warning = { kind: 'crowded' | 'overflow' | 'off-hours'; message: string };
@@ -664,16 +670,21 @@ function walkClock(
 			// Whichever of the day's restaurants is nearest, if any is near
 			// enough to be worth the detour.
 			let chosen: PlanPoi | null = null;
+			let chosenAt: LatLng = here;
 			let nearest = MEAL_DETOUR_KM;
 			for (const diner of unseated) {
-				const km = haversineKm(here, at(diner));
+				// A chain answers with whichever of its shops is nearest here,
+				// which is often the difference between lunch and a trek.
+				const branch = nearestBranch(diner, here, haversineKm);
+				const km = haversineKm(here, branch);
 				if (km <= nearest) {
 					nearest = km;
 					chosen = diner;
+					chosenAt = branch;
 				}
 			}
 
-			const to = chosen ? at(chosen) : here;
+			const to = chosen ? chosenAt : here;
 			const minutes = chosen?.durationMin ?? MEAL_MINUTES[slot.name];
 			const hop = chosen ? leg(here, to, allowedModes, cursorTerminal, travel).minutes : 0;
 			const start = Math.max(clock + hop * 60_000, opens);
@@ -689,7 +700,7 @@ function walkClock(
 
 			if (chosen) {
 				unseated.splice(unseated.indexOf(chosen), 1);
-				push(chosen.name, to, minutes, false, chosen.id, chosen.category, false, null);
+				push(chosen.name, chosenAt, minutes, false, chosen.id, chosen.category, false, null);
 			} else {
 				push(MEAL_LABEL[slot.name], here, minutes, true, null, slot.name, false, null, 'meal');
 			}
@@ -725,7 +736,10 @@ function walkClock(
 		// A block of time the traveller added themselves -- a rest, an errand,
 		// a nap -- happens wherever they already are, the same as a meal the
 		// plan supplies. Its stored coordinates are a formality.
-		const where = p.category === BLOCK_CATEGORY ? (cursor ?? at(p)) : at(p);
+		const where =
+			p.category === BLOCK_CATEGORY
+				? (cursor ?? at(p))
+				: nearestBranch(p, cursor ?? at(p), haversineKm);
 		const held = p.pinned && p.pinnedAt ? new Date(p.pinnedAt).getTime() : null;
 		const probe = leg(cursor ?? where, where, allowedModes, cursorTerminal, travel);
 		const finish = clock + (cursor ? probe.minutes : 0) * 60_000 + p.durationMin * 60_000;

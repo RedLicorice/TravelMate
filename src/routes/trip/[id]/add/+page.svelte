@@ -9,6 +9,7 @@
 	import { poi as provider, type City, type Poi } from '$lib/poi';
 	import { durationFor } from '$lib/poi/photon';
 	import { isShortMapLink, parseLatLng } from '$lib/poi/manual';
+	import { branchesOf } from '$lib/poi/branches';
 	import Autocomplete from '$lib/Autocomplete.svelte';
 	import { haversineKm } from '$lib/plan/geo';
 	import LeafletMap from '$lib/Map.svelte';
@@ -208,6 +209,20 @@
 		status = 'idle';
 	}
 
+	/**
+	 * A place the search found more than one of. Asked about once, because only
+	 * the traveller knows whether they meant the chain or that shop: "a Pret"
+	 * and "the Tate Modern" look identical from here.
+	 */
+	let chain = $state<{ pick: Poi; branches: { lat: number; lng: number }[] } | null>(null);
+
+	function offer(p: Poi) {
+		if (isSaved(p)) return;
+		const branches = branchesOf(p, results);
+		if (branches.length > 1) chain = { pick: p, branches };
+		else void add(p);
+	}
+
 	async function add(p: Poi) {
 		if (isSaved(p)) return;
 		try {
@@ -339,7 +354,7 @@
 							✓
 						</button>
 					{:else}
-						<button class="tm-add" aria-label="Add {r.name}" onclick={() => add(r)}>+</button>
+						<button class="tm-add" aria-label="Add {r.name}" onclick={() => offer(r)}>+</button>
 					{/if}
 				</div>
 			{/each}
@@ -371,7 +386,7 @@
 						<button
 							class="tm-btn tm-btn--primary tm-btn--block"
 							onclick={() => {
-								add(selected!);
+								offer(selected!);
 								selectedId = null;
 							}}
 						>
@@ -460,6 +475,44 @@
 			>
 				Add to wishlist
 			</button>
+		</div>
+	{/if}
+
+	{#if chain}
+		{@const pick = chain.pick}
+		{@const count = chain.branches.length}
+		<div
+			role="presentation"
+			style="position:fixed;inset:0;z-index:60;background:rgba(0,0,0,0.35)"
+			onclick={() => (chain = null)}
+		></div>
+		<div class="tm-sheet" style="position:fixed;z-index:61">
+			<div class="tm-sheet__grip"></div>
+			<p class="tm-card__title">{pick.name}</p>
+			<p class="tm-card__meta">
+				There are {count} of these in {trip?.city ?? 'the city'}. Which did you mean?
+			</p>
+			<button
+				class="tm-btn tm-btn--primary tm-btn--block mt-3"
+				onclick={() => {
+					const branches = chain!.branches;
+					chain = null;
+					void add({ ...pick, branches });
+				}}
+			>
+				Any {pick.name}
+			</button>
+			<p class="tm-hint mt-1">Whichever is nearest to wherever the day has you.</p>
+			<button
+				class="tm-btn tm-btn--secondary tm-btn--block mt-3"
+				onclick={() => {
+					chain = null;
+					void add(pick);
+				}}
+			>
+				Just this one
+			</button>
+			<p class="tm-hint mt-1">{pick.label}</p>
 		</div>
 	{/if}
 

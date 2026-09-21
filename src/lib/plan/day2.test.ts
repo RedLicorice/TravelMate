@@ -88,3 +88,55 @@ describe('the meal pass', () => {
 		expect(before).toBeDefined();
 	});
 });
+
+describe('a chain, and how long a meal takes', () => {
+	const near = (name: string, category: string, durationMin: number, branches?: { lat: number; lng: number }[]) =>
+		({
+			id: name, name, lat: 51.5090, lng: -0.1960, category, durationMin,
+			priority: 3, dayIndex: 1, orderIndex: 9, pinned: false,
+			...(branches ? { branches } : {})
+		}) as PlanPoi;
+
+	const withDiner = (diner: PlanPoi) =>
+		schedule({
+			pois: [
+				stop('Notting Hill', 51.509, -0.196, 'suburb', 60, 0),
+				stop('Portobello Market', 51.517, -0.205, 'marketplace', 45, 1),
+				diner
+			],
+			days: tripDays(trip),
+			allowedModes: ['walk', 'transit'],
+			timezone: 'Europe/London',
+			mealWindows: tightest([A, B]).windows
+		}).days[1];
+
+	it('takes the time the traveller gave it, not the default hour', () => {
+		const day = withDiner(near('Quick Bite', 'fast_food', 30));
+		const seated = day.stops.find((s) => s.poiId === 'Quick Bite');
+		expect(seated?.durationMin).toBe(30);
+	});
+
+	it('falls back to the hour only when it invents the meal itself', () => {
+		const day = schedule({
+			pois: [stop('Notting Hill', 51.509, -0.196, 'suburb', 60, 0)],
+			days: tripDays(trip),
+			allowedModes: ['walk', 'transit'],
+			timezone: 'Europe/London',
+			mealWindows: tightest([A, B]).windows
+		}).days[1];
+		const lunch = day.stops.find((s) => s.name === 'Lunch');
+		expect(lunch?.durationMin).toBe(60);
+	});
+
+	it('goes to the branch nearest the day, not the one that was searched', () => {
+		// Stored at Notting Hill, with a branch beside Portobello Market. The
+		// day is at Portobello when lunch comes round.
+		const chain = near('Pret A Manger', 'fast_food', 30, [
+			{ lat: 51.509, lng: -0.196 },
+			{ lat: 51.5171, lng: -0.2051 }
+		]);
+		const seated = withDiner(chain).stops.find((s) => s.poiId === 'Pret A Manger');
+		expect(seated).toBeDefined();
+		expect(seated!.at.lat).toBeCloseTo(51.5171, 3);
+	});
+});

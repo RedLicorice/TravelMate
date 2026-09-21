@@ -9,6 +9,8 @@ export type Place = {
 	lng: number;
 };
 
+export type LatLng = { lat: number; lng: number };
+
 export type Poi = Place & {
 	/** OSM category, e.g. 'museum'. Drives the duration default and crowd curve. */
 	category: string | null;
@@ -20,6 +22,12 @@ export type Poi = Place & {
 	website: string | null;
 	phone: string | null;
 	osmId: string | null;
+	/**
+	 * Other places of the same name in the same city. Present when the
+	 * traveller said any branch will do; the planner then picks whichever is
+	 * nearest to where the day has them.
+	 */
+	branches?: LatLng[];
 };
 
 /** An airport, station, coach station or ferry terminal. */

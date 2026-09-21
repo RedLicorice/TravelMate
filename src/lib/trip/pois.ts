@@ -23,6 +23,9 @@ export type PoiRow = {
 	pinned: boolean;
 	/** The exact start a pin holds. Null on a pin made before times were held. */
 	pinned_at: string | null;
+	/** Any branch will do; the planner picks the nearest. */
+	any_branch: boolean;
+	branches: { lat: number; lng: number }[];
 	/** Where this stop lets you out, when that differs from where you got on. */
 	exit_lat: number | null;
 	exit_lng: number | null;
@@ -42,6 +45,7 @@ export const toPlanPoi = (row: PoiRow): PlanPoi => ({
 	orderIndex: row.order_index,
 	pinned: row.pinned ?? false,
 	pinnedAt: row.pinned_at ?? null,
+	branches: row.any_branch ? (row.branches ?? []) : null,
 	exitAt: row.exit_lat !== null && row.exit_lng !== null ? { lat: row.exit_lat, lng: row.exit_lng } : null
 });
 
@@ -69,7 +73,9 @@ export async function addPoi(tripId: string, poi: Poi): Promise<PoiRow> {
 			opening_hours: poi.openingHours,
 			osm_id: poi.osmId,
 			website: poi.website,
-			phone: poi.phone
+			phone: poi.phone,
+			any_branch: !!poi.branches?.length,
+			branches: poi.branches ?? []
 		})
 		.select('*')
 		.single();
