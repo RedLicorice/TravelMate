@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { tripDays, type Trip } from '$lib/trip/days';
-import { schedule, type PlanPoi } from './planner';
+import { replan, schedule, type PlanPoi } from './planner';
+import type { MealSlotRow } from '$lib/trip/meals';
 import { isMeal, slotAt, slotsFrom, tightest, type MealWindows } from './meals';
 
 const A: MealWindows = { breakfast: { from: '07:00', to: '10:00' }, lunch: { from: '12:00', to: '13:30' }, dinner: { from: '19:00', to: '21:30' } };
