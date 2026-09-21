@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { tripDays, type Trip } from '$lib/trip/days';
 import { schedule, type PlanPoi } from './planner';
-import { tightest, type MealWindows } from './meals';
+import { isMeal, slotAt, slotsFrom, tightest, type MealWindows } from './meals';
 
 const A: MealWindows = { breakfast: { from: '07:00', to: '10:00' }, lunch: { from: '12:00', to: '13:30' }, dinner: { from: '19:00', to: '21:30' } };
 const B: MealWindows = { breakfast: { from: '07:00', to: '09:00' }, lunch: { from: '12:00', to: '13:30' }, dinner: { from: '18:00', to: '20:00' } };
@@ -46,7 +46,15 @@ describe('a booking late in the route', () => {
 	});
 
 	it('does not cost the day its lunch either', () => {
-		expect(mealsOn()).toContain('Lunch');
+		// Either invented or taken by the restaurant itself -- what matters is
+		// that the window is used rather than held and lost.
+		const windows = slotsFrom(tightest([A, B]).windows);
+		const ate = day2().stops.some(
+			(s) =>
+				(s.anchorKind === 'meal' || isMeal(s.name === 'Pret A Manger' ? 'restaurant' : null)) &&
+				slotAt(s.arrive, 'Europe/London', windows) === 'lunch'
+		);
+		expect(ate).toBe(true);
 	});
 
 	it('seats the sandwich shop at a mealtime, or not at all', () => {
@@ -82,10 +90,11 @@ describe('the meal pass', () => {
 	it('does not leave a restaurant sitting between two sights', () => {
 		// Everything on the plan is either part of the route or at a mealtime.
 		// 15:39 between Portobello and Big Ben was neither.
-		const seated = stops().find((s) => s.poiId === 'Pret A Manger');
+		const all = stops();
+		const seated = all.find((s) => s.poiId === 'Pret A Manger');
 		if (!seated) return;
-		const before = stops()[stops().indexOf(seated) - 1];
-		expect(before).toBeDefined();
+		const windows = slotsFrom(tightest([A, B]).windows);
+		expect(slotAt(seated.arrive, 'Europe/London', windows)).not.toBeNull();
 	});
 });
 
@@ -138,5 +147,67 @@ describe('a chain, and how long a meal takes', () => {
 		const seated = withDiner(chain).stops.find((s) => s.poiId === 'Pret A Manger');
 		expect(seated).toBeDefined();
 		expect(seated!.at.lat).toBeCloseTo(51.5171, 3);
+	});
+});
+
+describe('the right sort of place for the right meal', () => {
+	// Breakfast happens at the hotel, before the day sets off; lunch and dinner
+	// happen wherever the day has got to, which is Notting Hill.
+	const hotel = { lat: 51.5154, lng: -0.141 };
+	const out = { lat: 51.509, lng: -0.196 };
+
+	const at = (name: string, category: string, where: { lat: number; lng: number }): PlanPoi => ({
+		id: name,
+		name,
+		lat: where.lat,
+		lng: where.lng,
+		category,
+		durationMin: 30,
+		priority: 3,
+		dayIndex: 1,
+		orderIndex: 9,
+		pinned: false
+	});
+
+	const atMeal = (diners: PlanPoi[], meal: string) => {
+		const windows = slotsFrom(tightest([A]).windows);
+		return schedule({
+			pois: [stop('Notting Hill', out.lat, out.lng, 'suburb', 60, 0), ...diners],
+			days: tripDays(trip),
+			allowedModes: ['walk', 'transit'],
+			timezone: 'Europe/London',
+			mealWindows: tightest([A]).windows
+		}).days[1].stops.find(
+			(s) =>
+				s.poiId &&
+				diners.some((d) => d.id === s.poiId) &&
+				slotAt(s.arrive, 'Europe/London', windows) === meal
+		)?.name;
+	};
+
+	it('sends you to the coffee shop at breakfast, not the chip shop', () => {
+		expect(
+			atMeal([at('Starbucks', 'cafe', hotel), at('Chip Shop', 'fast_food', hotel)], 'breakfast')
+		).toBe('Starbucks');
+	});
+
+	it('does not send you to the coffee shop for dinner', () => {
+		expect(atMeal([at('Starbucks', 'cafe', out)], 'dinner')).toBeUndefined();
+	});
+
+	it('does not send you to the chip shop for breakfast', () => {
+		expect(atMeal([at('Chip Shop', 'fast_food', hotel)], 'breakfast')).toBeUndefined();
+	});
+
+	it('prefers the pub in the evening', () => {
+		expect(atMeal([at('The Bell', 'pub', out), at('Trattoria', 'restaurant', out)], 'dinner')).toBe(
+			'The Bell'
+		);
+	});
+
+	it('prefers the restaurant at lunch', () => {
+		expect(atMeal([at('The Bell', 'pub', out), at('Trattoria', 'restaurant', out)], 'lunch')).toBe(
+			'Trattoria'
+		);
 	});
 });

@@ -81,17 +81,38 @@ export function tightest(all: MealWindows[]): Tightest {
 }
 
 /**
- * Places that are a sitting, and so claim one of the day's meal slots.
+ * How well a kind of place suits each meal, 0 meaning never.
  *
- * Deliberately narrow. A bar, a cafe, a bakery or an ice cream shop is
- * somewhere you stop, not lunch -- and treating them as meals had two bad
- * consequences: the plan would stand around for an hour waiting for a window
- * to open so a ball pit bar could be lunch, and it would hold every slot on
- * the day for it, so the meals that mattered never got offered at all.
+ * A coffee shop is breakfast and is not dinner; a chip shop is the reverse. A
+ * pub is an evening, a restaurant is more often lunch. Getting this wrong is
+ * not a rounding error -- it is being sent to a burger bar at eight in the
+ * morning.
+ *
+ * Anything absent is not a meal at all, which is most of the map. An ice cream
+ * shop is deliberately absent: it is a stop, not a sitting.
  */
-const MEAL_CATEGORIES = new Set(['restaurant', 'fast_food', 'food_court']);
+const MEAL_FIT: Record<string, Record<MealName, number>> = {
+	cafe: { breakfast: 3, lunch: 1, dinner: 0 },
+	bakery: { breakfast: 3, lunch: 1, dinner: 0 },
+	restaurant: { breakfast: 0, lunch: 3, dinner: 2 },
+	food_court: { breakfast: 0, lunch: 2, dinner: 2 },
+	fast_food: { breakfast: 0, lunch: 2, dinner: 2 },
+	pub: { breakfast: 0, lunch: 1, dinner: 3 },
+	biergarten: { breakfast: 0, lunch: 1, dinner: 2 },
+	bar: { breakfast: 0, lunch: 0, dinner: 2 }
+};
 
-export const isMeal = (category: string | null | undefined) => MEAL_CATEGORIES.has(category ?? '');
+/** Somewhere you could eat at some point in the day. */
+export const isMeal = (category: string | null | undefined) =>
+	!!MEAL_FIT[category ?? ''] &&
+	MEAL_NAMES.some((name) => MEAL_FIT[category ?? '']![name] > 0);
+
+/**
+ * How well this place suits this meal. Zero means it does not: a fast food
+ * place is not breakfast however conveniently it sits on the route.
+ */
+export const mealFit = (category: string | null | undefined, meal: MealName) =>
+	MEAL_FIT[category ?? '']?.[meal] ?? 0;
 
 /** One sitting per named meal. Two dinners in a day is not a plan. */
 /**

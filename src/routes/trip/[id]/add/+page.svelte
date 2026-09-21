@@ -10,6 +10,7 @@
 	import { durationFor } from '$lib/poi/photon';
 	import { isShortMapLink, parseLatLng } from '$lib/poi/manual';
 	import { branchesOf } from '$lib/poi/branches';
+	import { isMeal } from '$lib/plan/meals';
 	import Autocomplete from '$lib/Autocomplete.svelte';
 	import { haversineKm } from '$lib/plan/geo';
 	import LeafletMap from '$lib/Map.svelte';
@@ -93,12 +94,19 @@
 	 * place can come back with slightly different coordinates from a different
 	 * query. Coordinates are the fallback for hand-added stops.
 	 */
-	const isSaved = (p: Poi) =>
-		saved.some((s) =>
-			s.osm_id && p.osmId
-				? s.osm_id === p.osmId
-				: Math.abs(s.lat - p.lat) < 1e-6 && Math.abs(s.lng - p.lng) < 1e-6
-		);
+	const matches = (p: Poi) => (s: PoiRow) =>
+		s.osm_id && p.osmId
+			? s.osm_id === p.osmId
+			: Math.abs(s.lat - p.lat) < 1e-6 && Math.abs(s.lng - p.lng) < 1e-6;
+
+	/** How many times this place is already on the trip. */
+	const timesAdded = (p: Poi) => saved.filter(matches(p)).length;
+
+	/**
+	 * Somewhere you eat may be added again -- the same cafe on Tuesday and
+	 * Thursday is a plan, not a double tap. Everything else is added once.
+	 */
+	const isSaved = (p: Poi) => !isMeal(p.category) && timesAdded(p) > 0;
 
 	const kmFromHotel = (p: { lat: number; lng: number }) =>
 		trip ? haversineKm({ lat: trip.hotel_lat, lng: trip.hotel_lng }, p).toFixed(1) : '?';
@@ -352,11 +360,15 @@
 			{/if}
 
 			{#each results as r (r.name + r.lat + r.lng)}
+				{@const times = timesAdded(r)}
 				<div class="tm-result">
 					<div>
-						<p class="tm-result__name">{r.name}</p>
+						<p class="tm-result__name">
+							{r.name}{#if times > 1}<span class="tm-count">&times;{times}</span>{/if}
+						</p>
 						<p class="tm-result__meta">
 							{r.category ?? 'place'} · {kmFromHotel(r)} km · {r.durationMin} min
+							{#if times === 1} · on this trip{/if}
 						</p>
 					</div>
 					{#if isSaved(r)}
@@ -366,7 +378,11 @@
 							✓
 						</button>
 					{:else}
-						<button class="tm-add" aria-label="Add {r.name}" onclick={() => offer(r)}>+</button>
+						<button
+							class="tm-add"
+							aria-label={times ? `Add ${r.name} again` : `Add ${r.name}`}
+							onclick={() => offer(r)}>+</button
+						>
 					{/if}
 				</div>
 			{/each}

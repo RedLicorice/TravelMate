@@ -7,6 +7,7 @@ import { categoryCurves, type CrowdCurves } from './crowd';
 import {
 	DEFAULT_WINDOWS,
 	isMeal,
+	mealFit,
 	MEAL_LABEL,
 	MEAL_MINUTES,
 	MEALS_PER_DAY,
@@ -174,6 +175,9 @@ const MAX_MEAL_WAIT_MIN = 45;
  * than by putting it on the wishlist.
  */
 const MEAL_DETOUR_KM = 2;
+
+/** What a well-suited place is worth in walking, per step of suitability. */
+const MEAL_PREFERENCE_KM = 0.5;
 
 /**
  * A stretch of time the traveller put on the day themselves, with a name and a
@@ -671,14 +675,22 @@ function walkClock(
 			// enough to be worth the detour.
 			let chosen: PlanPoi | null = null;
 			let chosenAt: LatLng = here;
-			let nearest = MEAL_DETOUR_KM;
+			let best = MEAL_DETOUR_KM;
 			for (const diner of unseated) {
+				// A coffee shop is breakfast and is not dinner. Nothing unsuited
+				// to this window is a candidate for it at any distance.
+				const fit = mealFit(diner.category, slot.name);
+				if (fit === 0) continue;
+
 				// A chain answers with whichever of its shops is nearest here,
 				// which is often the difference between lunch and a trek.
 				const branch = nearestBranch(diner, here, haversineKm);
-				const km = haversineKm(here, branch);
-				if (km <= nearest) {
-					nearest = km;
+				// Suitability is worth walking for, but not far: half a
+				// kilometre a step, so the right sort of place wins a close
+				// call and never a long one.
+				const cost = haversineKm(here, branch) - fit * MEAL_PREFERENCE_KM;
+				if (cost <= best) {
+					best = cost;
 					chosen = diner;
 					chosenAt = branch;
 				}

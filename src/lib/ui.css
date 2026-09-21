@@ -204,3 +204,11 @@ button.tm-slot { width: 100%; background: none; cursor: pointer; font-family: in
   color: var(--tm-blush-ink); background: var(--tm-surface);
   border: 1px solid var(--tm-blush); border-radius: 999px; cursor: pointer;
 }
+
+/* How many times a place is already on the trip. Only shown past one, because
+   "x1" is noise on every row that has ever been added. */
+.tm-count {
+  margin-left: 6px; padding: 1px 6px; border-radius: 999px;
+  font: 700 var(--tm-text-xs)/1.4 var(--tm-font-num);
+  background: var(--tm-mint-soft); color: var(--tm-mint-ink);
+}
