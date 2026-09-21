@@ -304,9 +304,18 @@
 		return 'day-full';
 	};
 
+	/**
+	 * Anything the plan does not contain, whatever its day column says. Reading
+	 * the column alone hid a stop that had been given a day and then dropped by
+	 * the scheduler: it showed on no day and on no list.
+	 */
+	const planned = $derived(
+		new Set((fresh ?? toPlannedDays(stored, days)).flatMap((d) => d.stops.map((s) => s.poiId)))
+	);
+
 	const unplaced = $derived<Unplaced[]>(
 		pois
-			.filter((p) => p.day_index === null)
+			.filter((p) => !planned.has(p.id))
 			.map((p) => ({ poi: toPlanPoi(p), reason: reasonFor(p) }))
 	);
 
@@ -406,6 +415,20 @@
 		const next = schedule({ ...input, travel: routed });
 		fresh = next.days;
 		planAt = await savePlan(tripId, next);
+
+		// A stop the day could not reach has to give up its day, or it belongs
+		// to neither place: absent from the plan because it did not fit, and
+		// absent from the wishlist because it still claims a day. That is how
+		// a restaurant added to a full evening disappeared without a word.
+		const stranded = next.unplaced
+			.filter((u) => !u.poi.pinned)
+			.filter((u) => pois.find((p) => p.id === u.poi.id)?.day_index !== null)
+			.map((u) => ({ id: u.poi.id, dayIndex: null, orderIndex: null }));
+		if (stranded.length) {
+			await saveAssignments(stranded);
+			pois = await listPois(tripId);
+		}
+		stored = await loadPlan(tripId);
 	}
 
 	const drag = createDrag((id, target) => applyMove(id, target));
@@ -470,10 +493,18 @@
 	 * the time the place is already on the wishlist waiting for a day, so
 	 * searching for it again is the wrong first offer.
 	 */
-	let slot = $state<{ day: number; before: string | null } | null>(null);
+	let slot = $state<{ day: number; before: string | null; meal?: string } | null>(null);
 
-	/** Everything captured but not yet on a day. */
-	const unassigned = $derived(pois.filter((p) => p.day_index === null));
+	/**
+	 * Everything captured but waiting for a day. A meal slot leads with the
+	 * places you could actually eat at, because that is what it is asking for.
+	 */
+	const unassigned = $derived.by(() => {
+		const free = pois.filter((p) => !planned.has(p.id));
+		if (!slot?.meal) return free;
+		const food = (p: PoiRow) => (isMeal(p.category) ? 0 : 1);
+		return [...free].sort((a, b) => food(a) - food(b));
+	});
 
 	let blockName = $state('');
 	let blockMin = $state(60);
@@ -604,6 +635,9 @@
 			planAt = await savePlan(tripId, next);
 			fresh = next.days;
 			pois = await listPois(tripId);
+			// Without this the stored rows stay a plan behind, and the effect
+			// that re-times a newly placed stop fires on a phantom difference.
+			stored = await loadPlan(tripId);
 		} catch (e) {
 			error = (e as Error).message;
 		} finally {
@@ -1110,6 +1144,20 @@
 							<span class="tm-stop__time">
 								{cardTime(stop.timeLabel, hhmm(stop.arrive, row.timezone), stop.durationMin)}
 							</span>
+							{#if stop.anchorKind === 'meal'}
+								{@const after = current.stops.slice(i + 1).find((x) => x.poiId)}
+								<button
+									class="tm-meal-swap"
+									onclick={() =>
+										(slot = {
+											day: dayIndex,
+											before: after?.poiId ?? null,
+											meal: stop.name
+										})}
+								>
+									Pick a place
+								</button>
+							{/if}
 							<div>
 								<p class="tm-stop__name">
 									{#if stop.poiId}
@@ -1197,11 +1245,15 @@
 			<div class="tm-sheet" style="position:fixed;z-index:61;max-height:76vh;overflow-y:auto">
 				<div class="tm-sheet__grip"></div>
 				<p class="tm-label mb-2">
-					Add to {dayLabel(days[target.day].date, row.timezone)}
+					{target.meal
+						? `Somewhere for ${target.meal.toLowerCase()}`
+						: `Add to ${dayLabel(days[target.day].date, row.timezone)}`}
 				</p>
 
 				{#if unassigned.length}
-					<p class="tm-hint mb-2">From your wishlist</p>
+					<p class="tm-hint mb-2">
+						{target.meal ? 'From your wishlist, places to eat first' : 'From your wishlist'}
+					</p>
 					<div class="flex flex-col gap-1" style="margin: 0 calc(-1 * var(--tm-space-2))">
 						{#each unassigned as p (p.id)}
 							<button class="tm-result" style="text-align:left" onclick={() => placeHere(p.id)}>

@@ -183,3 +183,12 @@ button.tm-slot { width: 100%; background: none; cursor: pointer; font-family: in
   opacity: 1; color: var(--tm-text-muted); border-color: var(--tm-border-strong);
 }
 
+
+/* Offered on a meal the plan invented: the traveller can name the place. */
+.tm-meal-swap {
+  grid-column: 1; justify-self: start;
+  margin-top: 4px; padding: 3px 7px;
+  font: 600 var(--tm-text-xs)/1 var(--tm-font);
+  color: var(--tm-blush-ink); background: var(--tm-surface);
+  border: 1px solid var(--tm-blush); border-radius: 999px; cursor: pointer;
+}
