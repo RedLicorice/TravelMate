@@ -1,5 +1,16 @@
 import { describe, it, expect } from 'vitest';
 import { staleCount, toPlannedDays, type PlanStopRow } from './plan';
+import type { Day, Waypoint } from './days';
+
+/** Just enough of a day for toPlannedDays: its date and its anchors. */
+const aDay = (date: string, anchors: Waypoint[] = []): Day => ({
+	date,
+	start: new Date(`${date}T09:00:00Z`),
+	end: new Date(`${date}T19:00:00Z`),
+	fixedStart: anchors,
+	fixedEnd: [],
+	usableMin: 600
+});
 
 const row = (p: Partial<PlanStopRow> & { day_index: number; order_index: number }): PlanStopRow => ({
 	poi_id: null,
@@ -31,7 +42,7 @@ describe('toPlannedDays', () => {
 				row({ day_index: 0, order_index: 0, name: 'first' }),
 				row({ day_index: 1, order_index: 0, name: 'middle' })
 			],
-			['2026-10-02', '2026-10-03']
+			[aDay('2026-10-02'), aDay('2026-10-03')]
 		);
 
 		expect(days.map((d) => d.date)).toEqual(['2026-10-02', '2026-10-03']);
@@ -40,10 +51,7 @@ describe('toPlannedDays', () => {
 	});
 
 	it('keeps a day the plan left empty, so the board still shows its date', () => {
-		const days = toPlannedDays([row({ day_index: 1, order_index: 0 })], [
-			'2026-10-02',
-			'2026-10-03'
-		]);
+		const days = toPlannedDays([row({ day_index: 1, order_index: 0 })], [aDay('2026-10-02'), aDay('2026-10-03')]);
 		expect(days).toHaveLength(2);
 		expect(days[0].stops).toEqual([]);
 	});
@@ -54,14 +62,14 @@ describe('toPlannedDays', () => {
 				row({ day_index: 0, order_index: 0 }),
 				row({ day_index: 0, order_index: 1, leg_mode: 'transit', leg_minutes: 24, leg_km: 7.4 })
 			],
-			['2026-10-02']
+			[aDay('2026-10-02')]
 		);
 		expect(day.stops[0].legIn).toBeNull();
 		expect(day.stops[1].legIn).toEqual({ mode: 'transit', minutes: 24, km: 7.4 });
 	});
 
 	it('restores times as instants, not strings', () => {
-		const [day] = toPlannedDays([row({ day_index: 0, order_index: 0 })], ['2026-10-03']);
+		const [day] = toPlannedDays([row({ day_index: 0, order_index: 0 })], [aDay('2026-10-03')]);
 		expect(day.stops[0].arrive.toISOString()).toBe('2026-10-03T09:00:00.000Z');
 		expect(day.stops[0].depart.getTime() - day.stops[0].arrive.getTime()).toBe(60 * 60_000);
 	});
@@ -117,13 +125,13 @@ describe('an exit point on a stored stop', () => {
 	it('survives the round trip', () => {
 		const [day] = toPlannedDays(
 			[row({ day_index: 0, order_index: 0, exit_lat: 51.5083, exit_lng: 0.0184 })],
-			['2026-10-03']
+			[aDay('2026-10-03')]
 		);
 		expect(day.stops[0].exitAt).toEqual({ lat: 51.5083, lng: 0.0184 });
 	});
 
 	it('is null for an ordinary stop', () => {
-		const [day] = toPlannedDays([row({ day_index: 0, order_index: 0 })], ['2026-10-03']);
+		const [day] = toPlannedDays([row({ day_index: 0, order_index: 0 })], [aDay('2026-10-03')]);
 		expect(day.stops[0].exitAt).toBeNull();
 	});
 });

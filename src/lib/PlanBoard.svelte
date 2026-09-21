@@ -2,7 +2,7 @@
 	import type { Day } from '$lib/trip/days';
 	import type { PlannedDay, PlannedStop } from '$lib/plan/planner';
 	import type { createDrag } from '$lib/dnd.svelte';
-	import { stack } from '$lib/board';
+	import { spanOf, stack } from '$lib/board';
 
 	type Props = {
 		days: Day[];
@@ -91,7 +91,15 @@
 				});
 			}
 
-			const height = Math.max(MIN_BLOCK_PX, stop.durationMin * PX_PER_MIN);
+			// A card that states its own hours is drawn at them. The planner
+			// gives the journey no length, because it costs the day nothing --
+			// but a two hour flight is two hours on the board.
+			const own = spanOf(stop.timeLabel);
+			const height = own
+				? Math.max(MIN_BLOCK_PX, (own.to - own.from) * PX_PER_MIN)
+				: Math.max(MIN_BLOCK_PX, stop.durationMin * PX_PER_MIN);
+			const at = own ? top(own.from) : top(startMin);
+
 			if (stop.anchor) {
 				const kind = anchorKind(stop, dayIndex);
 				const tone =
@@ -104,7 +112,7 @@
 								: 'sky';
 				out.push({
 					key: `stop:${j}`,
-					top: top(startMin),
+					top: at,
 					height,
 					accent: `var(--tm-${tone})`,
 					fill: `var(--tm-${tone}-soft)`,
@@ -120,7 +128,7 @@
 			} else {
 				out.push({
 					key: `stop:${j}`,
-					top: top(startMin),
+					top: at,
 					height,
 					accent: stop.poiId && pinned.has(stop.poiId) ? 'var(--tm-butter)' : dayColor(dayIndex),
 					fill: 'var(--tm-surface)',
@@ -133,7 +141,9 @@
 			}
 		});
 
-		return stack(out);
+		// Sorted before stacking: a journey card sits at its own hour, which can
+		// be earlier than anything the planner scheduled.
+		return stack([...out].sort((a, b) => a.top - b.top));
 	}
 
 	/**
@@ -182,10 +192,17 @@
 	const MIN_BLOCK_PX = 26;
 
 	/** One hour of air either side, so blocks are not flush against the edge. */
+	/** Every hour a card's own label claims, so the grid reaches them. */
+	const labelled = $derived(
+		planned
+			.flatMap((d) => d.stops.map((s) => spanOf(s.timeLabel)))
+			.filter((x): x is { from: number; to: number } => !!x)
+	);
+
 	const range = $derived.by(() => {
 		if (!days.length) return { from: 8 * 60, to: 20 * 60 };
-		const starts = days.map((d) => minutesOf(d.start));
-		const ends = days.map((d) => minutesOf(d.end));
+		const starts = [...days.map((d) => minutesOf(d.start)), ...labelled.map((l) => l.from)];
+		const ends = [...days.map((d) => minutesOf(d.end)), ...labelled.map((l) => l.to)];
 		const from = Math.max(0, Math.floor(Math.min(...starts) / 60) * 60 - 60);
 		const to = Math.min(24 * 60, Math.ceil(Math.max(...ends) / 60) * 60 + 60);
 		return { from, to: Math.max(to, from + 180) };

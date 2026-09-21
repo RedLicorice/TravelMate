@@ -169,15 +169,18 @@
 	/** The latest anyone on this trip is out of the door. */
 	const ready = $derived(latestReady(people.map((p) => ({ wakeAt: p.wakeAt, prepMin: p.prepMin }))));
 
+	/** Whoever is ready last, and their own hours -- wake time and prep. */
+	const prep = $derived(latestPrep(people.map((p) => ({ wakeAt: p.wakeAt, prepMin: p.prepMin }))));
+
 	const days = $derived<Day[]>(
 		row
 			? tripDays({
 					...toTrip(row),
-					// Nothing is planned before the party is dressed. The first day
-					// still clamps to arrival as well, whichever is later.
-					dayStart: effectiveDayStart(toTrip(row).dayStart, ready),
-					// Shown as a card so the morning is accounted for on screen.
-					prep: latestPrep(people.map((p) => ({ wakeAt: p.wakeAt, prepMin: p.prepMin })))
+					// The day opens when the party wakes, not when they are dressed:
+					// getting ready is a card on the plan that spends the half
+					// hour, rather than half an hour the plan never mentions.
+					dayStart: effectiveDayStart(toTrip(row).dayStart, prep?.wakeAt ?? null),
+					prep
 				})
 			: []
 	);
@@ -306,7 +309,7 @@
 	 */
 	const result = $derived<PlanResult | null>(
 		row && days.length
-			? { days: fresh ?? toPlannedDays(stored, days.map((d) => d.date)), unplaced }
+			? { days: fresh ?? toPlannedDays(stored, days), unplaced }
 			: null
 	);
 
@@ -1033,15 +1036,17 @@
 								</p>
 								<p class="tm-stop__sub" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
 									<span>
-										{stop.anchorKind === 'service'
-											? 'your journey'
-											: stop.anchorKind === 'chore' && !stop.durationMin
-												? 'before the day starts'
-												: stop.anchor
-												? stop.durationMin
-													? `${stop.durationMin} min stop`
-													: 'anchor'
-												: `${stop.durationMin} min`}
+										{#if stop.anchorKind === 'service'}
+											your journey
+										{:else if stop.durationMin}
+											{stop.durationMin} min
+										{:else if stop.anchorKind === 'terminal'}
+											terminal
+										{:else if stop.anchorKind === 'hotel'}
+											your hotel
+										{:else}
+											{stop.durationMin} min
+										{/if}
 									</span>
 									{#if stop.exitAt}
 										<span class="tm-chip tm-chip--sky" style="font-size:10px">

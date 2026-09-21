@@ -1,5 +1,6 @@
 import { supabase } from '$lib/supabase';
 import type { PlanResult, PlannedDay, PlannedStop, Warning } from '$lib/plan/planner';
+import type { Day } from './days';
 import type { Leg, Mode } from '$lib/plan/modes';
 
 /**
@@ -100,25 +101,45 @@ export async function loadPlan(tripId: string): Promise<PlanStopRow[]> {
 	return (data ?? []) as PlanStopRow[];
 }
 
-const toLeg = (row: PlanStopRow): Leg | null =>
-	row.leg_mode === null
-		? null
-		: { mode: row.leg_mode as Mode, minutes: row.leg_minutes ?? 0, km: Number(row.leg_km ?? 0) };
+const toLeg = (row: PlanStopRow): Leg | null => {
+	if (row.leg_mode === null) return null;
+	const km = Number(row.leg_km ?? 0);
+	// Two cards standing in the same place have no leg between them. Plans
+	// stored before that was true carry a transit overhead on a leg of zero
+	// length, and would show "12 min · 0 km · transit" until regenerated.
+	if (km === 0) return null;
+	return { mode: row.leg_mode as Mode, minutes: row.leg_minutes ?? 0, km };
+};
 
 /**
- * Rebuild the shape the views draw from stored rows. `dates` supplies each
- * day's calendar date, which lives on the trip rather than on a stop: a day
- * the plan left empty still has to appear on the board with its date on it.
+ * Rebuild the shape the views draw from stored rows.
+ *
+ * `days` supplies each day's calendar date -- which lives on the trip, not on
+ * a stop, so a day the plan left empty still appears with its date on it --
+ * and its waypoints, which say whether an anchor is the hotel, a terminal, a
+ * service or a chore. Plans stored before that was recorded have none, and
+ * every view needs the same answer, so it is resolved here rather than in each
+ * of them.
  */
-export function toPlannedDays(rows: PlanStopRow[], dates: string[]): PlannedDay[] {
-	if (!rows.length && !dates.length) return [];
+export function toPlannedDays(rows: PlanStopRow[], days: Day[]): PlannedDay[] {
+	if (!rows.length && !days.length) return [];
 
 	const spanned = rows.reduce((n, r) => Math.max(n, r.day_index + 1), 0);
-	const count = Math.max(dates.length, spanned);
+	const count = Math.max(days.length, spanned);
 
-	const days: PlannedDay[] = Array.from({ length: count }, (_, index) => ({
+	/** Name -> kind, from the day's own anchors. */
+	const kindsFor = (index: number) =>
+		new Map(
+			[...(days[index]?.fixedStart ?? []), ...(days[index]?.fixedEnd ?? [])].map((w) => [
+				w.name,
+				w.kind
+			])
+		);
+	const kinds = Array.from({ length: count }, (_, i) => kindsFor(i));
+
+	const planned: PlannedDay[] = Array.from({ length: count }, (_, index) => ({
 		index,
-		date: dates[index] ?? '',
+		date: days[index]?.date ?? '',
 		stops: [],
 		overflowed: []
 	}));
@@ -126,7 +147,7 @@ export function toPlannedDays(rows: PlanStopRow[], dates: string[]): PlannedDay[
 	for (const row of [...rows].sort(
 		(a, b) => a.day_index - b.day_index || a.order_index - b.order_index
 	)) {
-		days[row.day_index]?.stops.push({
+		planned[row.day_index]?.stops.push({
 			poiId: row.poi_id,
 			name: row.name,
 			at: { lat: row.lat, lng: row.lng },
@@ -135,7 +156,7 @@ export function toPlannedDays(rows: PlanStopRow[], dates: string[]): PlannedDay[
 			durationMin: row.duration_min,
 			legIn: toLeg(row),
 			anchor: row.anchor,
-			anchorKind: row.anchor_kind,
+			anchorKind: row.anchor_kind ?? (row.anchor ? kinds[row.day_index]?.get(row.name) ?? 'hotel' : null),
 			timeLabel: row.time_label,
 			busyness: row.busyness === null ? null : Number(row.busyness),
 			warnings: row.warnings ?? [],
@@ -145,7 +166,7 @@ export function toPlannedDays(rows: PlanStopRow[], dates: string[]): PlannedDay[
 					: null
 		});
 	}
-	return days;
+	return planned;
 }
 
 /**

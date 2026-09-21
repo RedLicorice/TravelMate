@@ -63,7 +63,7 @@
 	 */
 	const result = $derived<PlanResult | null>(
 		row && days.length
-			? { days: toPlannedDays(stored, days.map((d) => d.date)), unplaced: [] }
+			? { days: toPlannedDays(stored, days), unplaced: [] }
 			: null
 	);
 

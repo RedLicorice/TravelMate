@@ -345,17 +345,18 @@ describe('reinterpret', () => {
 describe('the morning is accounted for', () => {
 	const withPrep = (): Trip => ({ ...base, prep: { wakeAt: '08:00', prepMin: 30 } });
 
-	it('gives getting ready a card that states its own hours', () => {
+	it('gives getting ready a card of its own', () => {
 		const days = tripDays(withPrep());
 		// Not the arrival day: on that one the traveller is at an airport.
 		const middle = days[1];
 		expect(middle.fixedStart.map((w) => w.name)).toEqual(['Hotel Artemide', 'Getting ready']);
-		expect(middle.fixedStart[1].timeLabel).toBe('08:00–08:30');
 	});
 
-	it('costs the day nothing, because the day already starts after it', () => {
+	it('spends real time on it, so the day opens at the wake time', () => {
+		// The caller passes the wake time as dayStart; the half hour after it is
+		// this card, not a window the plan silently starts late.
 		const ready = tripDays(withPrep())[1].fixedStart[1];
-		expect(ready.dwellMin).toBe(0);
+		expect(ready.dwellMin).toBe(30);
 		expect(ready.kind).toBe('chore');
 	});
 

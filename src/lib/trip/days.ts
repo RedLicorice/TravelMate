@@ -164,14 +164,6 @@ export function tripDays(trip: Trip): Day[] {
 		kind: 'terminal'
 	});
 
-	/** 'Getting ready' runs before the day opens, so it states its own hours. */
-	const readyLabel = (wakeAt: string, prepMin: number) => {
-		const [h, m] = wakeAt.split(':').map(Number);
-		const end = h * 60 + m + prepMin;
-		const hh = String(Math.floor(end / 60) % 24).padStart(2, '0');
-		return `${wakeAt}–${hh}:${String(end % 60).padStart(2, '0')}`;
-	};
-
 	/** 'HH:MM' out of a `YYYY-MM-DDTHH:MM` the traveller typed. */
 	const clockOf = (local: string | null) => local?.split('T')[1]?.slice(0, 5) ?? null;
 
@@ -261,10 +253,10 @@ export function tripDays(trip: Trip): Day[] {
 			if (trip.bagDropMin > 0) fixedStart.push(choreStop('Drop the bags', trip.bagDropMin));
 		} else {
 			fixedStart.push(hotelStop(0));
-			if (trip.prep) {
-				fixedStart.push(
-					choreStop('Getting ready', 0, readyLabel(trip.prep.wakeAt, trip.prep.prepMin))
-				);
+			// Real time, not a label: the day opens when the traveller wakes and
+			// the first half hour of it is spent getting out of the door.
+			if (trip.prep && trip.prep.prepMin > 0) {
+				fixedStart.push(choreStop('Getting ready', trip.prep.prepMin));
 			}
 		}
 

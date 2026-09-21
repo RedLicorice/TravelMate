@@ -76,7 +76,7 @@
 	// The stored plan, not a fresh one: this page must agree with the times the
 	// trip page is showing, down to the minute.
 	const plan = $derived(
-		trip && days.length ? toPlannedDays(stored, days.map((d) => d.date)) : null
+		trip && days.length ? toPlannedDays(stored, days) : null
 	);
 
 	/** Where this stop landed, if it landed. */

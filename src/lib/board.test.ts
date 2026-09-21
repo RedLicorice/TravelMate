@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { stack } from './board';
+import { spanOf, stack } from './board';
 
 describe('stack', () => {
 	const spans = (out: { top: number; height: number }[]) =>
@@ -50,5 +50,30 @@ describe('stack', () => {
 
 	it('does nothing with nothing', () => {
 		expect(stack([])).toEqual([]);
+	});
+});
+
+describe('spanOf', () => {
+	it('reads a moment', () => {
+		expect(spanOf('08:00')).toEqual({ from: 480, to: 480 });
+	});
+
+	it('reads a span', () => {
+		expect(spanOf('13:40–15:45')).toEqual({ from: 820, to: 945 });
+	});
+
+	it('accepts a plain hyphen as well as a dash', () => {
+		expect(spanOf('13:40-15:45')).toEqual({ from: 820, to: 945 });
+	});
+
+	it('gives a flight over midnight the rest of the day, not a negative', () => {
+		expect(spanOf('23:30–01:10')).toEqual({ from: 1410, to: 1440 });
+	});
+
+	it('is nothing for anything that is not a time', () => {
+		expect(spanOf('your journey')).toBeNull();
+		expect(spanOf('30 min')).toBeNull();
+		expect(spanOf('25:00')).toBeNull();
+		expect(spanOf(null)).toBeNull();
 	});
 });
