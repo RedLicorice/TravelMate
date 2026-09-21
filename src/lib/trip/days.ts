@@ -17,7 +17,8 @@ export type Waypoint = {
 	 * sits at the terminal's own coordinates so it costs no travel, and takes
 	 * no time in the day because it happens outside the day's window.
 	 */
-	kind: 'hotel' | 'terminal' | 'service';
+	/** 'chore' is time the trip spends on itself: getting ready, bags. */
+	kind: 'hotel' | 'terminal' | 'service' | 'chore';
 	/**
 	 * A wall-clock time to show instead of the planner's own, for a card whose
 	 * real time is on a ticket rather than on the trip's clock. The journey
@@ -40,6 +41,12 @@ export type Trip = {
 	/** The journey in and the journey out, shown alongside their terminals. */
 	arrivalLegs: JourneyLeg[];
 	departureLegs: JourneyLeg[];
+	/**
+	 * Waking and getting out of the door. Shown as a card so the morning is
+	 * visibly accounted for; it costs the plan nothing because `dayStart` has
+	 * already been pushed past it.
+	 */
+	prep: { wakeAt: string; prepMin: number } | null;
 	arrivalBufferMin: number;
 	departureBufferMin: number;
 	bagDropMin: number;
@@ -141,12 +148,29 @@ export function tripDays(trip: Trip): Day[] {
 		dwellMin,
 		kind: 'hotel'
 	});
-	const placeStop = (p: Place): Waypoint => ({
+	/** Time the trip spends on itself. Drawn at the hotel, because that is where it happens. */
+	const choreStop = (name: string, dwellMin: number, timeLabel: string | null = null): Waypoint => ({
+		name,
+		at: trip.hotel,
+		dwellMin,
+		kind: 'chore',
+		timeLabel
+	});
+
+	const placeStop = (p: Place, dwellMin = 0): Waypoint => ({
 		name: p.name,
 		at: p.at,
-		dwellMin: 0,
+		dwellMin,
 		kind: 'terminal'
 	});
+
+	/** 'Getting ready' runs before the day opens, so it states its own hours. */
+	const readyLabel = (wakeAt: string, prepMin: number) => {
+		const [h, m] = wakeAt.split(':').map(Number);
+		const end = h * 60 + m + prepMin;
+		const hh = String(Math.floor(end / 60) % 24).padStart(2, '0');
+		return `${wakeAt}–${hh}:${String(end % 60).padStart(2, '0')}`;
+	};
 
 	/** 'HH:MM' out of a `YYYY-MM-DDTHH:MM` the traveller typed. */
 	const clockOf = (local: string | null) => local?.split('T')[1]?.slice(0, 5) ?? null;
@@ -195,18 +219,23 @@ export function tripDays(trip: Trip): Day[] {
 		const windowStart = zonedInstant(date, trip.dayStart, tz);
 		const windowEnd = zonedInstant(date, trip.dayEnd, tz);
 
-		// The first day cannot begin before the traveller is out of the airport;
-		// the last cannot run past the moment they must leave for it.
-		const start =
-			i === 0
-				? new Date(Math.max(windowStart.getTime(), arrival.getTime() + trip.arrivalBufferMin * MIN))
-				: windowStart;
-		const rawEnd =
-			i === lastIndex
-				? new Date(
-						Math.min(windowEnd.getTime(), departure.getTime() - trip.departureBufferMin * MIN)
-					)
-				: windowEnd;
+		// Getting out of the airport and checking in are real time spent in a
+		// real place, so they are dwell on the terminal cards rather than a
+		// clamp nobody can see. The day therefore opens at the moment of
+		// landing and closes at the moment of departure -- with no terminal to
+		// hold the time, it falls back to clamping as before.
+		const landing = trip.arrivalPoint
+			? arrival.getTime()
+			: arrival.getTime() + trip.arrivalBufferMin * MIN;
+		const start = i === 0 ? new Date(Math.max(windowStart.getTime(), landing)) : windowStart;
+
+		// The window stretches by the check-in allowance because that time is
+		// spent in the terminal, not sightseeing: without this the traveller
+		// would have to reach the airport a further two hours early.
+		const lastMoment = trip.departurePoint
+			? Math.min(windowEnd.getTime() + trip.departureBufferMin * MIN, departure.getTime())
+			: Math.min(windowEnd.getTime(), departure.getTime() - trip.departureBufferMin * MIN);
+		const rawEnd = i === lastIndex ? new Date(lastMoment) : windowEnd;
 		// A 07:00 flight leaves a day of negative length. Clamp to empty: the
 		// planner should schedule nothing, not schedule backwards.
 		const end = new Date(Math.max(start.getTime(), rawEnd.getTime()));
@@ -216,20 +245,43 @@ export function tripDays(trip: Trip): Day[] {
 			const journey = journeyStops(trip.arrivalLegs, trip.arrivalPoint.at);
 			// The journey already ends at the terminal the traveller landed at,
 			// so adding it again would draw the airport twice.
-			if (journey.length) fixedStart.push(...journey);
-			else fixedStart.push(placeStop(trip.arrivalPoint));
-			// You cannot drag a suitcase around the Colosseum.
-			if (trip.bagDropMin > 0) fixedStart.push(hotelStop(trip.bagDropMin));
+			if (journey.length) {
+				fixedStart.push(...journey);
+				// Passport queues and baggage reclaim happen at the airport the
+				// traveller landed at, which is the last card of the journey.
+				const landed = fixedStart[fixedStart.length - 1];
+				if (landed?.kind === 'terminal') landed.dwellMin = trip.arrivalBufferMin;
+			} else {
+				fixedStart.push(placeStop(trip.arrivalPoint, trip.arrivalBufferMin));
+			}
+			// You cannot drag a suitcase around the Colosseum. Its own card, so
+			// the half hour it costs is visible rather than hidden inside the
+			// hotel's.
+			fixedStart.push(hotelStop(0));
+			if (trip.bagDropMin > 0) fixedStart.push(choreStop('Drop the bags', trip.bagDropMin));
 		} else {
 			fixedStart.push(hotelStop(0));
+			if (trip.prep) {
+				fixedStart.push(
+					choreStop('Getting ready', 0, readyLabel(trip.prep.wakeAt, trip.prep.prepMin))
+				);
+			}
 		}
 
 		const fixedEnd: Waypoint[] = [];
 		if (i === lastIndex && trip.departurePoint) {
-			if (trip.bagDropMin > 0) fixedEnd.push(hotelStop(trip.bagDropMin));
+			if (trip.bagDropMin > 0) fixedEnd.push(choreStop('Collect the bags', trip.bagDropMin));
+			fixedEnd.push(hotelStop(0));
 			const journey = journeyStops(trip.departureLegs, trip.departurePoint.at);
-			if (journey.length) fixedEnd.push(...journey);
-			else fixedEnd.push(placeStop(trip.departurePoint));
+			if (journey.length) {
+				// Checking in happens at the airport they leave from, which is
+				// the first card of the journey out.
+				const [leaving] = journey;
+				if (leaving?.kind === 'terminal') leaving.dwellMin = trip.departureBufferMin;
+				fixedEnd.push(...journey);
+			} else {
+				fixedEnd.push(placeStop(trip.departurePoint, trip.departureBufferMin));
+			}
 		} else {
 			fixedEnd.push(hotelStop(0));
 		}

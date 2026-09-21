@@ -116,6 +116,21 @@ export function latestReady(people: { wakeAt: string; prepMin: number }[]): stri
 		.reduce((latest, at) => (toHours(at) > toHours(latest) ? at : latest));
 }
 
+/**
+ * The waking and preparing of whoever is ready last -- the same person
+ * `latestReady` picks, but their own hours rather than the resulting time, so
+ * the plan can show the morning as a card that says when it runs.
+ */
+export function latestPrep<T extends { wakeAt: string; prepMin: number }>(
+	people: T[]
+): { wakeAt: string; prepMin: number } | null {
+	if (!people.length) return null;
+	const last = people.reduce((a, b) =>
+		toHours(readyAt(b.wakeAt, b.prepMin)) > toHours(readyAt(a.wakeAt, a.prepMin)) ? b : a
+	);
+	return { wakeAt: last.wakeAt, prepMin: last.prepMin };
+}
+
 /** The later of the trip's own day start and when everyone is ready. */
 export function effectiveDayStart(dayStart: string, ready: string | null): string {
 	if (!ready) return dayStart;

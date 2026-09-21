@@ -13,6 +13,7 @@ const trip: Trip = {
 	departurePoint: { name: 'Stansted', at: { lat: 51.886, lng: 0.2389 } },
 	arrivalLegs: [],
 	departureLegs: [],
+	prep: null,
 	arrivalBufferMin: 0,
 	departureBufferMin: 120,
 	bagDropMin: 30,

@@ -66,7 +66,7 @@ export type PlannedStop = {
 	legIn: Leg | null;
 	anchor: boolean;
 	/** For an anchor, which kind. Null for a real stop. */
-	anchorKind?: 'hotel' | 'terminal' | 'service' | null;
+	anchorKind?: 'hotel' | 'terminal' | 'service' | 'chore' | null;
 	/** Shown instead of the planner's clock. See Waypoint.timeLabel. */
 	timeLabel?: string | null;
 	busyness: number | null;
@@ -422,7 +422,7 @@ function walkClock(
 		category: string | null,
 		terminal: boolean,
 		exitAt: LatLng | null = null,
-		anchorKind: 'hotel' | 'terminal' | 'service' | null = null,
+		anchorKind: 'hotel' | 'terminal' | 'service' | 'chore' | null = null,
 		timeLabel: string | null = null
 	) => {
 		let legIn: Leg | null = null;

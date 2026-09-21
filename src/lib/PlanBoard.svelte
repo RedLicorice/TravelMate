@@ -35,7 +35,7 @@
 	 * otherwise every anchor on an existing trip reads as the hotel until the
 	 * traveller regenerates.
 	 */
-	function anchorKind(stop: PlannedStop, dayIndex: number): 'hotel' | 'terminal' | 'service' {
+	function anchorKind(stop: PlannedStop, dayIndex: number): 'hotel' | 'terminal' | 'service' | 'chore' {
 		if (stop.anchorKind) return stop.anchorKind;
 		const window = days[dayIndex];
 		const match = [...(window?.fixedStart ?? []), ...(window?.fixedEnd ?? [])].find(
@@ -94,6 +94,8 @@
 			const height = Math.max(MIN_BLOCK_PX, stop.durationMin * PX_PER_MIN);
 			if (stop.anchor) {
 				const kind = anchorKind(stop, dayIndex);
+				// Chores wear the hotel's colour because that is where they
+				// happen: getting ready, and the bags.
 				const tone = kind === 'terminal' ? 'peach' : kind === 'service' ? 'mint' : 'sky';
 				out.push({
 					key: `stop:${j}`,

@@ -181,6 +181,9 @@ export function toTrip(row: TripRow): Trip {
 		// terminal keeps its own plain name.
 		arrivalLegs: row.arrival_legs ?? [],
 		departureLegs: row.departure_legs ?? [],
+		// Filled in by the caller, which is the only place that knows who is
+		// on the trip and therefore when the last of them is ready.
+		prep: null,
 		arrivalBufferMin: row.arrival_buffer_min,
 		departureBufferMin: row.departure_buffer_min,
 		bagDropMin: row.bag_drop_min,

@@ -29,7 +29,14 @@
 		type UnplacedReason
 	} from '$lib/plan/planner';
 	import { loadPlan, savePlan, staleCount, toPlannedDays, type PlanStopRow } from '$lib/trip/plan';
-	import { effectiveDayStart, isMeal, latestReady, tightest, type MealWindows } from '$lib/plan/meals';
+	import {
+		effectiveDayStart,
+		isMeal,
+		latestPrep,
+		latestReady,
+		tightest,
+		type MealWindows
+	} from '$lib/plan/meals';
 	import { resolveCurves, type CrowdCurves } from '$lib/plan/crowd';
 	import { routeShape } from '$lib/plan/route';
 	import { firstOf, resolveTravel, type TravelTable } from '$lib/plan/travel';
@@ -168,7 +175,9 @@
 					...toTrip(row),
 					// Nothing is planned before the party is dressed. The first day
 					// still clamps to arrival as well, whichever is later.
-					dayStart: effectiveDayStart(toTrip(row).dayStart, ready)
+					dayStart: effectiveDayStart(toTrip(row).dayStart, ready),
+					// Shown as a card so the morning is accounted for on screen.
+					prep: latestPrep(people.map((p) => ({ wakeAt: p.wakeAt, prepMin: p.prepMin })))
 				})
 			: []
 	);
@@ -1024,7 +1033,9 @@
 									<span>
 										{stop.anchorKind === 'service'
 											? 'your journey'
-											: stop.anchor
+											: stop.anchorKind === 'chore' && !stop.durationMin
+												? 'before the day starts'
+												: stop.anchor
 												? stop.durationMin
 													? `${stop.durationMin} min stop`
 													: 'anchor'
