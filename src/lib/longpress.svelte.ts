@@ -16,12 +16,33 @@ export function longPress(fire: () => void, ms = 450) {
 			from = null;
 		};
 
+		/**
+		 * Eat the click the finger makes when it lifts.
+		 *
+		 * The menu opens while the finger is still down, so whatever the menu
+		 * puts under that finger -- its own backdrop -- receives the click that
+		 * ends the press and closes again immediately. Swallowed at the capture
+		 * phase, before it reaches anything, and given up after a moment in
+		 * case no click follows at all.
+		 */
+		const swallowNextClick = () => {
+			const eat = (e: Event) => {
+				e.preventDefault();
+				e.stopPropagation();
+				clearTimeout(giveUp);
+			};
+			const off = () => window.removeEventListener('click', eat, true);
+			const giveUp = setTimeout(off, 700);
+			window.addEventListener('click', eat, { capture: true, once: true });
+		};
+
 		const down = (e: PointerEvent) => {
 			// Secondary buttons are the desktop's own context menu.
 			if (e.button !== 0) return;
 			from = { x: e.clientX, y: e.clientY };
 			timer = setTimeout(() => {
 				stop();
+				swallowNextClick();
 				fire();
 			}, ms);
 		};
