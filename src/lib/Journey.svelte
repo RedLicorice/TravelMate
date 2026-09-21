@@ -158,6 +158,27 @@
 			</div>
 		</div>
 
+		<div class="tm-field mt-3">
+			<label class="tm-label" for="{direction}-out-{i}">
+				Getting out of {leg.to?.name ?? 'there'} takes {leg.outMin ?? 0} min
+			</label>
+			<input
+				id="{direction}-out-{i}"
+				type="range"
+				min="0"
+				max="180"
+				step="5"
+				value={leg.outMin ?? 0}
+				oninput={(e) =>
+					patch(i, { outMin: Number((e.currentTarget as HTMLInputElement).value) || null })}
+				style="width:100%;accent-color:var(--tm-primary)"
+			/>
+			<span class="tm-hint">
+				Passport queues, baggage reclaim, the walk to the exit. Leave it at zero for a
+				platform change.
+			</span>
+		</div>
+
 		<p class="tm-hint mt-2">
 			{#if i === planLeg}
 				{direction === 'arrival'

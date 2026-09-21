@@ -27,6 +27,13 @@ export type JourneyLeg = {
 	departLocal: string | null;
 	/** `YYYY-MM-DDTHH:MM`, local to `to`. */
 	arriveLocal: string | null;
+	/**
+	 * Minutes to get out of `to` -- passport queues, baggage reclaim, the walk
+	 * to the exit. Per terminal, because Stansted and a village station are not
+	 * the same errand. Null falls back to the trip's own allowance on the leg
+	 * that lands in the destination city, and to nothing on a connection.
+	 */
+	outMin: number | null;
 };
 
 export const emptyLeg = (): JourneyLeg => ({
@@ -35,7 +42,8 @@ export const emptyLeg = (): JourneyLeg => ({
 	service: null,
 	bookingRef: null,
 	departLocal: null,
-	arriveLocal: null
+	arriveLocal: null,
+	outMin: null
 });
 
 /**

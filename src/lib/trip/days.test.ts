@@ -182,15 +182,15 @@ describe('the journey shows on the plan', () => {
 		arrivalLegs: [
 			{ from: { name: 'Roma Termini', lat: 41.9, lng: 12.5, kind: 'train' },
 			  to: { name: 'Milano Centrale', lat: 45.4, lng: 9.2, kind: 'train' },
-			  service: 'FR 9612', bookingRef: null, departLocal: null, arriveLocal: null },
+			  service: 'FR 9612', bookingRef: null, departLocal: null, arriveLocal: null, outMin: null },
 			{ from: { name: 'Malpensa', lat: 45.6, lng: 8.7, kind: 'airport' },
 			  to: { name: 'Stansted', lat: 51.886, lng: 0.2389, kind: 'airport' },
-			  service: 'FR 8012', bookingRef: null, departLocal: null, arriveLocal: null }
+			  service: 'FR 8012', bookingRef: null, departLocal: null, arriveLocal: null, outMin: null }
 		],
 		departureLegs: [
 			{ from: { name: 'Stansted', lat: 51.886, lng: 0.2389, kind: 'airport' },
 			  to: { name: 'Ciampino', lat: 41.8, lng: 12.6, kind: 'airport' },
-			  service: 'FR 8013', bookingRef: null, departLocal: null, arriveLocal: null }
+			  service: 'FR 8013', bookingRef: null, departLocal: null, arriveLocal: null, outMin: null }
 		]
 	});
 
@@ -287,7 +287,8 @@ describe('journey cards carry the times off the ticket', () => {
 				service: 'FR 9612',
 				bookingRef: null,
 				departLocal: '2026-04-10T08:00',
-				arriveLocal: '2026-04-10T11:10'
+				arriveLocal: '2026-04-10T11:10',
+				outMin: null
 			}
 		],
 		departureLegs: []
@@ -381,7 +382,8 @@ describe('the departure day', () => {
 				service: 'FR 8013',
 				bookingRef: null,
 				departLocal: '2026-04-13T06:55',
-				arriveLocal: '2026-04-13T09:50'
+				arriveLocal: '2026-04-13T09:50',
+				outMin: null
 			}
 		]
 	});
@@ -421,7 +423,8 @@ describe('the departure day', () => {
 					service: 'FR 8012',
 					bookingRef: null,
 					departLocal: '2026-04-10T13:00',
-					arriveLocal: '2026-04-10T15:00'
+					arriveLocal: '2026-04-10T15:00',
+				outMin: null
 				}
 			]
 		};
@@ -434,5 +437,58 @@ describe('the departure day', () => {
 		t.departureLegs[0].departLocal = '2026-04-13T00:30';
 		const airport = tripDays(t).at(-1)!.fixedEnd.find((w) => w.name === 'Stansted')!;
 		expect(airport.timeLabel).toBe('22:30–00:30');
+	});
+});
+
+describe('getting out is per terminal', () => {
+	const connecting = (outMin: number | null, lastOut: number | null): Trip => ({
+		...base,
+		arrivalPoint: { name: 'Stansted', at: { lat: 51.886, lng: 0.2389 } },
+		arrivalBufferMin: 45,
+		arrivalLegs: [
+			{
+				from: { name: 'Roma Termini', lat: 41.9, lng: 12.5, kind: 'train' },
+				to: { name: 'Milano Centrale', lat: 45.4, lng: 9.2, kind: 'train' },
+				service: 'FR 9612',
+				bookingRef: null,
+				departLocal: '2026-04-10T08:00',
+				arriveLocal: '2026-04-10T11:10',
+				outMin
+			},
+			{
+				from: { name: 'Malpensa', lat: 45.6, lng: 8.7, kind: 'airport' },
+				to: { name: 'Stansted', lat: 51.886, lng: 0.2389, kind: 'airport' },
+				service: 'FR 8012',
+				bookingRef: null,
+				departLocal: '2026-04-10T14:30',
+				arriveLocal: '2026-04-10T15:45',
+				outMin: lastOut
+			}
+		]
+	});
+
+	const named = (t: Trip, name: string) =>
+		tripDays(t)[0].fixedStart.find((w) => w.name === name)!;
+
+	it('lets a connection have its own allowance', () => {
+		const milan = named(connecting(10, null), 'Milano Centrale');
+		expect(milan.dwellMin).toBe(10);
+		expect(milan.timeLabel).toBe('11:10–11:20');
+	});
+
+	it('gives a connection none by default: a platform change is not an airport', () => {
+		const milan = named(connecting(null, null), 'Milano Centrale');
+		expect(milan.dwellMin).toBe(0);
+		expect(milan.timeLabel).toBe('11:10');
+	});
+
+	it("falls back to the trip's allowance on the leg that ends the journey", () => {
+		expect(named(connecting(null, null), 'Stansted').dwellMin).toBe(45);
+	});
+
+	it('prefers the terminal it was set on over the trip default', () => {
+		const stansted = named(connecting(null, 90), 'Stansted');
+		expect(stansted.dwellMin).toBe(90);
+		expect(stansted.timeLabel).toBe('15:45–17:15');
 	});
 });

@@ -190,27 +190,39 @@ export function tripDays(trip: Trip): Day[] {
 	 * Termini its real position would have the planner cost a leg from Rome to
 	 * London and swallow the day whole.
 	 */
-	const journeyStops = (legs: JourneyLeg[], at: LatLng): Waypoint[] => {
+	const journeyStops = (legs: JourneyLeg[], at: LatLng, lastOutMin = 0): Waypoint[] => {
 		const out: Waypoint[] = [];
 		const push = (
 			name: string | null | undefined,
 			kind: 'terminal' | 'service',
-			timeLabel: string | null = null
+			timeLabel: string | null = null,
+			dwellMin = 0
 		) => {
 			if (!name) return;
 			// A connection names the same station twice -- arriving on one leg
 			// and leaving on the next. It is one card, and it keeps the earlier
 			// arrival time rather than being redrawn with the later departure.
 			if (out[out.length - 1]?.name === name) return;
-			out.push({ name, at, dwellMin: 0, kind, timeLabel });
+			out.push({ name, at, dwellMin, kind, timeLabel });
 		};
 
-		for (const leg of legs) {
+		legs.forEach((leg, i) => {
 			push(leg.from?.name, 'terminal', clockOf(leg.departLocal));
 			const route = [leg.from?.name, leg.to?.name].filter(Boolean).join(' → ');
 			push(leg.service ?? (route || null), 'service', span(leg));
-			push(leg.to?.name, 'terminal', clockOf(leg.arriveLocal));
-		}
+
+			// Getting out of the terminal you just reached. Stated per leg, so a
+			// connection can be five minutes and an airport an hour; the trip's
+			// own allowance stands in on the leg that ends the journey.
+			const out_ = leg.outMin ?? (i === legs.length - 1 ? lastOutMin : 0);
+			const landed = clockOf(leg.arriveLocal);
+			push(
+				leg.to?.name,
+				'terminal',
+				landed && out_ > 0 ? `${landed}–${shift(landed, out_)}` : landed,
+				out_
+			);
+		});
 		return out;
 	};
 
@@ -241,21 +253,15 @@ export function tripDays(trip: Trip): Day[] {
 
 		const fixedStart: Waypoint[] = [];
 		if (i === 0 && trip.arrivalPoint) {
-			const journey = journeyStops(trip.arrivalLegs, trip.arrivalPoint.at);
 			// The journey already ends at the terminal the traveller landed at,
 			// so adding it again would draw the airport twice.
+			const journey = journeyStops(
+				trip.arrivalLegs,
+				trip.arrivalPoint.at,
+				trip.arrivalBufferMin
+			);
 			if (journey.length) {
 				fixedStart.push(...journey);
-				// Passport queues and baggage reclaim happen at the airport the
-				// traveller landed at, which is the last card of the journey.
-				// Its stated time is the landing, and the queue runs on from it.
-				const landed = fixedStart[fixedStart.length - 1];
-				if (landed?.kind === 'terminal') {
-					landed.dwellMin = trip.arrivalBufferMin;
-					if (landed.timeLabel && trip.arrivalBufferMin > 0) {
-						landed.timeLabel = `${landed.timeLabel}–${shift(landed.timeLabel, trip.arrivalBufferMin)}`;
-					}
-				}
 			} else {
 				fixedStart.push(placeStop(trip.arrivalPoint, trip.arrivalBufferMin));
 			}
