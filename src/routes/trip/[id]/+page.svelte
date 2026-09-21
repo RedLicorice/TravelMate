@@ -1014,9 +1014,11 @@
 							class:tm-stop--chore={stop.anchorKind === 'chore'}
 							class:tm-stop--pinned={stop.poiId ? pinnedIds.has(stop.poiId) : false}
 							data-drop-stop={stop.poiId ?? undefined}
-							style={drag.state.id === stop.poiId
+							style={stop.poiId && drag.state.id === stop.poiId
 								? 'opacity:0.35'
-								: drag.state.target?.kind === 'stop' && drag.state.target.id === stop.poiId
+								: stop.poiId &&
+									  drag.state.target?.kind === 'stop' &&
+									  drag.state.target.id === stop.poiId
 									? 'outline:2px solid var(--tm-primary);outline-offset:-1px'
 									: ''}
 						>

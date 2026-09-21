@@ -249,8 +249,8 @@
 		title={o.sub ? `${o.title} · ${o.sub}` : o.title}
 		style="top:{o.top}px;height:{o.height}px;background:{o.fill};
 		border-left-color:{o.accent};
-		{o.stop && drag.state.id === o.stop.poiId ? 'opacity:0.35;' : ''}
-		{o.stop && drag.state.target?.kind === 'stop' && drag.state.target.id === o.stop.poiId
+		{o.stop?.poiId && drag.state.id === o.stop.poiId ? 'opacity:0.35;' : ''}
+		{o.stop?.poiId && drag.state.target?.kind === 'stop' && drag.state.target.id === o.stop.poiId
 			? 'outline:2px solid var(--tm-primary);outline-offset:-1px;'
 			: ''}"
 	>
