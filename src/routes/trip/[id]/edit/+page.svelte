@@ -15,6 +15,7 @@
 		type TripRow
 	} from '$lib/trip/repo';
 	import TerminalFields from '$lib/TerminalFields.svelte';
+	import BagDrop from '$lib/BagDrop.svelte';
 	import { fromLocalInput, toLocalInput } from '$lib/trip/days';
 	import { poi as provider, type City } from '$lib/poi';
 	import Autocomplete from '$lib/Autocomplete.svelte';
@@ -160,6 +161,19 @@
 			/>
 		</div>
 
+		<div class="mb-5"><BagDrop bind:terminals /></div>
+
+		<div class="mb-5 flex gap-3">
+			<div class="tm-field flex-1">
+				<label class="tm-label" for="ds">Day starts</label>
+				<input class="tm-input" id="ds" type="time" bind:value={dayStart} />
+			</div>
+			<div class="tm-field flex-1">
+				<label class="tm-label" for="de">Day ends</label>
+				<input class="tm-input" id="de" type="time" bind:value={dayEnd} />
+			</div>
+		</div>
+
 		<div class="tm-field mb-5">
 			<label class="tm-label" for="arr">Arrival</label>
 			<input class="tm-input" id="arr" type="datetime-local" bind:value={arrival} />
@@ -193,17 +207,6 @@
 
 		<div class="mb-5" style="border-top: 1px solid var(--tm-border); padding-top: 1rem">
 			<TerminalFields bind:terminals {city} />
-		</div>
-
-		<div class="mb-5 flex gap-3">
-			<div class="tm-field flex-1">
-				<label class="tm-label" for="ds">Day starts</label>
-				<input class="tm-input" id="ds" type="time" bind:value={dayStart} />
-			</div>
-			<div class="tm-field flex-1">
-				<label class="tm-label" for="de">Day ends</label>
-				<input class="tm-input" id="de" type="time" bind:value={dayEnd} />
-			</div>
 		</div>
 
 		{#if error}<p class="tm-hint tm-hint--error mb-3">{error}</p>{/if}
