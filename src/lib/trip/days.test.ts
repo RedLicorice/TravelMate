@@ -241,3 +241,48 @@ describe('the journey shows on the plan', () => {
 		expect(first.fixedStart.map((w) => w.name)).toEqual(['Stansted', base.hotelName]);
 	});
 });
+
+describe('journey cards carry the times off the ticket', () => {
+	const timed = (): Trip => ({
+		...base,
+		arrivalPoint: { name: 'Stansted', at: { lat: 51.886, lng: 0.2389 } },
+		departurePoint: null,
+		arrivalLegs: [
+			{
+				from: { name: 'Roma Termini', lat: 41.9, lng: 12.5, kind: 'train' },
+				to: { name: 'Milano Centrale', lat: 45.4, lng: 9.2, kind: 'train' },
+				service: 'FR 9612',
+				bookingRef: null,
+				departLocal: '2026-04-10T08:00',
+				arriveLocal: '2026-04-10T11:10'
+			}
+		],
+		departureLegs: []
+	});
+
+	it('shows when you leave, the span in between, and when you land', () => {
+		const [first] = tripDays(timed());
+		expect(first.fixedStart.map((w) => w.timeLabel ?? null)).toEqual([
+			'08:00',
+			'08:00–11:10',
+			'11:10',
+			null // the hotel runs on the trip's own clock
+		]);
+	});
+
+	it('says nothing rather than half a span when only one time is known', () => {
+		const t = timed();
+		t.arrivalLegs[0].arriveLocal = null;
+		const [first] = tripDays(t);
+		expect(first.fixedStart[1].timeLabel).toBe('08:00');
+		expect(first.fixedStart[2].timeLabel).toBeNull();
+	});
+
+	it('leaves a journey with no times to the planner clock', () => {
+		const t = timed();
+		t.arrivalLegs[0].departLocal = null;
+		t.arrivalLegs[0].arriveLocal = null;
+		const [first] = tripDays(t);
+		expect(first.fixedStart.every((w) => !w.timeLabel)).toBe(true);
+	});
+});

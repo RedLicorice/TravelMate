@@ -67,6 +67,8 @@ export type PlannedStop = {
 	anchor: boolean;
 	/** For an anchor, which kind. Null for a real stop. */
 	anchorKind?: 'hotel' | 'terminal' | 'service' | null;
+	/** Shown instead of the planner's clock. See Waypoint.timeLabel. */
+	timeLabel?: string | null;
 	busyness: number | null;
 	warnings: Warning[];
 	/** Where the next leg departs from, when that is not `at`. */
@@ -420,7 +422,8 @@ function walkClock(
 		category: string | null,
 		terminal: boolean,
 		exitAt: LatLng | null = null,
-		anchorKind: 'hotel' | 'terminal' | 'service' | null = null
+		anchorKind: 'hotel' | 'terminal' | 'service' | null = null,
+		timeLabel: string | null = null
 	) => {
 		let legIn: Leg | null = null;
 		if (cursor) {
@@ -470,6 +473,7 @@ function walkClock(
 			legIn,
 			anchor,
 			anchorKind,
+			timeLabel,
 			busyness,
 			warnings,
 			exitAt
@@ -480,7 +484,7 @@ function walkClock(
 	};
 
 	for (const w of day.fixedStart) {
-		push(w.name, w.at, w.dwellMin, true, null, null, w.kind === 'terminal', null, w.kind);
+		push(w.name, w.at, w.dwellMin, true, null, null, w.kind === 'terminal', null, w.kind, w.timeLabel ?? null);
 	}
 
 	/**
@@ -523,7 +527,7 @@ function walkClock(
 	}
 
 	for (const w of day.fixedEnd) {
-		push(w.name, w.at, w.dwellMin, true, null, null, w.kind === 'terminal', null, w.kind);
+		push(w.name, w.at, w.dwellMin, true, null, null, w.kind === 'terminal', null, w.kind, w.timeLabel ?? null);
 	}
 
 	return { stops, overflowed, travelMin, crowdSum, mealMissHours, waitedMin };

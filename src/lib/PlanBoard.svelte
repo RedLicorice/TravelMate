@@ -100,7 +100,10 @@
 					fill: `var(--tm-${tone}-soft)`,
 					ink: `var(--tm-${tone}-ink)`,
 					title: stop.name,
-					sub: stop.durationMin ? `${stop.durationMin} min` : null,
+					// A journey card's real time is on the ticket, not on the
+					// trip's clock -- they all cost nothing, so the clock gives
+					// every one of them the same minute.
+					sub: stop.timeLabel ?? (stop.durationMin ? `${stop.durationMin} min` : null),
 					icon: null,
 					stop: null
 				});

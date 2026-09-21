@@ -962,7 +962,7 @@
 									? 'outline:2px solid var(--tm-primary);outline-offset:-1px'
 									: ''}
 						>
-							<span class="tm-stop__time">{hhmm(stop.arrive, row.timezone)}</span>
+							<span class="tm-stop__time">{stop.timeLabel ?? hhmm(stop.arrive, row.timezone)}</span>
 							<div>
 								<p class="tm-stop__name">
 									{#if stop.poiId}

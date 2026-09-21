@@ -18,6 +18,13 @@ export type Waypoint = {
 	 * no time in the day because it happens outside the day's window.
 	 */
 	kind: 'hotel' | 'terminal' | 'service';
+	/**
+	 * A wall-clock time to show instead of the planner's own, for a card whose
+	 * real time is on a ticket rather than on the trip's clock. The journey
+	 * costs the day nothing, so every one of its cards would otherwise read the
+	 * same minute.
+	 */
+	timeLabel?: string | null;
 };
 
 export type Trip = {
@@ -141,6 +148,15 @@ export function tripDays(trip: Trip): Day[] {
 		kind: 'terminal'
 	});
 
+	/** 'HH:MM' out of a `YYYY-MM-DDTHH:MM` the traveller typed. */
+	const clockOf = (local: string | null) => local?.split('T')[1]?.slice(0, 5) ?? null;
+
+	const span = (leg: JourneyLeg) => {
+		const from = clockOf(leg.departLocal);
+		const to = clockOf(leg.arriveLocal);
+		return from && to ? `${from}–${to}` : (from ?? to);
+	};
+
 	/**
 	 * The journey, card by card: every terminal it touches and every service
 	 * between them. Rome, the train, Milan, the airport, the flight, Stansted.
@@ -153,19 +169,24 @@ export function tripDays(trip: Trip): Day[] {
 	 */
 	const journeyStops = (legs: JourneyLeg[], at: LatLng): Waypoint[] => {
 		const out: Waypoint[] = [];
-		const push = (name: string | null | undefined, kind: 'terminal' | 'service') => {
+		const push = (
+			name: string | null | undefined,
+			kind: 'terminal' | 'service',
+			timeLabel: string | null = null
+		) => {
 			if (!name) return;
 			// A connection names the same station twice -- arriving on one leg
-			// and leaving on the next. It is one card.
+			// and leaving on the next. It is one card, and it keeps the earlier
+			// arrival time rather than being redrawn with the later departure.
 			if (out[out.length - 1]?.name === name) return;
-			out.push({ name, at, dwellMin: 0, kind });
+			out.push({ name, at, dwellMin: 0, kind, timeLabel });
 		};
 
 		for (const leg of legs) {
-			push(leg.from?.name, 'terminal');
+			push(leg.from?.name, 'terminal', clockOf(leg.departLocal));
 			const route = [leg.from?.name, leg.to?.name].filter(Boolean).join(' → ');
-			push(leg.service ?? (route || null), 'service');
-			push(leg.to?.name, 'terminal');
+			push(leg.service ?? (route || null), 'service', span(leg));
+			push(leg.to?.name, 'terminal', clockOf(leg.arriveLocal));
 		}
 		return out;
 	};
