@@ -41,6 +41,7 @@ const row: TripRow = {
 	country_code: null,
 	share_token: null,
 	plan_generated_at: null,
+	plan_version: 0,
 	created_at: '2026-03-01T00:00:00Z'
 };
 

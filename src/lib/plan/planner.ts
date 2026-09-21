@@ -192,6 +192,13 @@ const MEAL_PREFERENCE_KM = 0.5;
  */
 export const BLOCK_CATEGORY = 'block';
 
+/**
+ * Bumped whenever a change here would produce a different plan from the same
+ * trip. A stored plan older than this re-times itself when the trip is opened,
+ * so the traveller never has to tap Replan because the app changed.
+ */
+export const PLANNER_VERSION = 1;
+
 /** The default when nobody has rated a stop: wanting it averagely. */
 const NEUTRAL_PRIORITY = 3;
 

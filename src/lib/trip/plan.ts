@@ -1,4 +1,5 @@
 import { supabase } from '$lib/supabase';
+import { PLANNER_VERSION } from '$lib/plan/planner';
 import type { PlanResult, PlannedDay, PlannedStop, Warning } from '$lib/plan/planner';
 import type { Day } from './days';
 import type { Leg, Mode } from '$lib/plan/modes';
@@ -82,7 +83,7 @@ export async function savePlan(tripId: string, result: PlanResult): Promise<stri
 	const generatedAt = new Date().toISOString();
 	const { error } = await supabase
 		.from('trips')
-		.update({ plan_generated_at: generatedAt })
+		.update({ plan_generated_at: generatedAt, plan_version: PLANNER_VERSION })
 		.eq('id', tripId);
 	if (error) throw new Error(error.message);
 	return generatedAt;

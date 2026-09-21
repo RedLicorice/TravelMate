@@ -22,6 +22,8 @@
 	import { loadTripProfiles } from '$lib/profile.svelte';
 	import { safePhone, safeUrl } from '$lib/poi/photon';
 	import Stars from '$lib/Stars.svelte';
+	import LeafletMap from '$lib/Map.svelte';
+	import { placeUrl } from '$lib/maps';
 
 	const tripId = page.params.id!;
 	const poiId = page.params.poiId!;
@@ -277,6 +279,34 @@
 		</p>
 
 		<!-- Expected busyness -->
+		<h2 class="tm-label mt-6 mb-2">Where it is</h2>
+		<div
+			style="height:180px;border-radius:var(--tm-r-md);overflow:hidden;
+			border:1px solid var(--tm-border)"
+		>
+			<LeafletMap
+				markers={[
+					{ id: poi.id, lat: poi.lat, lng: poi.lng, color: 'var(--tm-primary)', selected: true },
+					...(trip
+						? [
+								{
+									id: 'hotel',
+									lat: trip.hotel_lat,
+									lng: trip.hotel_lng,
+									glyph: 'H',
+									color: 'var(--tm-sky)'
+								}
+							]
+						: [])
+				]}
+				routes={[]}
+				center={{ lat: poi.lat, lng: poi.lng }}
+			/>
+		</div>
+		<p class="tm-hint mt-2">
+			{kmFromHotel} km from {trip?.hotel_name ?? 'the hotel'}.
+		</p>
+
 		<h2 class="tm-label mt-6 mb-2">Expected busyness</h2>
 		<div class="tm-card">
 			{#if busyNow !== null}
@@ -347,12 +377,12 @@
 				{/if}
 				<a
 					class="tm-btn tm-btn--secondary"
-					href="https://www.openstreetmap.org/?mlat={poi.lat}&mlon={poi.lng}#map=18/{poi.lat}/{poi.lng}"
+					href={placeUrl({ lat: poi.lat, lng: poi.lng }, poi.name)}
 					target="_blank"
 					rel="noopener noreferrer"
 					style="min-height:38px;text-decoration:none"
 				>
-					Open map
+					Open in Maps
 				</a>
 			</div>
 			{#if !website && !phone}

@@ -50,6 +50,8 @@ export type TripRow = {
 	share_token: string | null;
 	/** When Regenerate last produced a plan. Null before the first one. */
 	plan_generated_at: string | null;
+	/** Which planner produced it. Older than the app means re-time on sight. */
+	plan_version: number;
 	created_at: string;
 };
 

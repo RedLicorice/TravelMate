@@ -19,6 +19,16 @@ const TRAVEL_MODE: Record<Mode, string> = {
 const coord = (p: LatLng) => `${p.lat.toFixed(6)},${p.lng.toFixed(6)}`;
 
 /** Directions for one hop. */
+/**
+ * A single place on Google Maps. Named as well as pinned, so the app opens on
+ * the place's own card rather than on a bare dropped pin.
+ */
+export function placeUrl(at: LatLng, name?: string | null): string {
+	const params = new URLSearchParams({ api: '1', query: `${at.lat},${at.lng}` });
+	if (name) params.set('query', `${name}, ${at.lat},${at.lng}`);
+	return `https://www.google.com/maps/search/?${params}`;
+}
+
 export function legUrl(from: LatLng, to: LatLng, mode: Mode): string {
 	const params = new URLSearchParams({
 		api: '1',

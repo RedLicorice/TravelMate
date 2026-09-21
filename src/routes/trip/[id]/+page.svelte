@@ -43,6 +43,7 @@
 		type PlanResult,
 		type PlannedDay,
 		type PlannedStop,
+		PLANNER_VERSION,
 		type Unplaced,
 		type UnplacedReason
 	} from '$lib/plan/planner';
@@ -636,8 +637,15 @@
 	let retimed = false;
 	$effect(() => {
 		if (retimed || busy || !row || !days.length || !stored.length) return;
-		const planned = new Set(stored.map((r) => r.poi_id).filter(Boolean));
-		if (!pois.some((p) => p.day_index !== null && !planned.has(p.id))) return;
+
+		// A plan made by an older planner. Asking the traveller to tap Replan
+		// because the app changed underneath them is the app's problem.
+		const stale = (row.plan_version ?? 0) < PLANNER_VERSION;
+
+		const inPlan = new Set(stored.map((r) => r.poi_id).filter(Boolean));
+		const placedButUnplanned = pois.some((p) => p.day_index !== null && !inPlan.has(p.id));
+
+		if (!stale && !placedButUnplanned) return;
 		retimed = true;
 		restore().catch((e) => (error = (e as Error).message));
 	});
