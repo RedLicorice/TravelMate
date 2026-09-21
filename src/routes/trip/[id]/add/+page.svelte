@@ -223,6 +223,18 @@
 		else void add(p);
 	}
 
+	/**
+	 * Read the choice out before clearing it. Clearing first and reading after
+	 * leaves the template evaluating `chain.pick` on a null, because a {@const}
+	 * is a derived and re-runs before the block that holds it is torn down.
+	 */
+	function chose(everyBranch: boolean) {
+		const chosen = chain;
+		if (!chosen) return;
+		chain = null;
+		void add(everyBranch ? { ...chosen.pick, branches: chosen.branches } : chosen.pick);
+	}
+
 	async function add(p: Poi) {
 		if (isSaved(p)) return;
 		try {
@@ -479,8 +491,6 @@
 	{/if}
 
 	{#if chain}
-		{@const pick = chain.pick}
-		{@const count = chain.branches.length}
 		<div
 			role="presentation"
 			style="position:fixed;inset:0;z-index:60;background:rgba(0,0,0,0.35)"
@@ -488,31 +498,19 @@
 		></div>
 		<div class="tm-sheet" style="position:fixed;z-index:61">
 			<div class="tm-sheet__grip"></div>
-			<p class="tm-card__title">{pick.name}</p>
+			<p class="tm-card__title">{chain.pick.name}</p>
 			<p class="tm-card__meta">
-				There are {count} of these in {trip?.city ?? 'the city'}. Which did you mean?
+				There are {chain.branches.length} of these in {trip?.city ?? 'the city'}. Which did you
+				mean?
 			</p>
-			<button
-				class="tm-btn tm-btn--primary tm-btn--block mt-3"
-				onclick={() => {
-					const branches = chain!.branches;
-					chain = null;
-					void add({ ...pick, branches });
-				}}
-			>
-				Any {pick.name}
+			<button class="tm-btn tm-btn--primary tm-btn--block mt-3" onclick={() => chose(true)}>
+				Any {chain.pick.name}
 			</button>
 			<p class="tm-hint mt-1">Whichever is nearest to wherever the day has you.</p>
-			<button
-				class="tm-btn tm-btn--secondary tm-btn--block mt-3"
-				onclick={() => {
-					chain = null;
-					void add(pick);
-				}}
-			>
+			<button class="tm-btn tm-btn--secondary tm-btn--block mt-3" onclick={() => chose(false)}>
 				Just this one
 			</button>
-			<p class="tm-hint mt-1">{pick.label}</p>
+			<p class="tm-hint mt-1">{chain.pick.label}</p>
 		</div>
 	{/if}
 
