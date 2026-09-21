@@ -41,6 +41,15 @@
 		onlongpress
 	}: Props = $props();
 
+	/**
+	 * The trip's own vector map. Rotation, tilt and pins drawn by the app all
+	 * need one; Google's demo id supports none of them properly.
+	 *
+	 * Not a secret: a Map ID says how a map looks, and carries no access of
+	 * its own. The key beside it is what is restricted.
+	 */
+	const MAP_ID = '9d69a674fd68f7d232ad3ecb';
+
 	let host: HTMLDivElement;
 	let map: google.maps.Map | null = null;
 	let pins: google.maps.marker.AdvancedMarkerElement[] = [];
@@ -124,9 +133,15 @@
 		map = new google.maps.Map(host, {
 			center,
 			zoom,
-			mapId: 'DEMO_MAP_ID',
+			mapId: MAP_ID,
 			disableDefaultUI: true,
 			zoomControl: true,
+			// Two fingers to turn the map and to tilt it. Worth having on a
+			// phone in a strange city: holding the map the way the street runs
+			// is how people actually read one.
+			rotateControl: true,
+			headingInteractionEnabled: true,
+			tiltInteractionEnabled: true,
 			gestureHandling: 'greedy',
 			clickableIcons: false
 		});
@@ -165,17 +180,11 @@
 		place-items: center;
 		width: 26px;
 		height: 26px;
-		border-radius: 50% 50% 50% 2px;
-		transform: rotate(-45deg);
+		border-radius: 50%;
 		border: 2px solid var(--tm-surface);
 		box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
 		font: 700 11px/1 var(--tm-font);
 		color: #fff;
-	}
-
-	:global(.tm-pin-el)::first-line {
-		/* The glyph rides upright inside a rotated pin. */
-		line-height: 1;
 	}
 
 	:global(.tm-pin-el--on) {
