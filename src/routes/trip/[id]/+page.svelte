@@ -11,6 +11,7 @@
 		toTrip,
 		repairTimezone,
 		setTripImage,
+		updateAllowance,
 		updateCityBBox,
 		updateCountryCode,
 		updateHotel,
@@ -33,6 +34,7 @@
 		REASON_TEXT,
 		type PlanResult,
 		type PlannedDay,
+		type PlannedStop,
 		type Unplaced,
 		type UnplacedReason
 	} from '$lib/plan/planner';
@@ -52,7 +54,12 @@
 	import { BLOCK_CATEGORY } from '$lib/plan/planner';
 	import { pool } from '$lib/pool';
 	import { avatarDataUri } from '$lib/avatar';
-	import { displayName, loadTripProfiles, type Profile } from '$lib/profile.svelte';
+	import {
+		displayName,
+		loadTripProfiles,
+		saveMyProfile,
+		type Profile
+	} from '$lib/profile.svelte';
 	import type { Mode } from '$lib/plan/modes';
 	import Autocomplete from '$lib/Autocomplete.svelte';
 	import Stars from '$lib/Stars.svelte';
@@ -78,8 +85,68 @@
 	/** What the Replan button is up to, since routing a trip is not instant. */
 	let step = $state<string | null>(null);
 
-	/** The card the traveller is holding down on. */
+	/**
+	 * What a held-down card is about. A stop is a place; everything else on the
+	 * plan is an allowance the trip carries, and the card is exactly where the
+	 * traveller notices it is wrong.
+	 */
+	type Allowance = 'prep' | 'bags' | 'out' | 'checkin';
 	let carded = $state<PoiRow | null>(null);
+	let allowanced = $state<{ kind: Allowance; name: string; minutes: number } | null>(null);
+
+	const ALLOWANCE_HINT: Record<Allowance, string> = {
+		prep: 'Waking and getting out of the door. Yours, on every trip.',
+		bags: 'At the hotel on arrival, and again before leaving.',
+		out: 'Passport queues and baggage reclaim at the airport you land at.',
+		checkin: 'Standing in the terminal before you leave.'
+	};
+
+	/** Which allowance a card stands for, if it stands for one. */
+	function allowanceOf(stop: PlannedStop, dayIdx: number): Allowance | null {
+		if (stop.anchorKind === 'chore') return stop.name === 'Getting ready' ? 'prep' : 'bags';
+		if (stop.anchorKind !== 'terminal') return null;
+		return dayIdx === 0 ? 'out' : dayIdx === days.length - 1 ? 'checkin' : null;
+	}
+
+	function holdAllowance(stop: PlannedStop, dayIdx: number) {
+		const kind = allowanceOf(stop, dayIdx);
+		if (!kind || !row) return;
+		const minutes =
+			kind === 'prep'
+				? (prep?.prepMin ?? 0)
+				: kind === 'bags'
+					? row.bag_drop_min
+					: kind === 'out'
+						? row.arrival_buffer_min
+						: row.departure_buffer_min;
+		allowanced = { kind, name: stop.name, minutes };
+	}
+
+	async function setAllowance(kind: Allowance, minutes: number) {
+		if (!row) return;
+		allowanced = null;
+		busy = true;
+		try {
+			if (kind === 'prep') {
+				await saveMyProfile({ prep_min: minutes });
+				people = await loadTripProfiles(tripId);
+			} else {
+				const patch =
+					kind === 'bags'
+						? { bag_drop_min: minutes }
+						: kind === 'out'
+							? { arrival_buffer_min: minutes }
+							: { departure_buffer_min: minutes };
+				await updateAllowance(tripId, patch);
+				row = { ...row, ...patch };
+			}
+			await restore();
+		} catch (e) {
+			error = (e as Error).message;
+		} finally {
+			busy = false;
+		}
+	}
 
 	async function forget(poiId: string) {
 		carded = null;
@@ -1240,7 +1307,9 @@
 							data-drop-stop={stop.poiId ?? undefined}
 							{@attach stop.poiId
 								? longPress(() => (carded = pois.find((p) => p.id === stop.poiId) ?? null))
-								: () => {}}
+								: allowanceOf(stop, dayIndex)
+									? longPress(() => holdAllowance(stop, dayIndex))
+									: () => {}}
 							style={stop.poiId && drag.state.id === stop.poiId
 								? 'opacity:0.35'
 								: stop.poiId &&
@@ -1340,6 +1409,46 @@
 						{/if}
 					{/each}
 				{/if}
+			</div>
+		{/if}
+
+		{#if allowanced}
+			{@const a = allowanced}
+			<div
+				role="presentation"
+				style="position:fixed;inset:0;z-index:60;background:rgba(0,0,0,0.35)"
+				onclick={() => (allowanced = null)}
+			></div>
+			<div class="tm-sheet" style="position:fixed;z-index:61">
+				<div class="tm-sheet__grip"></div>
+				<p class="tm-card__title">{a.name}</p>
+				<p class="tm-card__meta">{ALLOWANCE_HINT[a.kind]}</p>
+				<div class="mt-3 flex flex-wrap gap-2">
+					{#each [0, 15, 30, 45, 60, 90, 120, 180] as m}
+						<button
+							class="tm-chip"
+							aria-pressed={a.minutes === m}
+							style={a.minutes === m
+								? 'background: var(--tm-lilac-soft); color: var(--tm-lilac-ink)'
+								: 'opacity: 0.6'}
+							disabled={busy}
+							onclick={() => setAllowance(a.kind, m)}
+						>
+							{m === 0 ? 'none' : m < 60 ? `${m} min` : `${m / 60} h`}
+						</button>
+					{/each}
+				</div>
+				<p class="tm-hint mt-2">
+					{a.kind === 'prep'
+						? 'Changes your own profile, so it carries to every trip.'
+						: 'Changes this trip.'}
+				</p>
+				<button
+					class="tm-btn tm-btn--ghost tm-btn--block mt-3"
+					onclick={() => (allowanced = null)}
+				>
+					Cancel
+				</button>
 			</div>
 		{/if}
 

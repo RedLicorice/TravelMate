@@ -59,6 +59,9 @@
 		sub: string | null;
 		icon: string | null;
 		stop: PlannedStop | null;
+		/** The anchor behind a card that is not a place: a chore, a terminal. */
+		anchor?: PlannedStop | null;
+		day?: number;
 		/** Minutes past midnight this card's own label claims, when it has one. */
 		from?: number;
 		to?: number;
@@ -137,6 +140,8 @@
 					sub: cardTime(stop.timeLabel, hhmmOf(startMin), stop.durationMin),
 					icon: null,
 					stop: null,
+					anchor: stop,
+					day: dayIndex,
 					...bounds
 				});
 			} else {

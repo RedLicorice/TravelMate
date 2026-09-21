@@ -248,6 +248,22 @@ export function cityBBox(row: TripRow): BBox | null {
 /** True for a trip saved before the hotel picker existed: 0,0 is Null Island. */
 export const hotelMissing = (row: TripRow) => row.hotel_lat === 0 && row.hotel_lng === 0;
 
+/**
+ * The trip's own allowances: dropping bags, getting out of an airport, being
+ * there before a flight.
+ *
+ * Each of these shows on the plan as a card, and the card is where a traveller
+ * notices it is wrong -- so it can be changed from there rather than only from
+ * the edit screen three taps away.
+ */
+export async function updateAllowance(
+	id: string,
+	patch: { bag_drop_min?: number; arrival_buffer_min?: number; departure_buffer_min?: number }
+): Promise<void> {
+	const { error } = await supabase.from('trips').update(patch).eq('id', id);
+	if (error) throw new Error(error.message);
+}
+
 export async function updateHotel(
 	id: string,
 	hotel: { name: string; lat: number; lng: number }
