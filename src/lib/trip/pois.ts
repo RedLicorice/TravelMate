@@ -1,4 +1,5 @@
 import { supabase } from '$lib/supabase';
+import { pool } from '$lib/pool';
 import type { Poi } from '$lib/poi';
 import type { PlanPoi } from '$lib/plan/planner';
 
@@ -110,11 +111,13 @@ export async function removePoi(id: string): Promise<void> {
 export async function saveAssignments(
 	rows: { id: string; dayIndex: number | null; orderIndex: number | null }[]
 ): Promise<void> {
-	for (const r of rows) {
+	// In parallel, bounded: a trip with twenty stops was twenty round trips in
+	// a row, which is most of what made Replan feel like it had hung.
+	await pool(rows, 6, async (r) => {
 		const { error } = await supabase
 			.from('pois')
 			.update({ day_index: r.dayIndex, order_index: r.orderIndex })
 			.eq('id', r.id);
 		if (error) throw new Error(error.message);
-	}
+	});
 }

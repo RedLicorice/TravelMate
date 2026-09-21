@@ -30,6 +30,7 @@
 	import { routeShape } from '$lib/plan/route';
 	import { firstOf, resolveTravel, type TravelTable } from '$lib/plan/travel';
 	import { routedTable } from '$lib/plan/refine';
+	import { pool } from '$lib/pool';
 	import { avatarDataUri } from '$lib/avatar';
 	import { displayName, loadTripProfiles, type Profile } from '$lib/profile.svelte';
 	import type { Mode } from '$lib/plan/modes';
@@ -49,6 +50,8 @@
 	let loading = $state(true);
 	let error = $state<string | null>(null);
 	let busy = $state(false);
+	/** What the Replan button is up to, since routing a trip is not instant. */
+	let step = $state<string | null>(null);
 	let dayIndex = $state(0);
 	let view = $state<'plan' | 'board' | 'map' | 'wishlist'>('plan');
 	let showDetails = $state(false);
@@ -144,9 +147,8 @@
 	async function refreshTravel() {
 		if (!row || !days.length) return;
 		const modes = row.allowed_modes as Mode[];
-		const tables: TravelTable[] = [];
 
-		for (const [i, day] of days.entries()) {
+		const perDay = days.map((day, i) => {
 			const anchors = [...day.fixedStart, ...day.fixedEnd].map((w) => w.at);
 			const stops = pois
 				.filter((p) => p.day_index === i)
@@ -159,10 +161,17 @@
 				seen.add(key);
 				return true;
 			});
-			if (points.length < 2) continue;
+			return { points, departAt: day.start.toISOString() };
+		});
 
-			tables.push(await resolveTravel(points, modes, day.start.toISOString()));
-		}
+		// One day's matrix does not depend on another's, so they go out
+		// together rather than one trip's worth of round trips in a row.
+		const resolved = await pool(
+			perDay.filter((d) => d.points.length >= 2),
+			4,
+			(d) => resolveTravel(d.points, modes, d.departAt)
+		);
+		const tables: TravelTable[] = [...resolved];
 
 		// Stops not yet on a day have no departure time to ask about, so they
 		// resolve without one and fall back to the estimate where that fails.
@@ -354,7 +363,12 @@
 			// order is fixed, route the n-1 legs that survived and re-walk the
 			// clock on those figures. Without this the board runs on the
 			// estimate -- and on an airport transfer the two are an hour apart.
-			const routed = firstOf([await routedTable(ordered.days), ...(travel ? [travel] : [])]);
+			step = 'Routing…';
+			const table = await routedTable(ordered.days, undefined, ({ done, total }) => {
+				step = total ? `Routing ${done}/${total}` : 'Routing…';
+			});
+			const routed = firstOf([table, ...(travel ? [travel] : [])]);
+			step = 'Saving…';
 			const next = schedule({
 				...input,
 				pois: assignedFrom(ordered),
@@ -373,6 +387,7 @@
 			error = (e as Error).message;
 		} finally {
 			busy = false;
+			step = null;
 		}
 	}
 
@@ -551,7 +566,7 @@
 						onclick={doReplan}
 						disabled={busy || !pois.length || hotelMissing(row)}
 					>
-						{busy ? 'Planning…' : 'Replan'}
+						{busy ? (step ?? 'Planning…') : 'Replan'}
 					</button>
 					<button class="tm-btn tm-btn--primary" style="min-height:36px" onclick={share}>
 						{copied ? 'Copied' : shareUrl ? 'Copy link' : 'Share'}
