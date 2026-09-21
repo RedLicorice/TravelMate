@@ -5,6 +5,7 @@
 	import { tripDays } from '$lib/trip/days';
 	import { watchInstall } from '$lib/pwa.svelte';
 	import InstallCard from '$lib/InstallCard.svelte';
+	import ProfileButton from '$lib/ProfileButton.svelte';
 
 	let trips = $state<TripRow[]>([]);
 	let error = $state<string | null>(null);
@@ -33,11 +34,11 @@
 </script>
 
 <main class="mx-auto max-w-lg px-6 pb-28">
-	<header class="tm-safe-top mb-6 flex items-baseline justify-between">
+	<header class="tm-safe-top mb-6 flex items-center justify-between gap-4">
 		<h1 style="font: 700 var(--tm-text-2xl)/1.15 var(--tm-font); letter-spacing: -0.02em">
 			Your trips
 		</h1>
-		<a href="{base}/profile" class="tm-attrib" style="text-decoration: none">Profile</a>
+		<ProfileButton />
 	</header>
 
 	<InstallCard />
