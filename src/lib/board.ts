@@ -49,3 +49,28 @@ export function spanOf(label: string | null | undefined): { from: number; to: nu
 	const to = mins.length > 1 ? (mins[1]! >= from ? mins[1]! : 24 * 60) : from;
 	return { from, to };
 }
+
+/** Minutes past midnight as 'HH:MM'. */
+export const hhmmOf = (min: number) =>
+	`${String(Math.floor(min / 60) % 24).padStart(2, '0')}:${String(Math.round(min) % 60).padStart(2, '0')}`;
+
+/**
+ * What a card says about its own time: begin and end whenever both are known,
+ * and just the begin when the card has no length.
+ *
+ * `label` is the card's own stated time, which wins because it came off a
+ * ticket. A span is used as it stands; a moment is the start, and the duration
+ * supplies the end. With no label at all the planner's clock is the start.
+ */
+export function cardTime(
+	label: string | null | undefined,
+	clock: string,
+	durationMin: number
+): string {
+	const stated = spanOf(label);
+	if (stated && stated.to > stated.from) return `${hhmmOf(stated.from)}–${hhmmOf(stated.to)}`;
+
+	const from = stated?.from ?? spanOf(clock)?.from;
+	if (from === undefined) return clock;
+	return durationMin > 0 ? `${hhmmOf(from)}–${hhmmOf(from + durationMin)}` : hhmmOf(from);
+}

@@ -2,7 +2,7 @@
 	import type { Day } from '$lib/trip/days';
 	import type { PlannedDay, PlannedStop } from '$lib/plan/planner';
 	import type { createDrag } from '$lib/dnd.svelte';
-	import { spanOf, stack } from '$lib/board';
+	import { cardTime, hhmmOf, spanOf, stack } from '$lib/board';
 
 	type Props = {
 		days: Day[];
@@ -88,7 +88,7 @@
 					fill: 'var(--tm-surface-2)',
 					ink: 'var(--tm-text-faint)',
 					title: MODE_LABEL[stop.legIn.mode] ?? 'Travel',
-					sub: `${stop.legIn.minutes} min`,
+					sub: `${cardTime(null, hhmmOf(leaveMin), startMin - leaveMin)} · ${stop.legIn.minutes} min`,
 					icon: MODE_ICON[stop.legIn.mode] ?? MODE_ICON.walk,
 					stop: null
 				});
@@ -128,7 +128,7 @@
 					// A journey card's real time is on the ticket, not on the
 					// trip's clock -- they all cost nothing, so the clock gives
 					// every one of them the same minute.
-					sub: stop.timeLabel ?? (stop.durationMin ? `${stop.durationMin} min` : null),
+					sub: cardTime(stop.timeLabel, hhmmOf(startMin), stop.durationMin),
 					icon: null,
 					stop: null,
 					...bounds
@@ -142,7 +142,7 @@
 					fill: 'var(--tm-surface)',
 					ink: 'var(--tm-text-faint)',
 					title: stop.name,
-					sub: `${stop.durationMin} min${stop.exitAt ? ' · ends elsewhere' : ''}`,
+					sub: `${cardTime(null, hhmmOf(startMin), stop.durationMin)}${stop.exitAt ? ' · ends elsewhere' : ''}`,
 					icon: null,
 					stop,
 					...bounds

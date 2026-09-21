@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { spanOf, stack } from './board';
+import { cardTime, spanOf, stack } from './board';
 
 describe('stack', () => {
 	const spans = (out: { top: number; height: number }[]) =>
@@ -147,5 +147,36 @@ describe('a journey laid out on the board', () => {
 		const landed = out.find((c) => c.key === 'stansted')!.top;
 		expect(landed).toBeGreaterThanOrEqual(stansted * PX);
 		expect(landed - stansted * PX).toBeLessThanOrEqual(2);
+	});
+});
+
+describe('cardTime', () => {
+	it('uses a stated span as it stands', () => {
+		expect(cardTime('17:25–19:35', '09:00', 0)).toBe('17:25–19:35');
+	});
+
+	it('ends a stated moment with the time it takes', () => {
+		// Landing at 19:35 and spending 45 minutes getting out.
+		expect(cardTime('19:35', '09:00', 45)).toBe('19:35–20:20');
+	});
+
+	it('leaves a stated moment alone when it takes no time', () => {
+		expect(cardTime('17:25', '09:00', 0)).toBe('17:25');
+	});
+
+	it('derives the range from the clock when there is no label', () => {
+		expect(cardTime(null, '09:00', 90)).toBe('09:00–10:30');
+	});
+
+	it('gives just the clock for a card with no length', () => {
+		expect(cardTime(null, '09:00', 0)).toBe('09:00');
+	});
+
+	it('rolls past midnight without printing hour 24', () => {
+		expect(cardTime(null, '23:30', 60)).toBe('23:30–00:30');
+	});
+
+	it('passes a label it cannot read straight through', () => {
+		expect(cardTime('your journey', '09:00', 0)).toBe('09:00');
 	});
 });

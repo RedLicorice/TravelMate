@@ -65,7 +65,10 @@
   border-radius: var(--tm-r-md); padding: var(--tm-space-3);
   border-left: 3px solid var(--tm-stop-day, var(--tm-day-none));
 }
-.tm-stop__time { font: 600 var(--tm-text-sm)/1.3 var(--tm-font-num); color: var(--tm-text-muted); padding-top: 2px; }
+.tm-stop__time {
+  font: 600 var(--tm-text-sm)/1.3 var(--tm-font-num); color: var(--tm-text-muted);
+  padding-top: 2px; overflow-wrap: anywhere;
+}
 .tm-stop__name { font: 600 var(--tm-text-base)/1.25 var(--tm-font); }
 .tm-stop__sub  { font: 400 var(--tm-text-sm)/1.4 var(--tm-font); color: var(--tm-text-faint); margin-top: 2px; }
 /* Every card on the plan is the same card. The left accent is the only thing

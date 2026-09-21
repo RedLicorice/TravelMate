@@ -50,6 +50,7 @@
 	import LegDetail from '$lib/LegDetail.svelte';
 	import { dayTruncated, dayUrl, routePoints } from '$lib/maps';
 	import { createDrag, reorder } from '$lib/dnd.svelte';
+	import { cardTime } from '$lib/board';
 	import PlanBoard from '$lib/PlanBoard.svelte';
 	import TripAvatar from '$lib/TripAvatar.svelte';
 	import { supabase } from '$lib/supabase';
@@ -1022,7 +1023,9 @@
 									? 'outline:2px solid var(--tm-primary);outline-offset:-1px'
 									: ''}
 						>
-							<span class="tm-stop__time">{stop.timeLabel ?? hhmm(stop.arrive, row.timezone)}</span>
+							<span class="tm-stop__time">
+								{cardTime(stop.timeLabel, hhmm(stop.arrive, row.timezone), stop.durationMin)}
+							</span>
 							<div>
 								<p class="tm-stop__name">
 									{#if stop.poiId}
