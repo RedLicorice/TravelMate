@@ -173,7 +173,16 @@ function kmeans(pois: PlanPoi[], k: number, rounds = 8): number[] {
  * rather than by equal counts: a last day with ninety usable minutes must not
  * be handed five stops because the arithmetic said so.
  */
-export function assignDays(pois: PlanPoi[], days: Day[]): Map<number, PlanPoi[]> {
+/**
+ * `anchorMin[i]` is the time day `i` spends on its own anchors -- the airport
+ * transfer, the bag drop, the walk home. Omitted, it is assumed free, which is
+ * only true of a day whose anchors are the hotel at both ends.
+ */
+export function assignDays(
+	pois: PlanPoi[],
+	days: Day[],
+	anchorMin: number[] = []
+): Map<number, PlanPoi[]> {
 	const usable = days.map((d, i) => ({ i, min: d.usableMin })).filter((d) => d.min > 0);
 	const buckets = new Map<number, PlanPoi[]>();
 	days.forEach((_, i) => buckets.set(i, []));
@@ -201,7 +210,11 @@ export function assignDays(pois: PlanPoi[], days: Day[]): Map<number, PlanPoi[]>
 	// Rebalance: while a day is over its minute budget and another has slack,
 	// move the stop that is geographically closest to the slack day.
 	const load = (list: PlanPoi[]) => list.reduce((s, p) => s + p.durationMin, 0);
-	const budget = (i: number) => days[i].usableMin * 0.75; // leave room for travel
+	// What is left of the day once its anchors have taken their cut, less a
+	// quarter for travel between the stops themselves. Arrival day is the case
+	// this exists for: a 4h window with a 3h airport transfer in it has room
+	// for nothing, and handing it stops only drops them at schedule time.
+	const budget = (i: number) => Math.max(0, days[i].usableMin - (anchorMin[i] ?? 0)) * 0.75;
 
 	for (let guard = 0; guard < pois.length * 2; guard++) {
 		const over = usable.find(({ i }) => load(buckets.get(i)!) > budget(i));
@@ -492,7 +505,15 @@ export function replan(input: PlanInput): PlanResult {
 		};
 	}
 
-	const buckets = assignDays(input.pois, input.days);
+	// Price each day's anchors by scheduling it empty: that run already applies
+	// the real travel table and mode chooser to the transfers.
+	const anchorMin = input.days.map((day) => {
+		const stops = walkClock([], day, input.allowedModes, input.timezone, curves, slots, travel).stops;
+		const last = stops[stops.length - 1];
+		return last ? Math.max(0, (last.depart.getTime() - day.start.getTime()) / 60_000) : 0;
+	});
+
+	const buckets = assignDays(input.pois, input.days, anchorMin);
 
 	const assigned: PlanPoi[] = [];
 	const spilled: PlanPoi[] = [];

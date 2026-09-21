@@ -480,3 +480,57 @@ describe('priority', () => {
 		expect(ids[0]).toBe('near');
 	});
 });
+
+describe('arrival day capacity', () => {
+	const trip: Trip = {
+		hotelName: 'Hotel',
+		hotel: { lat: 51.5145, lng: -0.127 },
+		timezone: 'Europe/London',
+		arrivalAt: '2026-10-02T13:00:00Z',
+		departureAt: '2026-10-05T09:00:00Z',
+		arrivalPoint: { name: 'Stansted', at: { lat: 51.886, lng: 0.2389 } },
+		departurePoint: { name: 'Stansted', at: { lat: 51.886, lng: 0.2389 } },
+		arrivalBufferMin: 45,
+		departureBufferMin: 120,
+		bagDropMin: 30,
+		dayStart: '09:00',
+		dayEnd: '19:00'
+	};
+	const poi = (id: string, lat: number, lng: number): PlanPoi => ({
+		id,
+		name: id,
+		lat,
+		lng,
+		category: 'attraction',
+		durationMin: 90,
+		priority: 3,
+		dayIndex: null,
+		orderIndex: null
+	});
+
+	// The arrival day's window looks usable -- 255 minutes -- but the airport
+	// transfer and bag drop eat nearly all of it. Budgeting off the raw window
+	// handed that day two stops it could never reach, and they were dropped
+	// even though the following days had hours to spare.
+	it('does not drop stops on days that still have room', () => {
+		const days = tripDays(trip);
+		expect(days[0].usableMin).toBeGreaterThan(0);
+
+		const pois = [
+			poi('tower', 51.5081, -0.0759),
+			poi('museum', 51.5194, -0.127),
+			poi('eye', 51.5033, -0.1196),
+			poi('stpauls', 51.5138, -0.0984),
+			poi('tate', 51.5076, -0.0994),
+			poi('borough', 51.5055, -0.091)
+		];
+		const result = replan({
+			pois,
+			days,
+			allowedModes: ['walk', 'transit'],
+			timezone: 'Europe/London'
+		});
+
+		expect(result.unplaced).toEqual([]);
+	});
+});
