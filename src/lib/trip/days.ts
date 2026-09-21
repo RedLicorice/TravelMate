@@ -216,12 +216,18 @@ export function tripDays(trip: Trip): Day[] {
 			// own allowance stands in on the leg that ends the journey.
 			const out_ = leg.outMin ?? (i === legs.length - 1 ? lastOutMin : 0);
 			const landed = clockOf(leg.arriveLocal);
-			push(
-				leg.to?.name,
-				'terminal',
-				landed && out_ > 0 ? `${landed}–${shift(landed, out_)}` : landed,
-				out_
-			);
+
+			// A terminal you connect through is somewhere you sit for the whole
+			// layover, not a moment you pass through: the card runs from landing
+			// to the next departure. Only the label, not the dwell -- the wait
+			// happens after the traveller has left the city, so it must not eat
+			// the day they are leaving.
+			const onward = legs[i + 1];
+			const connects = onward?.from?.name && onward.from.name === leg.to?.name;
+			const leaves = connects ? clockOf(onward.departLocal) : null;
+
+			const ends = leaves ?? (landed && out_ > 0 ? shift(landed, out_) : null);
+			push(leg.to?.name, 'terminal', landed && ends ? `${landed}–${ends}` : landed, out_);
 		});
 		return out;
 	};

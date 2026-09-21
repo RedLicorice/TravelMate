@@ -492,3 +492,57 @@ describe('getting out is per terminal', () => {
 		expect(stansted.timeLabel).toBe('15:45–17:15');
 	});
 });
+
+describe('a terminal you connect through', () => {
+	const viaMalpensa = (): Trip => ({
+		...base,
+		arrivalPoint: null,
+		arrivalLegs: [],
+		departurePoint: { name: 'Stansted', at: { lat: 51.886, lng: 0.2389 } },
+		departureLegs: [
+			{
+				from: { name: 'Stansted', lat: 51.886, lng: 0.2389, kind: 'airport' },
+				to: { name: 'Malpensa', lat: 45.63, lng: 8.72, kind: 'airport' },
+				service: 'FR 8012',
+				bookingRef: null,
+				departLocal: '2026-04-13T07:00',
+				arriveLocal: '2026-04-13T10:15',
+				outMin: null
+			},
+			{
+				from: { name: 'Malpensa', lat: 45.63, lng: 8.72, kind: 'airport' },
+				to: { name: 'Reggio Calabria', lat: 38.07, lng: 15.65, kind: 'airport' },
+				service: 'FR 4471',
+				bookingRef: null,
+				departLocal: '2026-04-13T14:40',
+				arriveLocal: '2026-04-13T16:20',
+				outMin: null
+			}
+		]
+	});
+
+	const card = (t: Trip, name: string) =>
+		tripDays(t).at(-1)!.fixedEnd.find((w) => w.name === name)!;
+
+	it('runs from landing to the next departure, not a moment', () => {
+		// Four hours sitting in Malpensa is four hours in Malpensa, not a gap.
+		expect(card(viaMalpensa(), 'Malpensa').timeLabel).toBe('10:15–14:40');
+	});
+
+	it('is one card, not one per leg', () => {
+		const last = tripDays(viaMalpensa()).at(-1)!;
+		expect(last.fixedEnd.filter((w) => w.name === 'Malpensa')).toHaveLength(1);
+	});
+
+	it('does not charge the layover to the day being left', () => {
+		// The wait happens after the traveller has gone; spending it out of the
+		// departure day would compress the morning for no reason.
+		expect(card(viaMalpensa(), 'Malpensa').dwellMin).toBe(0);
+	});
+
+	it('still ends on its own allowance when nothing follows', () => {
+		const t = viaMalpensa();
+		t.departureLegs[1].outMin = 30;
+		expect(card(t, 'Reggio Calabria').timeLabel).toBe('16:20–16:50');
+	});
+});

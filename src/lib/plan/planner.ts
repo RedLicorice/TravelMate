@@ -140,6 +140,17 @@ const MEAL_WEIGHT_MIN_PER_HOUR = 90;
  */
 const PRIORITY_ORDER_WEIGHT_MIN = 2;
 
+/**
+ * The longest the plan will stand still waiting for a meal window to open.
+ *
+ * Waiting is right for a restaurant reached at 11:40. It is not right for one
+ * reached at 17:20: holding a whole afternoon so a sandwich shop can be dinner
+ * loses more of the day than eating at an odd hour ever would. Past this the
+ * stop is taken when the traveller gets there and picks up an off-hours
+ * warning, which is the honest answer.
+ */
+const MAX_MEAL_WAIT_MIN = 45;
+
 /** The default when nobody has rated a stop: wanting it averagely. */
 const NEUTRAL_PRIORITY = 3;
 
@@ -461,6 +472,8 @@ function walkClock(
 	let cursorTerminal = false;
 	/** Meals the day has already had, whether from the wishlist or from us. */
 	const served = new Set<string>();
+	/** Restaurants from the wishlist still to come; each will claim a slot. */
+	let mealsToCome = pois.filter((p) => isMeal(p.category)).length;
 
 	const push = (
 		name: string,
@@ -487,7 +500,11 @@ function walkClock(
 		// the stop keeps its early time and picks up an off-hours warning below.
 		if (!anchor && isMeal(category)) {
 			const opens = waitUntilSlot(arrive, timezone, slots);
-			if (opens && opens.getTime() + durationMin * 60_000 <= dayEndMs) {
+			if (
+				opens &&
+				opens.getTime() - arrive.getTime() <= MAX_MEAL_WAIT_MIN * 60_000 &&
+				opens.getTime() + durationMin * 60_000 <= dayEndMs
+			) {
 				waitedMin += (opens.getTime() - arrive.getTime()) / 60_000;
 				arrive = opens;
 				clock = opens.getTime();
@@ -509,6 +526,7 @@ function walkClock(
 			// plan does not then offer a placeholder for the same meal.
 			const slot = slotAt(arrive, timezone, slots);
 			if (slot) served.add(slot);
+			mealsToCome = Math.max(0, mealsToCome - 1);
 			const miss = mealMiss(arrive, timezone, slots);
 			mealMissHours += miss;
 			if (miss > 0.5) {
@@ -552,7 +570,7 @@ function walkClock(
 	 * offered if its window is open before then, so the day fills in order
 	 * rather than collecting three meals at the end.
 	 */
-	const offerMeals = (until: number) => {
+	const offerMeals = (until: number, patient = false) => {
 		for (const slot of slots) {
 			if (served.has(slot.name)) continue;
 
@@ -560,6 +578,25 @@ function walkClock(
 			const closes = zonedInstant(day.date, toHHMM(slot.to), timezone).getTime();
 			// Not yet, or the window closed before the day even started.
 			if (opens > until || closes < clock) continue;
+
+			// A restaurant the traveller chose has first claim on a window, and
+			// which window it lands in is only known once the day reaches it.
+			// So while any remains unplaced, no slot is filled: otherwise their
+			// own booking arrives to find an invented lunch already sitting in
+			// its place.
+			//
+			// The cost is that a day built around a dinner booking may reach
+			// dinner with breakfast and lunch already behind it, and get
+			// neither. That is the honest reading of a day planned that way,
+			// and it is preferable to a plan that serves two lunches.
+			if (mealsToCome > 0) continue;
+
+			// Not worth standing about for while there are still stops to make:
+			// skipped now, offered again after the next one, by which time the
+			// window is open and there is no gap. At the end of the day there is
+			// nothing else to do, so the wait is worth it -- otherwise a day
+			// that finishes at four has no dinner at all.
+			if (!patient && opens - clock > MAX_MEAL_WAIT_MIN * 60_000) continue;
 
 			const where = cursor ?? day.fixedStart[0]?.at;
 			if (!where) continue;
@@ -569,10 +606,11 @@ function walkClock(
 			// Only when it actually fits, the way home included: "when possible".
 			if (at + (minutes + tailCost(where)) * 60_000 > dayEndMs) continue;
 
-			if (at > clock) {
-				waitedMin += (at - clock) / 60_000;
-				clock = at;
-			}
+			// The clock really does move, but this wait is not counted against the
+			// route: a placeholder eats wherever the traveller happens to be, so
+			// letting it price orderings would have 2-opt chase meal windows
+			// across the city -- the very thing rating was stopped from doing.
+			clock = Math.max(clock, at);
 			served.add(slot.name);
 			push(MEAL_LABEL[slot.name], where, minutes, true, null, slot.name, false, null, 'meal');
 		}
@@ -622,7 +660,7 @@ function walkClock(
 	}
 
 	// Whatever the day never got round to, while there is still room for it.
-	offerMeals(dayEndMs);
+	offerMeals(dayEndMs, true);
 
 	for (const w of day.fixedEnd) {
 		push(w.name, w.at, w.dwellMin, true, null, null, w.kind === 'terminal', null, w.kind, w.timeLabel ?? null);

@@ -80,17 +80,16 @@ export function tightest(all: MealWindows[]): Tightest {
 	return { windows, conflicts };
 }
 
-const MEAL_CATEGORIES = new Set([
-	'restaurant',
-	'fast_food',
-	'food_court',
-	'cafe',
-	'pub',
-	'bar',
-	'biergarten',
-	'bakery',
-	'ice_cream'
-]);
+/**
+ * Places that are a sitting, and so claim one of the day's meal slots.
+ *
+ * Deliberately narrow. A bar, a cafe, a bakery or an ice cream shop is
+ * somewhere you stop, not lunch -- and treating them as meals had two bad
+ * consequences: the plan would stand around for an hour waiting for a window
+ * to open so a ball pit bar could be lunch, and it would hold every slot on
+ * the day for it, so the meals that mattered never got offered at all.
+ */
+const MEAL_CATEGORIES = new Set(['restaurant', 'fast_food', 'food_court']);
 
 export const isMeal = (category: string | null | undefined) => MEAL_CATEGORIES.has(category ?? '');
 

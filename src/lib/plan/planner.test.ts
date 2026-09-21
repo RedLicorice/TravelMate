@@ -903,7 +903,7 @@ describe('meals the plan supplies itself', () => {
 		expect(lunch.legIn?.minutes ?? 0).toBe(0);
 	});
 
-	it('steps aside for a restaurant from the wishlist', () => {
+	it('never serves the same meal twice', () => {
 		const restaurant: PlanPoi = {
 			...sight('s1', 75),
 			id: 'trattoria',
@@ -912,16 +912,17 @@ describe('meals the plan supplies itself', () => {
 			orderIndex: 1
 		};
 		const result = run([sight('s0'), restaurant, sight('s2')]);
-		const names = result.days[0].stops.map((s) => s.name);
+		const stops = result.days[0].stops;
+		expect(stops.map((s) => s.name)).toContain('Trattoria');
 
-		expect(names).toContain('Trattoria');
-		// Whichever window it landed in is filled; the plan does not offer a
-		// second sitting for the same meal.
-		const served = result.days[0].stops.find((s) => s.poiId === 'trattoria')!;
-		const slot = slotAt(served.arrive, 'Europe/London', slotsFrom(DEFAULT_WINDOWS));
-		if (slot) {
-			expect(mealsOn(result)).not.toContain(slot[0].toUpperCase() + slot.slice(1));
-		}
+		// Every meal on the day -- booked or supplied -- sits in a different
+		// window. Two dinners is not a plan.
+		const windows = slotsFrom(DEFAULT_WINDOWS);
+		const taken = stops
+			.filter((s) => s.anchorKind === 'meal' || s.poiId === 'trattoria')
+			.map((s) => slotAt(s.arrive, 'Europe/London', windows))
+			.filter(Boolean);
+		expect(new Set(taken).size).toBe(taken.length);
 	});
 
 	it('offers nothing on a day too short to reach a window', () => {
