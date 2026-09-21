@@ -30,6 +30,15 @@
 		return (h % 24) * 60 + m;
 	}
 
+	/** Small glyphs for the travel blocks, matching the day view's legs. */
+	const MODE_ICON: Record<string, string> = {
+		walk: 'M11 21l2-6-3-3 1-5 3 3 3 1M10 12l-2 9',
+		bike: 'M6 17l5-8h5M14 9l4 8',
+		transit: 'M5 11h14M8 20l2-4M16 20l-2-4',
+		car: 'M3 13l2-5h14l2 5v4h-3M3 17v-4M6 17h9',
+		carshare: 'M3 13l2-5h14l2 5v4h-3M3 17v-4M6 17h9'
+	};
+
 	const PX_PER_MIN = 1.1; // 66px an hour: an hour is a comfortable thumb target
 	const MIN_BLOCK_PX = 26;
 
@@ -132,6 +141,30 @@
 
 						{#each day.stops as stop, j (stop.name + j)}
 							{@const startMin = minutesOf(stop.arrive)}
+							{#if stop.legIn && j > 0}
+								{@const leaveMin = minutesOf(day.stops[j - 1].depart)}
+								{@const travelHeight = Math.max(14, (startMin - leaveMin) * PX_PER_MIN)}
+								<!-- Travel occupies the board, it is not a gap between cards.
+								     An empty space reads as free time; it is not. -->
+								<div
+									title="{stop.legIn.minutes} min by {stop.legIn.mode}"
+									style="position:absolute;left:10px;right:10px;top:{top(leaveMin)}px;
+									height:{travelHeight}px;border-radius:6px;
+									background:repeating-linear-gradient(135deg,
+										var(--tm-surface-2) 0 6px, transparent 6px 12px);
+									border:1px dashed var(--tm-border-strong);
+									display:flex;align-items:center;justify-content:center;gap:4px;
+									overflow:hidden;color:var(--tm-text-faint)"
+								>
+									<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+										stroke-width="2.4" stroke-linecap="round">
+										<path d={MODE_ICON[stop.legIn.mode] ?? MODE_ICON.walk} />
+									</svg>
+									{#if travelHeight > 24}
+										<span style="font:600 9px/1 var(--tm-font)">{stop.legIn.minutes}m</span>
+									{/if}
+								</div>
+							{/if}
 							{@const blockHeight = Math.max(MIN_BLOCK_PX, stop.durationMin * PX_PER_MIN)}
 							{#if stop.anchor}
 								<div
@@ -195,6 +228,12 @@
 			style="display:inline-block;width:10px;height:10px;border-radius:2px;
 			background:var(--tm-butter-soft);border:1px solid var(--tm-butter);vertical-align:-1px"
 		></span>
-		mealtimes · hold ⠿ to move a stop between days
+		mealtimes ·
+		<span
+			style="display:inline-block;width:10px;height:10px;border-radius:2px;
+			background:repeating-linear-gradient(135deg,var(--tm-surface-2) 0 3px,transparent 3px 6px);
+			border:1px dashed var(--tm-border-strong);vertical-align:-1px"
+		></span>
+		travelling · hold ⠿ to move a stop between days
 	</p>
 </div>

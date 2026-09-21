@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { decodePolyline6 } from './route';
+import { decodePolyline, decodePolyline6 } from './route';
 
 /**
  * A real fragment from Valhalla's OSM instance, routing on foot between two
@@ -31,5 +31,20 @@ describe('decodePolyline6', () => {
 
 	it('handles an empty string without throwing', () => {
 		expect(decodePolyline6('')).toEqual([]);
+	});
+});
+
+describe('decodePolyline precision', () => {
+	it('decodes Google polylines at precision 5', () => {
+		// The same bytes at precision 6 would land a tenth as far out -- in the
+		// Atlantic rather than in Rome.
+		const [point] = decodePolyline('_p~iF~ps|U', 5);
+		expect(point.lat).toBeCloseTo(38.5, 1);
+		expect(point.lng).toBeCloseTo(-120.2, 1);
+	});
+
+	it('keeps the Valhalla shorthand decoding at 6', () => {
+		const [point] = decodePolyline6('stw{nAywnyV');
+		expect(point.lat).toBeCloseTo(41.89014, 4);
 	});
 });

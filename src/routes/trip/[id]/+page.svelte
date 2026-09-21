@@ -25,6 +25,8 @@
 	import type { Mode } from '$lib/plan/modes';
 	import Autocomplete from '$lib/Autocomplete.svelte';
 	import Stars from '$lib/Stars.svelte';
+	import LegDetail from '$lib/LegDetail.svelte';
+	import { dayTruncated, dayUrl } from '$lib/maps';
 	import { createDrag, reorder } from '$lib/dnd.svelte';
 	import PlanBoard from '$lib/PlanBoard.svelte';
 	import LeafletMap from '$lib/Map.svelte';
@@ -655,13 +657,16 @@
 					</div>
 				{:else if current}
 					{#each current.stops as stop, i (stop.name + i)}
-						{#if stop.legIn}
-							<div class="tm-leg">
-								<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
-									<path d={MODE_ICON[stop.legIn.mode]} />
-								</svg>
-								<span>{stop.legIn.minutes} min · {stop.legIn.km} km · {stop.legIn.mode}</span>
-							</div>
+						{#if stop.legIn && i > 0}
+							{@const previous = current.stops[i - 1]}
+							<LegDetail
+								from={previous.at}
+								to={stop.at}
+								mode={stop.legIn.mode}
+								departAt={previous.depart.toISOString()}
+								timezone={row.timezone}
+								estimate={{ minutes: stop.legIn.minutes, km: stop.legIn.km }}
+							/>
 						{/if}
 						<div
 							class="tm-stop"
@@ -719,7 +724,23 @@
 		{/if}
 
 		<div class="tm-safe-bottom flex items-center justify-between px-4 pt-3" style="border-top: 1px solid var(--tm-border)">
-			{#if result?.unplaced.length}
+			{#if view === 'plan' && current && current.stops.length > 1}
+				{@const url = dayUrl(current.stops.map((s) => s.at), (current.stops.find((s) => s.legIn)?.legIn?.mode ?? 'walk') as Mode)}
+				{#if url}
+					<a
+						class="tm-btn tm-btn--secondary"
+						style="min-height:38px;text-decoration:none"
+						href={url}
+						target="_blank"
+						rel="noopener noreferrer"
+						title={dayTruncated(current.stops.map((s) => s.at))
+							? 'Maps takes nine stops; the rest are trimmed'
+							: 'Open the whole day in Maps'}
+					>
+						Day in Maps
+					</a>
+				{/if}
+			{:else if result?.unplaced.length}
 				<button class="tm-chip tm-chip--warn" onclick={() => (view = 'wishlist')}>
 					{result.unplaced.length} unplaced
 				</button>

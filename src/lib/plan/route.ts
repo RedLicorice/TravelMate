@@ -1,5 +1,9 @@
 import type { LatLng } from '$lib/trip/days';
+import { supabase } from '$lib/supabase';
+import { haversineKm } from './geo';
 import type { Mode } from './modes';
+
+const pointKeyOf = (p: LatLng) => `${p.lat.toFixed(5)},${p.lng.toFixed(5)}`;
 
 /**
  * Real routed geometry for drawing a day on the map.
@@ -27,11 +31,14 @@ const COSTING: Record<Mode, string> = {
 };
 
 /**
- * Valhalla returns an encoded polyline at precision 6, not the 5 that most
- * decoders assume. Decoding at the wrong precision puts the route in the
- * wrong hemisphere rather than subtly off.
+ * Decode an encoded polyline.
+ *
+ * Precision matters and the two sources disagree: Google encodes at 5, Valhalla
+ * at 6. Decoding at the wrong one puts the route in the wrong hemisphere rather
+ * than subtly off, so the caller always states which it has.
  */
-export function decodePolyline6(encoded: string): LatLng[] {
+export function decodePolyline(encoded: string, precision: 5 | 6): LatLng[] {
+	const scale = precision === 6 ? 1e6 : 1e5;
 	const points: LatLng[] = [];
 	let index = 0;
 	let lat = 0;
@@ -51,7 +58,7 @@ export function decodePolyline6(encoded: string): LatLng[] {
 			if (axis === 'lat') lat += delta;
 			else lng += delta;
 		}
-		points.push({ lat: lat / 1e6, lng: lng / 1e6 });
+		points.push({ lat: lat / scale, lng: lng / scale });
 	}
 	return points;
 }
@@ -101,6 +108,75 @@ export async function routeShape(
 		// Cache the failure too: a day that cannot be routed should not retry on
 		// every re-render while the traveller drags things about.
 		cache.set(key, null);
+		return null;
+	}
+}
+
+/** Valhalla's, kept as a named shorthand so existing callers read the same. */
+export const decodePolyline6 = (encoded: string) => decodePolyline(encoded, 6);
+
+export type RouteStep = {
+	kind: 'transit' | 'walk' | 'drive' | 'wait';
+	/** Raw, so steps sum without the drift of rounding each one. */
+	seconds: number;
+	line?: string;
+	headsign?: string;
+	from?: string;
+	to?: string;
+	departAt?: string;
+	arriveAt?: string;
+	minutes: number;
+	stops?: number;
+	instruction?: string;
+};
+
+export type LegRoute = {
+	/** Door to door, waits included -- what the leg actually costs. */
+	minutes: number;
+	/**
+	 * Time actually moving. Google's own duration, which excludes waiting for
+	 * the first service: the difference is time standing on a platform.
+	 */
+	movingMinutes: number;
+	km: number;
+	polyline: string | null;
+	steps: RouteStep[];
+	source: 'google' | 'cache';
+};
+
+const legCache = new Map<string, LegRoute | null>();
+
+/**
+ * The routed detail of one leg: what to actually catch, and the line to draw.
+ *
+ * Asked only for the legs of a settled plan -- n-1 of them, not n² pairs --
+ * which is the only point at which a plan is concrete enough to route.
+ */
+export async function legRoute(
+	from: LatLng,
+	to: LatLng,
+	mode: Mode,
+	departAt: string | null,
+	options: { prefer?: 'rail' | null } = {}
+): Promise<LegRoute | null> {
+	const prefer =
+		// Left to itself the router puts an airport run on a coach, which is
+		// cheap and slow. Rail is what people mean by the train from the airport.
+		options.prefer ?? (mode === 'transit' && haversineKm(from, to) > 20 ? 'rail' : null);
+
+	const key = `${pointKeyOf(from)}>${pointKeyOf(to)}|${mode}|${departAt ?? 'any'}|${prefer ?? ''}`;
+	if (legCache.has(key)) return legCache.get(key)!;
+
+	try {
+		const { data, error } = await supabase.functions.invoke('route', {
+			body: { from, to, mode, departAt, prefer }
+		});
+		const route = error ? null : ((data?.route ?? null) as LegRoute | null);
+		legCache.set(key, route);
+		return route;
+	} catch {
+		// Offline, or the function is down. The leg still shows its estimate.
+		legCache.set(key, null);
 		return null;
 	}
 }
