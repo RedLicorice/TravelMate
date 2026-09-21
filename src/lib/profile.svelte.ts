@@ -9,6 +9,8 @@ export type ProfileRow = {
 	avatar_url: string | null;
 	avatar_seed: string | null;
 	meal_windows: MealWindows;
+	wake_at: string;
+	prep_min: number;
 	updated_at: string;
 };
 
@@ -18,6 +20,9 @@ export type Profile = {
 	avatarSeed: string;
 	avatarUrl: string | null;
 	mealWindows: MealWindows;
+	/** Local wall-clock 'HH:MM'. */
+	wakeAt: string;
+	prepMin: number;
 };
 
 export const toProfile = (row: ProfileRow): Profile => ({
@@ -27,7 +32,11 @@ export const toProfile = (row: ProfileRow): Profile => ({
 	// face across devices until they deliberately re-roll it.
 	avatarSeed: row.avatar_seed ?? row.user_id,
 	avatarUrl: row.avatar_url,
-	mealWindows: row.meal_windows ?? DEFAULT_WINDOWS
+	// Merged rather than replaced: a row written before breakfast existed still
+	// has its own lunch and dinner, and should keep them.
+	mealWindows: { ...DEFAULT_WINDOWS, ...(row.meal_windows ?? {}) },
+	wakeAt: (row.wake_at ?? '08:00').slice(0, 5),
+	prepMin: row.prep_min ?? 30
 });
 
 /** The signed-in user's own row, created on first read. */
@@ -56,6 +65,8 @@ export async function saveMyProfile(patch: {
 	avatar_url?: string | null;
 	avatar_seed?: string | null;
 	meal_windows?: MealWindows;
+	wake_at?: string;
+	prep_min?: number;
 }): Promise<Profile> {
 	const id = session.user?.id;
 	if (!id) throw new Error('Not signed in');

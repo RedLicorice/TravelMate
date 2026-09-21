@@ -16,7 +16,7 @@
 	import { listPois, saveAssignments, toPlanPoi, type PoiRow } from '$lib/trip/pois';
 	import { tripDays, type Day } from '$lib/trip/days';
 	import { replan, schedule, REASON_TEXT, type PlanResult, type UnplacedReason } from '$lib/plan/planner';
-	import { isMeal, tightest, type MealWindows } from '$lib/plan/meals';
+	import { effectiveDayStart, isMeal, latestReady, tightest, type MealWindows } from '$lib/plan/meals';
 	import { resolveCurves, type CrowdCurves } from '$lib/plan/crowd';
 	import { routeShape } from '$lib/plan/route';
 	import { avatarDataUri } from '$lib/avatar';
@@ -75,7 +75,19 @@
 
 	const linkFor = (token: string) => `${window.location.origin}${base}/shared/${token}`;
 
-	const days = $derived<Day[]>(row ? tripDays(toTrip(row)) : []);
+	/** The latest anyone on this trip is out of the door. */
+	const ready = $derived(latestReady(people.map((p) => ({ wakeAt: p.wakeAt, prepMin: p.prepMin }))));
+
+	const days = $derived<Day[]>(
+		row
+			? tripDays({
+					...toTrip(row),
+					// Nothing is planned before the party is dressed. The first day
+					// still clamps to arrival as well, whichever is later.
+					dayStart: effectiveDayStart(toTrip(row).dayStart, ready)
+				})
+			: []
+	);
 
 	/**
 	 * Busyness is resolved here, before the planner runs, and handed in as a
@@ -426,7 +438,9 @@
 							{/each}
 						</div>
 						<p class="tm-hint mt-2">
-							Meals {agreed.windows.lunch.from}–{agreed.windows.lunch.to} and
+							Out by {ready ?? row.day_start.slice(0, 5)} · breakfast
+							{agreed.windows.breakfast.from}–{agreed.windows.breakfast.to} · lunch
+							{agreed.windows.lunch.from}–{agreed.windows.lunch.to} · dinner
 							{agreed.windows.dinner.from}–{agreed.windows.dinner.to}
 							{#if people.length > 1}(the overlap between everyone){/if}
 						</p>

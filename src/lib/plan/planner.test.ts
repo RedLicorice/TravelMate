@@ -10,7 +10,7 @@ import {
 	resolveCurves,
 	type CrowdProvider
 } from './crowd';
-import { DEFAULT_WINDOWS, slotAt, slotsFrom } from './meals';
+import { DEFAULT_WINDOWS, MEALS_PER_DAY, slotAt, slotsFrom } from './meals';
 
 const hotel = { lat: 41.8986, lng: 12.4768 };
 
@@ -302,7 +302,7 @@ describe('meals', () => {
 		}
 	});
 
-	it('never puts more than two meals on one day', () => {
+	it('never puts more than one sitting per named meal on a day', () => {
 		const manyMeals = Array.from({ length: 6 }, (_, i) =>
 			poi(`eat${i}`, 41.9 + i * 0.001, 12.48 + i * 0.001, { category: 'restaurant', durationMin: 60 })
 		);
@@ -314,7 +314,8 @@ describe('meals', () => {
 		});
 		for (const day of result.days) {
 			const meals = day.stops.filter((s) => s.poiId?.startsWith('eat'));
-			expect(meals.length).toBeLessThanOrEqual(2);
+			// Breakfast, lunch, dinner. Two dinners in a day is not a plan.
+			expect(meals.length).toBeLessThanOrEqual(MEALS_PER_DAY);
 		}
 	});
 });

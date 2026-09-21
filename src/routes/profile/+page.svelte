@@ -5,7 +5,7 @@
 	import { session, signOut } from '$lib/session.svelte';
 	import { avatarDataUri, newSeed } from '$lib/avatar';
 	import { displayName, loadMyProfile, saveMyProfile, type Profile } from '$lib/profile.svelte';
-	import { MEAL_NAMES, toHours, type MealWindows } from '$lib/plan/meals';
+	import { MEAL_NAMES, readyAt, toHours, type MealWindows } from '$lib/plan/meals';
 
 	let profile = $state<Profile | null>(null);
 	let loading = $state(true);
@@ -134,6 +134,41 @@
 				onblur={(e) => persist({ display_name: e.currentTarget.value })}
 			/>
 		</div>
+
+		<h2 class="tm-label mt-8 mb-1">Your mornings</h2>
+		<p class="tm-hint mb-3">
+			Nothing is planned before you are out of the door. On a shared trip the plan waits for
+			whoever is ready last.
+		</p>
+
+		<div class="flex gap-3">
+			<div class="tm-field flex-1">
+				<label class="tm-label" for="wake">Wake up</label>
+				<input
+					class="tm-input"
+					id="wake"
+					type="time"
+					value={profile.wakeAt}
+					onchange={(e) => persist({ wake_at: e.currentTarget.value })}
+				/>
+			</div>
+			<div class="tm-field flex-1">
+				<label class="tm-label" for="prep">Getting ready</label>
+				<select
+					class="tm-input"
+					id="prep"
+					value={String(profile.prepMin)}
+					onchange={(e) => persist({ prep_min: Number(e.currentTarget.value) })}
+				>
+					{#each [0, 15, 30, 45, 60, 90, 120] as m}
+						<option value={String(m)}>{m === 0 ? 'straight out' : `${m} min`}</option>
+					{/each}
+				</select>
+			</div>
+		</div>
+		<p class="tm-hint mt-1">
+			Out of the door by {readyAt(profile.wakeAt, profile.prepMin)}.
+		</p>
 
 		<h2 class="tm-label mt-8 mb-1">When you eat</h2>
 		<p class="tm-hint mb-3">

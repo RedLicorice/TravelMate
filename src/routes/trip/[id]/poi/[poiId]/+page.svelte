@@ -22,7 +22,7 @@
 		resolveCurves,
 		type CrowdCurves
 	} from '$lib/plan/crowd';
-	import { isMeal, tightest } from '$lib/plan/meals';
+	import { effectiveDayStart, isMeal, latestReady, tightest } from '$lib/plan/meals';
 	import { haversineKm } from '$lib/plan/geo';
 	import { loadTripProfiles } from '$lib/profile.svelte';
 	import type { Mode } from '$lib/plan/modes';
@@ -36,6 +36,7 @@
 	let poi = $state<PoiRow | null>(null);
 	let all = $state<PoiRow[]>([]);
 	let windows = $state(tightest([]).windows);
+	let ready = $state<string | null>(null);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
 	let saving = $state(false);
@@ -57,6 +58,7 @@
 			poi = p;
 			all = list;
 			windows = tightest(people.map((x) => x.mealWindows)).windows;
+			ready = latestReady(people.map((x) => ({ wakeAt: x.wakeAt, prepMin: x.prepMin })));
 			if (t) {
 				curves = await resolveCurves(
 					list.map((x) => ({ id: x.id, category: x.category })),
@@ -75,7 +77,11 @@
 		}
 	});
 
-	const days = $derived(trip ? tripDays(toTrip(trip)) : []);
+	const days = $derived(
+		trip
+			? tripDays({ ...toTrip(trip), dayStart: effectiveDayStart(toTrip(trip).dayStart, ready) })
+			: []
+	);
 
 	const plan = $derived(
 		trip && days.length
