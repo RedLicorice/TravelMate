@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { base } from '$app/paths';
+	import { goto } from '$app/navigation';
 	import {
 		cityBBox,
 		getTrip,
@@ -23,6 +24,7 @@
 	import Autocomplete from '$lib/Autocomplete.svelte';
 	import Stars from '$lib/Stars.svelte';
 	import { createDrag, reorder } from '$lib/dnd.svelte';
+	import PlanBoard from '$lib/PlanBoard.svelte';
 	import LeafletMap from '$lib/Map.svelte';
 	import { poi as provider, type City } from '$lib/poi';
 
@@ -34,7 +36,7 @@
 	let error = $state<string | null>(null);
 	let busy = $state(false);
 	let dayIndex = $state(0);
-	let view = $state<'plan' | 'map' | 'wishlist'>('plan');
+	let view = $state<'plan' | 'board' | 'map' | 'wishlist'>('plan');
 	let showDetails = $state(false);
 	let visible = $state(new Set<number>());
 	/** Unassigned stops are their own layer on the map, not a day. */
@@ -427,12 +429,13 @@
 			{/if}
 
 			<div class="tm-seg" role="tablist" aria-label="View">
-				<button role="tab" aria-selected={view === 'plan'} onclick={() => (view = 'plan')}>Plan</button>
+				<button role="tab" aria-selected={view === 'plan'} onclick={() => (view = 'plan')}>Day</button>
+				<button role="tab" aria-selected={view === 'board'} onclick={() => (view = 'board')}>Board</button>
 				<button role="tab" aria-selected={view === 'map'} onclick={() => (view = 'map')}>Map</button>
-				<button role="tab" aria-selected={view === 'wishlist'} onclick={() => (view = 'wishlist')}>Wishlist</button>
+				<button role="tab" aria-selected={view === 'wishlist'} onclick={() => (view = 'wishlist')}>List</button>
 			</div>
 
-			{#if view !== 'wishlist'}
+			{#if view === 'plan' || view === 'map'}
 				<div class="flex items-center gap-1.5 overflow-x-auto">
 					{#each days as day, i (day.date)}
 						{@const on = view === 'map' ? visible.has(i) : i === dayIndex}
@@ -484,7 +487,26 @@
 			</div>
 		{/if}
 
-		{#if view === 'map'}
+		{#if view === 'board'}
+			<div class="flex-1 overflow-hidden">
+				{#if !pois.length}
+					<div class="tm-card m-4" style="background: var(--tm-surface-2)">
+						<p class="tm-card__title">Nothing to plan yet</p>
+						<p class="tm-card__meta">Add some places and the days will arrange themselves.</p>
+					</div>
+				{:else if result}
+					<PlanBoard
+						{days}
+						planned={result.days}
+						timezone={row.timezone}
+						mealWindows={agreed.windows}
+						{dayColor}
+						{drag}
+						onpick={(id) => goto(`${base}/trip/${tripId}/poi/${id}`)}
+					/>
+				{/if}
+			</div>
+		{:else if view === 'map'}
 			<div class="flex-1"><LeafletMap {markers} {routes} center={centre} /></div>
 		{:else if view === 'wishlist'}
 			<div class="flex-1 overflow-y-auto p-4">
