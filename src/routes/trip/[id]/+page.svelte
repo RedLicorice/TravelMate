@@ -19,7 +19,7 @@
 	import { effectiveDayStart, isMeal, latestReady, tightest, type MealWindows } from '$lib/plan/meals';
 	import { resolveCurves, type CrowdCurves } from '$lib/plan/crowd';
 	import { routeShape } from '$lib/plan/route';
-	import { resolveTravel, type TravelTable } from '$lib/plan/travel';
+	import { firstOf, resolveTravel, type TravelTable } from '$lib/plan/travel';
 	import { avatarDataUri } from '$lib/avatar';
 	import { displayName, loadTripProfiles, type Profile } from '$lib/profile.svelte';
 	import type { Mode } from '$lib/plan/modes';
@@ -110,18 +110,46 @@
 	 * the hotel and any terminals, since the airport transfer is the leg the
 	 * straight-line model got most wrong.
 	 */
+	/**
+	 * Real travel times, resolved one day at a time.
+	 *
+	 * Per day rather than per trip for two reasons: a transit matrix is capped
+	 * at 100 elements and a day of stops plus anchors fits inside that, and a
+	 * transit answer needs the departure time, which is a property of the day.
+	 */
 	async function refreshTravel() {
 		if (!row || !days.length) return;
-		const anchors = days.flatMap((d) => [...d.fixedStart, ...d.fixedEnd].map((w) => w.at));
-		const stops = pois.map((p) => ({ lat: p.lat, lng: p.lng }));
-		const seen = new Set<string>();
-		const points = [...anchors, ...stops].filter((p) => {
-			const key = `${p.lat.toFixed(5)},${p.lng.toFixed(5)}`;
-			if (seen.has(key)) return false;
-			seen.add(key);
-			return true;
-		});
-		travel = await resolveTravel(points, row.allowed_modes as Mode[]);
+		const modes = row.allowed_modes as Mode[];
+		const tables: TravelTable[] = [];
+
+		for (const [i, day] of days.entries()) {
+			const anchors = [...day.fixedStart, ...day.fixedEnd].map((w) => w.at);
+			const stops = pois
+				.filter((p) => p.day_index === i)
+				.map((p) => ({ lat: p.lat, lng: p.lng }));
+
+			const seen = new Set<string>();
+			const points = [...anchors, ...stops].filter((p) => {
+				const key = `${p.lat.toFixed(5)},${p.lng.toFixed(5)}`;
+				if (seen.has(key)) return false;
+				seen.add(key);
+				return true;
+			});
+			if (points.length < 2) continue;
+
+			tables.push(await resolveTravel(points, modes, day.start.toISOString()));
+		}
+
+		// Stops not yet on a day have no departure time to ask about, so they
+		// resolve without one and fall back to the estimate where that fails.
+		const loose = pois.filter((p) => p.day_index === null).map((p) => ({ lat: p.lat, lng: p.lng }));
+		if (loose.length && days[0]) {
+			const anchor = days[0].fixedStart[0]?.at;
+			const points = anchor ? [anchor, ...loose] : loose;
+			if (points.length >= 2) tables.push(await resolveTravel(points, modes, null));
+		}
+
+		travel = tables.length ? firstOf(tables) : undefined;
 	}
 
 	$effect(() => {

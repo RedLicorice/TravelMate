@@ -1,4 +1,5 @@
 import type { LatLng } from '$lib/trip/days';
+import { supabase } from '$lib/supabase';
 import { DETOUR, haversineKm } from './geo';
 import type { Leg, Mode } from './modes';
 
@@ -10,11 +11,12 @@ import type { Leg, Mode } from './modes';
  * stops on a day is resolved up front into a plain table, in one matrix
  * request per costing, and the planner reads that table.
  *
- * Valhalla's OSM instance routes roads and footpaths properly. It does NOT
- * route public transport: the multimodal costing needs GTFS the public
- * instance does not load, and no free keyless transit router exists. Transit
- * is therefore modelled from the road route rather than routed -- see
- * transitFrom below, which is honest about being an estimate.
+ * Three sources, in order. Google Routes answers real timetabled transit and
+ * traffic-aware roads, through an Edge Function that holds the key. Valhalla's
+ * OSM instance routes roads and footpaths but NOT public transport -- its
+ * multimodal costing needs GTFS the public instance does not load -- so a
+ * Valhalla transit figure is modelled from the road route by transitFrom.
+ * Beneath both, the straight-line model always answers.
  */
 const MATRIX = 'https://valhalla1.openstreetmap.de/sources_to_targets';
 
@@ -28,6 +30,48 @@ export type TravelTable = {
 	/** Minutes and km, or null when nothing was resolved for this pair. */
 	get(from: LatLng, to: LatLng, mode: Mode): Omit<Leg, 'mode'> | null;
 };
+
+/** One answered pair, as the Edge Function returns it. */
+export type TravelCell = {
+	from: string;
+	to: string;
+	minutes: number;
+	km: number;
+	source: 'google' | 'valhalla';
+};
+
+/**
+ * Build a lookup from answered cells.
+ *
+ * A Google transit figure is used exactly as given: it already includes the
+ * walk to the platform, the wait and the transfers, so putting transitFrom on
+ * top would charge for those twice. The band applies only to road-derived
+ * estimates.
+ */
+export function tableFrom(cells: TravelCell[]): TravelTable {
+	const byKey = new Map(cells.map((c) => [`${c.from}>${c.to}`, c]));
+	return {
+		get(from, to, mode) {
+			const cell = byKey.get(`${pointKey(from)}>${pointKey(to)}`);
+			if (!cell) return null;
+			if (mode === 'transit' && cell.source !== 'google') {
+				return { minutes: transitFrom(cell.minutes, cell.km), km: cell.km };
+			}
+			return { minutes: cell.minutes, km: cell.km };
+		}
+	};
+}
+
+/** Two tables consulted in order; the first with an answer wins. */
+export const firstOf = (tables: TravelTable[]): TravelTable => ({
+	get(from, to, mode) {
+		for (const table of tables) {
+			const answer = table.get(from, to, mode);
+			if (answer) return answer;
+		}
+		return null;
+	}
+});
 
 /** Which Valhalla costing stands in for each of our modes. */
 const COSTING: Record<Mode, 'pedestrian' | 'bicycle' | 'auto'> = {
@@ -93,6 +137,60 @@ async function matrix(points: LatLng[], costing: string, signal?: AbortSignal) {
 export async function resolveTravel(
 	points: LatLng[],
 	modes: Mode[],
+	departAt?: string | null,
+	signal?: AbortSignal
+): Promise<TravelTable> {
+	if (points.length < 2) return noTravel;
+
+	// Google first, one request per mode in use. The function caps the matrix
+	// itself and returns an error rather than a truncated answer.
+	const google = await resolveFromFunction(points, modes, departAt ?? null);
+
+	// Valhalla fills whatever Google could not answer -- a city it does not
+	// cover, or a request that was refused.
+	const valhalla = await resolveFromValhalla(points, modes, signal);
+
+	return firstOf([google, valhalla]);
+}
+
+async function resolveFromFunction(
+	points: LatLng[],
+	modes: Mode[],
+	departAt: string | null
+): Promise<TravelTable> {
+	const cells: TravelCell[] = [];
+	for (const mode of new Set(modes)) {
+		try {
+			const { data, error } = await supabase.functions.invoke('travel', {
+				body: { points, mode, departAt }
+			});
+			if (error) continue;
+			const answered = (data?.cells ?? []) as TravelCell[];
+			// Cells are per mode, so tag them before merging: the same pair has a
+			// different answer on foot than on a train.
+			for (const cell of answered) {
+				cells.push({ ...cell, from: `${mode}|${cell.from}`, to: `${mode}|${cell.to}` });
+			}
+		} catch {
+			// Offline, or the function is down. The chain continues.
+		}
+	}
+	const byKey = new Map(cells.map((c) => [`${c.from}>${c.to}`, c]));
+	return {
+		get(from, to, mode) {
+			const cell = byKey.get(`${mode}|${pointKey(from)}>${mode}|${pointKey(to)}`);
+			if (!cell) return null;
+			if (mode === 'transit' && cell.source !== 'google') {
+				return { minutes: transitFrom(cell.minutes, cell.km), km: cell.km };
+			}
+			return { minutes: cell.minutes, km: cell.km };
+		}
+	};
+}
+
+async function resolveFromValhalla(
+	points: LatLng[],
+	modes: Mode[],
 	signal?: AbortSignal
 ): Promise<TravelTable> {
 	const table = new Map<string, Omit<Leg, 'mode'>>();
@@ -128,8 +226,7 @@ export async function resolveTravel(
 
 	return {
 		get(from, to, mode) {
-			const costing = COSTING[mode];
-			const road = table.get(cellKey(from, to, costing));
+			const road = table.get(cellKey(from, to, COSTING[mode]));
 			if (!road) return null;
 			if (mode !== 'transit') return road;
 			return { minutes: transitFrom(road.minutes, road.km), km: road.km };

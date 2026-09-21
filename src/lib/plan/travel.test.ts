@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { haversineLeg, pointKey, transitFrom } from './travel';
+import { firstOf, haversineLeg, pointKey, tableFrom, transitFrom } from './travel';
 import { leg } from './modes';
 import type { TravelTable } from './travel';
 
@@ -65,5 +65,52 @@ describe('leg with a resolved table', () => {
 		// use; a 300m hop is still a walk.
 		const near = { lat: 51.5145, lng: -0.1245 };
 		expect(leg(b, near, ['walk', 'transit'], false, table).mode).toBe('walk');
+	});
+});
+
+describe('tableFrom', () => {
+	const stansted = { lat: 51.886, lng: 0.2389 };
+	const london = { lat: 51.5145, lng: -0.127 };
+
+	it('uses a Google transit figure exactly as given', () => {
+		// Google already routed the train, including the walk to the platform,
+		// the wait and the transfers. Running transitFrom over it would charge
+		// for those a second time.
+		const table = tableFrom([
+			{ from: pointKey(stansted), to: pointKey(london), minutes: 99, km: 65.8, source: 'google' }
+		]);
+		expect(table.get(stansted, london, 'transit')).toEqual({ minutes: 99, km: 65.8 });
+	});
+
+	it('still applies the band to a Valhalla road figure', () => {
+		const table = tableFrom([
+			{ from: pointKey(stansted), to: pointKey(london), minutes: 76, km: 57.2, source: 'valhalla' }
+		]);
+		const answer = table.get(stansted, london, 'transit')!;
+		expect(answer.minutes).not.toBe(76);
+		expect(answer.minutes).toBe(transitFrom(76, 57.2));
+	});
+
+	it('returns null for a pair it has never seen', () => {
+		expect(tableFrom([]).get(stansted, london, 'walk')).toBeNull();
+	});
+});
+
+describe('firstOf', () => {
+	const a = { lat: 1, lng: 1 };
+	const b = { lat: 2, lng: 2 };
+	const answers = (minutes: number): TravelTable => ({ get: () => ({ minutes, km: 1 }) });
+	const silent: TravelTable = { get: () => null };
+
+	it('takes the first table that answers', () => {
+		expect(firstOf([answers(10), answers(20)]).get(a, b, 'walk')!.minutes).toBe(10);
+	});
+
+	it('falls through a table with no answer', () => {
+		expect(firstOf([silent, answers(20)]).get(a, b, 'walk')!.minutes).toBe(20);
+	});
+
+	it('returns null when nothing answers, so the caller can estimate', () => {
+		expect(firstOf([silent, silent]).get(a, b, 'walk')).toBeNull();
 	});
 });
