@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+	biasPoint,
 	contextOf,
 	durationFor,
 	safePhone,
@@ -176,5 +177,27 @@ describe('safePhone', () => {
 	it('rejects empty and absent values', () => {
 		expect(safePhone('')).toBeNull();
 		expect(safePhone(undefined)).toBeNull();
+	});
+});
+
+describe('biasPoint', () => {
+	const box = { south: 51.2867601, north: 51.6918741, west: -0.5103751, east: 0.3340155 };
+
+	it('uses the city coordinates when it has them', () => {
+		expect(biasPoint({ name: 'London', label: '', lat: 51.5074, lng: -0.1278, countryCode: 'GB', bbox: box }))
+			.toEqual({ lat: 51.5074, lng: -0.1278 });
+	});
+
+	it('falls back to the centre of the box when coordinates are 0,0', () => {
+		// Screens built from a stored trip know the box but not the city pin.
+		// Biasing on 0,0 would rank everything around the Gulf of Guinea.
+		const point = biasPoint({ name: 'London', label: '', lat: 0, lng: 0, countryCode: null, bbox: box });
+		expect(point!.lat).toBeCloseTo(51.489, 2);
+		expect(point!.lng).toBeCloseTo(-0.088, 2);
+	});
+
+	it('gives up rather than guessing when there is nothing to go on', () => {
+		expect(biasPoint({ name: 'X', label: '', lat: 0, lng: 0, countryCode: null, bbox: null })).toBeNull();
+		expect(biasPoint(null)).toBeNull();
 	});
 });

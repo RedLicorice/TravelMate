@@ -184,6 +184,24 @@ async function get(params: Record<string, string>, signal?: AbortSignal): Promis
 const asParam = (b: BBox) => `${b.west},${b.south},${b.east},${b.north}`;
 
 /**
+ * A point to rank results around. Prefers the city's own coordinates, falls
+ * back to the centre of its box -- screens built from a stored trip know the
+ * box but not the original city pin, and 0,0 would bias every search to the
+ * Gulf of Guinea.
+ */
+export function biasPoint(city: City | null): { lat: number; lng: number } | null {
+	if (!city) return null;
+	if (city.lat !== 0 || city.lng !== 0) return { lat: city.lat, lng: city.lng };
+	if (city.bbox) {
+		return {
+			lat: (city.bbox.south + city.bbox.north) / 2,
+			lng: (city.bbox.west + city.bbox.east) / 2
+		};
+	}
+	return null;
+}
+
+/**
  * Photon is a search-as-you-type geocoder over the same OSM data as Nominatim.
  * It answers partial words ('lond', 'premier i'), which Nominatim does not, and
  * that is the whole reason this is the provider rather than that one.
@@ -238,8 +256,16 @@ export const photon: PoiProvider = {
 		// Repeated osm_tag params are OR'd by Photon, so one request covers
 		// airports, rail, coach and ferry rather than four round trips.
 		const tags = 'osm_tag=aeroway:aerodrome&osm_tag=railway:station&osm_tag=amenity:bus_station&osm_tag=amenity:ferry_terminal';
-		const bounds = city?.bbox ? `&bbox=${asParam(city.bbox)}` : '';
-		const url = `${ENDPOINT}?${new URLSearchParams({ lang: 'en', q: query, limit: '8' })}&${tags}${bounds}`;
+		// Biased towards the city, never bounded by it. Stansted sits 20km north
+		// of London's own bounding box, as most airports sit outside the city
+		// they serve -- bounding the search hides exactly the airport wanted.
+		const near = biasPoint(city);
+		const params = new URLSearchParams({ lang: 'en', q: query, limit: '8' });
+		if (near) {
+			params.set('lat', String(near.lat));
+			params.set('lon', String(near.lng));
+		}
+		const url = `${ENDPOINT}?${params}&${tags}`;
 		const res = await fetch(url, { signal, headers: { Accept: 'application/json' } });
 		if (!res.ok) throw new Error(`Terminal search failed (${res.status})`);
 		const body = await res.json();
