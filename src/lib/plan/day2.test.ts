@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { tripDays, type Trip } from '$lib/trip/days';
-import { schedule, type PlanPoi } from './planner';
+import { replan, schedule, type PlanPoi } from './planner';
 import { isMeal, slotAt, slotsFrom, tightest, type MealWindows } from './meals';
 
 const A: MealWindows = { breakfast: { from: '07:00', to: '10:00' }, lunch: { from: '12:00', to: '13:30' }, dinner: { from: '19:00', to: '21:30' } };
@@ -209,5 +209,58 @@ describe('the right sort of place for the right meal', () => {
 		expect(atMeal([at('The Bell', 'pub', out), at('Trattoria', 'restaurant', out)], 'lunch')).toBe(
 			'Trattoria'
 		);
+	});
+});
+
+describe('somewhere you go every day', () => {
+	const coffee = (repeats: boolean): PlanPoi => ({
+		id: 'starbucks',
+		name: 'Starbucks',
+		lat: 51.5154,
+		lng: -0.141,
+		category: 'cafe',
+		durationMin: 20,
+		priority: 3,
+		dayIndex: 1,
+		orderIndex: 9,
+		pinned: false,
+		repeats
+	});
+
+	const run = (repeats: boolean) =>
+		replan({
+			pois: [
+				stop('Notting Hill', 51.509, -0.196, 'suburb', 60, 0),
+				stop('Big Ben', 51.5007, -0.1246, 'attraction', 60, 1),
+				coffee(repeats)
+			],
+			days: tripDays(trip),
+			allowedModes: ['walk', 'transit'],
+			timezone: 'Europe/London',
+			mealWindows: tightest([A]).windows
+		});
+
+	const mornings = (repeats: boolean) =>
+		run(repeats).days.filter((d) => d.stops.some((s) => s.poiId === 'starbucks')).length;
+
+	it('is on more than one morning', () => {
+		expect(mornings(true)).toBeGreaterThan(1);
+	});
+
+	it('is on exactly one day when it does not repeat', () => {
+		expect(mornings(false)).toBeLessThanOrEqual(1);
+	});
+
+	it('is not reported missing on the days it was not wanted', () => {
+		// Judged across the trip: having it on Monday and Wednesday is not a
+		// failure to have it on Tuesday.
+		const result = run(true);
+		expect(result.unplaced.filter((u) => u.poi.id === 'starbucks')).toEqual([]);
+	});
+
+	it('is had once a morning, not twice', () => {
+		for (const day of run(true).days) {
+			expect(day.stops.filter((s) => s.poiId === 'starbucks').length).toBeLessThanOrEqual(1);
+		}
 	});
 });

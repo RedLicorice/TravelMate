@@ -385,6 +385,29 @@
 			Changing this moves everything after it on the day. Tap Replan to reshuffle properly.
 		</p>
 
+		{#if isMeal(poi.category)}
+			<h2 class="tm-label mt-6 mb-2">How often</h2>
+			<div class="flex flex-wrap gap-2">
+				{#each [false, true] as every}
+					<button
+						class="tm-chip"
+						aria-pressed={(poi.repeats ?? false) === every}
+						style={(poi.repeats ?? false) === every
+							? 'background: var(--tm-mint-soft); color: var(--tm-mint-ink)'
+							: 'opacity: 0.6'}
+						onclick={() => persist({ repeats: every })}
+					>
+						{every ? 'Every day' : 'Once'}
+					</button>
+				{/each}
+			</div>
+			<p class="tm-hint mt-2">
+				{poi.repeats
+					? 'Offered on every day it suits, at whichever mealtime fits -- coffee on the way out is a habit, not a stop.'
+					: 'One sitting, on one day.'}
+			</p>
+		{/if}
+
 		<!-- Some stops let you out somewhere else: a cable car, a ferry, a
 		     funicular. The plan then measures the next leg from that end. -->
 		<h2 class="tm-label mt-6 mb-2">Where it ends</h2>

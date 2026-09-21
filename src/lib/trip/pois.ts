@@ -25,6 +25,8 @@ export type PoiRow = {
 	pinned_at: string | null;
 	/** Any branch will do; the planner picks the nearest. */
 	any_branch: boolean;
+	/** Offered on every day it suits, rather than taking one day of its own. */
+	repeats: boolean;
 	branches: { lat: number; lng: number }[];
 	/** Where this stop lets you out, when that differs from where you got on. */
 	exit_lat: number | null;
@@ -46,6 +48,7 @@ export const toPlanPoi = (row: PoiRow): PlanPoi => ({
 	pinned: row.pinned ?? false,
 	pinnedAt: row.pinned_at ?? null,
 	branches: row.any_branch ? (row.branches ?? []) : null,
+	repeats: row.repeats ?? false,
 	exitAt: row.exit_lat !== null && row.exit_lng !== null ? { lat: row.exit_lat, lng: row.exit_lng } : null
 });
 
@@ -109,6 +112,7 @@ export async function updatePoi(
 		name?: string;
 		priority?: number;
 		pinned?: boolean;
+		repeats?: boolean;
 		pinned_at?: string | null;
 		exit_lat?: number | null;
 		exit_lng?: number | null;
