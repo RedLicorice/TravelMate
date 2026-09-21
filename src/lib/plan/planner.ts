@@ -616,7 +616,7 @@ function walkClock(
 	 * offered if its window is open before then, so the day fills in order
 	 * rather than collecting three meals at the end.
 	 */
-	const offerMeals = (until: number, patient = false) => {
+	const offerMeals = (until: number, patient = false, ahead: PlanPoi[] = []) => {
 		for (const slot of slots) {
 			if (served.has(slot.name)) continue;
 
@@ -625,17 +625,23 @@ function walkClock(
 			// Not yet, or the window closed before the day even started.
 			if (opens > until || closes < clock) continue;
 
-			// A restaurant the traveller chose has first claim on a window, and
-			// which window it lands in is only known once the day reaches it.
-			// So while any remains unplaced, no slot is filled: otherwise their
-			// own booking arrives to find an invented lunch already sitting in
-			// its place.
+			// A restaurant the traveller chose has first claim on a window -- but
+			// only on a window it could actually reach. The earliest it can
+			// arrive is now plus the stops that come before it, ignoring travel,
+			// which is a lower bound; if even that lands after this window has
+			// closed, the booking was never going to take this slot and holding
+			// it costs the traveller the meal.
 			//
-			// The cost is that a day built around a dinner booking may reach
-			// dinner with breakfast and lunch already behind it, and get
-			// neither. That is the honest reading of a day planned that way,
-			// and it is preferable to a plan that serves two lunches.
-			if (mealsToCome > 0) continue;
+			// Holding every window while any restaurant remained is what lost a
+			// day both its breakfast and its lunch to a sandwich shop that was
+			// seventh in the route and arrived at 15:39.
+			const next = ahead.findIndex((p) => isMeal(p.category));
+			if (next >= 0) {
+				const soonest =
+					clock +
+					ahead.slice(0, next).reduce((sum, p) => sum + p.durationMin, 0) * 60_000;
+				if (soonest <= closes) continue;
+			}
 
 			// Not worth standing about for while there are still stops to make:
 			// skipped now, offered again after the next one, by which time the
@@ -697,7 +703,7 @@ function walkClock(
 		const finish = clock + (cursor ? probe.minutes : 0) * 60_000 + p.durationMin * 60_000;
 		// Anything whose window opens before this stop would end. Offered here so
 		// the day fills in order rather than saving every meal until the end.
-		offerMeals(finish);
+		offerMeals(finish, false, pois.slice(pois.indexOf(p)));
 
 		// The way home starts from wherever the stop lets the traveller out --
 		// measuring it from the entrance would price a cable car's whole span
