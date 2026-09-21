@@ -981,7 +981,9 @@
 					</div>
 				{:else if current}
 					{#each current.stops as stop, i (stop.name + i)}
-						{#if stop.legIn && i > 0}
+						<!-- A leg of no length is two cards standing in the same
+						     place: the journey chain, where nothing is travelled. -->
+						{#if stop.legIn && stop.legIn.minutes > 0 && i > 0}
 							{@const previous = current.stops[i - 1]}
 							<LegDetail
 								from={previous.exitAt ?? previous.at}
@@ -1057,11 +1059,17 @@
 						</div>
 						<!-- The slot under this stop. Whatever is added here lands
 						     above the next real stop, or at the end of the day when
-						     nothing but the walk home follows. -->
-						{@const following = current.stops.slice(i + 1).find((x) => x.poiId)}
-						<a class="tm-slot" href={slotHref(dayIndex, following?.poiId ?? null)}>
-							<span aria-hidden="true">+</span> Add a stop here
-						</a>
+						     nothing but the walk home follows.
+
+						     Not offered inside the journey: a museum between two
+						     airports is not a thing, and the journey's own steps
+						     are added on the trip's edit screen. -->
+						{#if stop.anchorKind !== 'terminal' && stop.anchorKind !== 'service'}
+							{@const following = current.stops.slice(i + 1).find((x) => x.poiId)}
+							<a class="tm-slot" href={slotHref(dayIndex, following?.poiId ?? null)}>
+								<span aria-hidden="true">+</span> Add a stop here
+							</a>
+						{/if}
 					{/each}
 				{/if}
 			</div>

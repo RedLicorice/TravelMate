@@ -43,12 +43,19 @@
 		legs = legs.map((leg, j) => (j === i ? { ...leg, ...change } : leg));
 	}
 
-	function addLeg() {
-		// A connection starts where the last one ended: nobody flies out of a
-		// city they did not arrive in, and retyping it is the commonest way to
-		// end up with a journey that teleports.
-		const previous = legs[legs.length - 1];
-		legs = [...legs, { ...emptyLeg(), from: previous?.to ?? null }];
+	/**
+	 * Insert a leg at `index`, or append when it is past the end.
+	 *
+	 * The new leg is stitched to its neighbours: it starts where the one above
+	 * ended and ends where the one below begins. Getting from Milano Centrale
+	 * to Malpensa is a leg like any other, and having to retype both ends of it
+	 * is the commonest way to end up with a journey that teleports.
+	 */
+	function addLeg(index = legs.length) {
+		const before = legs[index - 1];
+		const after = legs[index];
+		const fresh = { ...emptyLeg(), from: before?.to ?? null, to: after?.from ?? null };
+		legs = [...legs.slice(0, index), fresh, ...legs.slice(index)];
 	}
 
 	function removeLeg(i: number) {
@@ -62,6 +69,13 @@
 </script>
 
 {#each legs as leg, i (i)}
+	{#if i > 0}
+		<!-- Getting between two terminals is itself a leg: the transfer from a
+		     station to the airport it connects to, say. -->
+		<button class="tm-slot" style="margin-top:8px" onclick={() => addLeg(i)}>
+			<span aria-hidden="true">+</span> Add a step here
+		</button>
+	{/if}
 	<div class="tm-card mt-3" style="background: var(--tm-surface-2)">
 		<div class="flex items-baseline justify-between gap-3">
 			<span class="tm-label">
@@ -157,6 +171,6 @@
 	</div>
 {/each}
 
-<button class="tm-btn tm-btn--secondary tm-btn--block mt-3" onclick={addLeg}>
+<button class="tm-btn tm-btn--secondary tm-btn--block mt-3" onclick={() => addLeg()}>
 	{legs.length ? 'Add a connection' : 'Add the journey'}
 </button>

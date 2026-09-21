@@ -72,7 +72,10 @@
 
 			// Travel is a card like any other. It takes time, and a board that
 			// drew it as a gap said the day was emptier than it is.
-			if (stop.legIn && j > 0) {
+			// A leg of no length is two cards standing in the same place, which
+			// is the whole journey chain. Drawing it would put a travel card
+			// between every airport and its flight.
+			if (stop.legIn && stop.legIn.minutes > 0 && j > 0) {
 				const leaveMin = minutesOf(day.stops[j - 1].depart);
 				out.push({
 					key: `leg:${j}`,

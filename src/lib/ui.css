@@ -155,6 +155,7 @@
 
 /* The gap between two stops, offered as a place to add one. Deliberately faint:
    there is one after every stop, and they must not read as content. */
+button.tm-slot { width: 100%; background: none; cursor: pointer; font-family: inherit; }
 .tm-slot {
   display: flex; align-items: center; justify-content: center; gap: 6px;
   min-height: 34px; margin: 2px 0;

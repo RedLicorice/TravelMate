@@ -755,3 +755,25 @@ describe('a stop you leave from somewhere else', () => {
 		expect(result.days[0].stops.find((s) => s.poiId === 'cable')!.exitAt).toBeNull();
 	});
 });
+
+describe('a leg that goes nowhere', () => {
+	const here = { lat: 51.886, lng: 0.2389 };
+
+	it('costs nothing, whatever mode was chosen', () => {
+		expect(leg(here, here, ['transit', 'walk'], true)).toEqual({
+			mode: 'transit',
+			minutes: 0,
+			km: 0
+		});
+	});
+
+	it('does not pick up the transit overhead', () => {
+		// The overhead is a flat allowance for reaching the stop and waiting.
+		// Standing still involves neither.
+		expect(leg(here, { ...here }, ['transit'], true).minutes).toBe(0);
+	});
+
+	it('still costs something for a leg that does go somewhere', () => {
+		expect(leg(here, { lat: 51.5145, lng: -0.127 }, ['transit'], true).minutes).toBeGreaterThan(0);
+	});
+});

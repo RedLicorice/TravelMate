@@ -46,6 +46,13 @@ export function leg(
 	const km = haversineKm(from, to) * DETOUR;
 	const mode = chooseMode(km, allowed, terminal);
 
+	// Going nowhere takes no time. Without this the transit overhead -- a flat
+	// allowance for walking to the stop and waiting -- was charged on a leg of
+	// zero length, which is what put "12 min · 0 km · transit" between two
+	// cards standing in the same airport, and quietly spent an hour of the
+	// arrival day on a journey that had already happened.
+	if (km === 0) return { mode, minutes: 0, km: 0 };
+
 	// A real routed time when one was resolved ahead of planning; the speed
 	// model only when it was not.
 	const routed = travel.get(from, to, mode);
