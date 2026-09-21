@@ -511,15 +511,27 @@
 	 */
 	let slot = $state<{ day: number; before: string | null; meal?: string } | null>(null);
 
+	/** Which day a place currently sits on, for the ones that sit on one. */
+	const dayOfPoi = $derived(
+		new Map(
+			(fresh ?? toPlannedDays(stored, days)).flatMap((d) =>
+				d.stops.filter((st) => st.poiId).map((st) => [st.poiId!, d.index] as [string, number])
+			)
+		)
+	);
+
 	/**
-	 * Everything captured but waiting for a day. A meal slot leads with the
-	 * places you could actually eat at, because that is what it is asking for.
+	 * Everything on the wishlist, not only what has no day yet.
+	 *
+	 * Offering only the unplanned meant a place already sitting on Thursday
+	 * could not be moved to Tuesday from the slot that wanted it -- the
+	 * traveller could see it on the plan and not pick it. Waiting places come
+	 * first, then, for a meal slot, the ones you could actually eat at.
 	 */
 	const unassigned = $derived.by(() => {
-		const free = pois.filter((p) => !planned.has(p.id));
-		if (!slot?.meal) return free;
-		const food = (p: PoiRow) => (isMeal(p.category) ? 0 : 1);
-		return [...free].sort((a, b) => food(a) - food(b));
+		const waiting = (p: PoiRow) => (dayOfPoi.has(p.id) ? 1 : 0);
+		const food = (p: PoiRow) => (slot?.meal && isMeal(p.category) ? 0 : 1);
+		return [...pois].sort((a, b) => waiting(a) - waiting(b) || food(a) - food(b));
 	});
 
 	let blockName = $state('');
@@ -1285,6 +1297,9 @@
 									</span>
 									<span class="tm-result__meta" style="display:block">
 										{p.category ?? 'place'} · {p.duration_min} min
+										{#if dayOfPoi.has(p.id)}
+											· on {dayLabel(days[dayOfPoi.get(p.id)!].date, row.timezone)}
+										{/if}
 									</span>
 								</span>
 								<span class="tm-add" aria-hidden="true">+</span>
