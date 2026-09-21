@@ -140,7 +140,7 @@
 					key: `stop:${j}`,
 					top: at,
 					height,
-					accent: stop.poiId && pinned.has(stop.poiId) ? 'var(--tm-butter)' : dayColor(dayIndex),
+					accent: dayColor(dayIndex),
 					fill: 'var(--tm-surface)',
 					ink: 'var(--tm-text-faint)',
 					title: stop.name,

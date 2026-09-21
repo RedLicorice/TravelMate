@@ -1014,7 +1014,6 @@
 							class:tm-stop--service={stop.anchorKind === 'service'}
 							class:tm-stop--chore={stop.anchorKind === 'chore'}
 							class:tm-stop--meal={stop.anchorKind === 'meal'}
-							class:tm-stop--pinned={stop.poiId ? pinnedIds.has(stop.poiId) : false}
 							data-drop-stop={stop.poiId ?? undefined}
 							style={stop.poiId && drag.state.id === stop.poiId
 								? 'opacity:0.35'
