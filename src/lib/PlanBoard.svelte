@@ -3,6 +3,7 @@
 	import type { PlannedDay, PlannedStop } from '$lib/plan/planner';
 	import type { createDrag } from '$lib/dnd.svelte';
 	import { cardTime, hhmmOf, spanOf, stack } from '$lib/board';
+	import { longPress } from '$lib/longpress.svelte';
 
 	type Props = {
 		days: Day[];
@@ -12,6 +13,8 @@
 		drag: ReturnType<typeof createDrag>;
 		pinned?: Set<string>;
 		onpick?: (poiId: string) => void;
+		/** Held down on: the same menu the day view opens. */
+		onhold?: (poiId: string) => void;
 		onpin?: (poiId: string) => void;
 		/** Tapped empty time. `beforeId` is the stop the new one should precede. */
 		onadd?: (dayIndex: number, beforeId: string | null) => void;
@@ -25,6 +28,7 @@
 		drag,
 		pinned = new Set<string>(),
 		onpick,
+		onhold,
 		onpin,
 		onadd
 	}: Props = $props();
@@ -271,6 +275,7 @@
 		class="tm-board-card"
 		data-drop-stop={o.stop?.poiId ?? undefined}
 		title={o.sub ? `${o.title} · ${o.sub}` : o.title}
+		{@attach o.stop?.poiId && onhold ? longPress(() => onhold(o.stop!.poiId!)) : () => {}}
 		style="top:{o.top}px;height:{o.height}px;background:{o.fill};
 		border-left-color:{o.accent};
 		{o.stop?.poiId && drag.state.id === o.stop.poiId ? 'opacity:0.35;' : ''}

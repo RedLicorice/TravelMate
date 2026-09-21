@@ -19,6 +19,7 @@
 	import {
 		addPoi,
 		listPois,
+		removePoi,
 		saveAssignments,
 		toPlanPoi,
 		updatePoi,
@@ -59,6 +60,7 @@
 	import { dayTruncated, dayUrl, routePoints } from '$lib/maps';
 	import { createDrag, insertInto, reorder } from '$lib/dnd.svelte';
 	import { cardTime } from '$lib/board';
+	import { longPress } from '$lib/longpress.svelte';
 	import PlanBoard from '$lib/PlanBoard.svelte';
 	import TripAvatar from '$lib/TripAvatar.svelte';
 	import { supabase } from '$lib/supabase';
@@ -75,6 +77,38 @@
 	let busy = $state(false);
 	/** What the Replan button is up to, since routing a trip is not instant. */
 	let step = $state<string | null>(null);
+
+	/** The card the traveller is holding down on. */
+	let carded = $state<PoiRow | null>(null);
+
+	async function forget(poiId: string) {
+		carded = null;
+		busy = true;
+		try {
+			await removePoi(poiId);
+			pois = pois.filter((p) => p.id !== poiId);
+			await restore();
+		} catch (e) {
+			error = (e as Error).message;
+			pois = await listPois(tripId);
+		} finally {
+			busy = false;
+		}
+	}
+
+	async function unpin(poiId: string) {
+		carded = null;
+		busy = true;
+		try {
+			await updatePoi(poiId, { pinned: false, pinned_at: null });
+			pois = pois.map((p) => (p.id === poiId ? { ...p, pinned: false, pinned_at: null } : p));
+			await restore();
+		} catch (e) {
+			error = (e as Error).message;
+		} finally {
+			busy = false;
+		}
+	}
 
 	let picking = $state(false);
 
@@ -1123,6 +1157,7 @@
 						{drag}
 						pinned={pinnedIds}
 						onpick={(id) => goto(`${base}/trip/${tripId}/poi/${id}`)}
+						onhold={(id) => (carded = pois.find((p) => p.id === id) ?? null)}
 						onpin={(id) => togglePin(id)}
 						onadd={(dayIdx, beforeId) => (slot = { day: dayIdx, before: beforeId })}
 					/>
@@ -1203,6 +1238,9 @@
 							class:tm-stop--chore={stop.anchorKind === 'chore'}
 							class:tm-stop--meal={stop.anchorKind === 'meal'}
 							data-drop-stop={stop.poiId ?? undefined}
+							{@attach stop.poiId
+								? longPress(() => (carded = pois.find((p) => p.id === stop.poiId) ?? null))
+								: () => {}}
 							style={stop.poiId && drag.state.id === stop.poiId
 								? 'opacity:0.35'
 								: stop.poiId &&
@@ -1302,6 +1340,53 @@
 						{/if}
 					{/each}
 				{/if}
+			</div>
+		{/if}
+
+		{#if carded}
+			{@const held = carded}
+			<div
+				role="presentation"
+				style="position:fixed;inset:0;z-index:60;background:rgba(0,0,0,0.35)"
+				onclick={() => (carded = null)}
+			></div>
+			<div class="tm-sheet" style="position:fixed;z-index:61">
+				<div class="tm-sheet__grip"></div>
+				<p class="tm-card__title">{held.name}</p>
+				<p class="tm-card__meta">
+					{held.category ?? 'place'} · {held.duration_min} min
+					{#if held.pinned} · held where you put it{/if}
+				</p>
+
+				<a
+					class="tm-btn tm-btn--secondary tm-btn--block mt-3"
+					style="text-decoration:none"
+					href="{base}/trip/{tripId}/poi/{held.id}"
+				>
+					Open
+				</a>
+
+				{#if held.pinned}
+					<button
+						class="tm-btn tm-btn--secondary tm-btn--block mt-2"
+						disabled={busy}
+						onclick={() => unpin(held.id)}
+					>
+						Let the plan move it
+					</button>
+				{/if}
+
+				<button
+					class="tm-btn tm-btn--block mt-2"
+					style="background: var(--tm-danger-soft); color: var(--tm-danger-ink)"
+					disabled={busy}
+					onclick={() => forget(held.id)}
+				>
+					Remove from the trip
+				</button>
+				<button class="tm-btn tm-btn--ghost tm-btn--block mt-2" onclick={() => (carded = null)}>
+					Cancel
+				</button>
 			</div>
 		{/if}
 
