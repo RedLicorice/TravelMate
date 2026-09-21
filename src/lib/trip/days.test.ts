@@ -172,42 +172,72 @@ describe('the journey shows on the plan', () => {
 		]
 	});
 
-	it('puts each arriving service before the airport, in the order flown', () => {
+	it('gives every terminal and every service a card of its own', () => {
 		const [first] = tripDays(withLegs());
 		expect(first.fixedStart.map((w) => w.name)).toEqual([
-			'FR 9612 · Roma Termini → Milano Centrale',
-			'FR 8012 · Malpensa → Stansted',
+			'Roma Termini',
+			'FR 9612',
+			'Milano Centrale',
+			'Malpensa',
+			'FR 8012',
 			'Stansted',
 			base.hotelName
 		]);
 	});
 
-	it('puts the leaving service after the airport', () => {
+	it('draws the leaving journey after the hotel and the airport', () => {
 		const days = tripDays(withLegs());
 		const last = days[days.length - 1];
 		expect(last.fixedEnd.map((w) => w.name)).toEqual([
 			base.hotelName,
 			'Stansted',
-			'FR 8013 · Stansted → Ciampino'
+			'FR 8013',
+			'Ciampino'
 		]);
 	});
 
-	it('costs no travel: a service sits at its own terminal', () => {
+	it('marks which cards are terminals and which are the service', () => {
 		const [first] = tripDays(withLegs());
-		const service = first.fixedStart.find((w) => w.kind === 'service')!;
-		expect(service.at).toEqual({ lat: 51.886, lng: 0.2389 });
-		expect(service.dwellMin).toBe(0);
+		expect(first.fixedStart.map((w) => w.kind)).toEqual([
+			'terminal',
+			'service',
+			'terminal',
+			'terminal',
+			'service',
+			'terminal',
+			'hotel'
+		]);
+	});
+
+	it('draws a station changed at only once, not once per leg', () => {
+		const t = withLegs();
+		// Arriving into Milano Centrale and leaving from it again.
+		t.arrivalLegs[1].from = { name: 'Milano Centrale', lat: 45.4, lng: 9.2, kind: 'train' };
+		const [first] = tripDays(t);
+		expect(first.fixedStart.filter((w) => w.name === 'Milano Centrale')).toHaveLength(1);
+	});
+
+	it('costs no travel: the whole journey sits at the terminal it ends on', () => {
+		const [first] = tripDays(withLegs());
+		const journey = first.fixedStart.filter((w) => w.kind !== 'hotel');
+		expect(journey.every((w) => w.at.lat === 51.886 && w.at.lng === 0.2389)).toBe(true);
+		expect(journey.every((w) => w.dwellMin === 0)).toBe(true);
 	});
 
 	it('says the route when the ticket has no number on it', () => {
 		const t = withLegs();
 		t.arrivalLegs = [{ ...t.arrivalLegs[1], service: null }];
 		const [first] = tripDays(t);
-		expect(first.fixedStart[0].name).toBe('Malpensa → Stansted');
+		expect(first.fixedStart.map((w) => w.name)).toEqual([
+			'Malpensa',
+			'Malpensa → Stansted',
+			'Stansted',
+			base.hotelName
+		]);
 	});
 
-	it('adds nothing when there is no journey', () => {
+	it('falls back to the plain terminal when there is no journey', () => {
 		const [first] = tripDays({ ...withLegs(), arrivalLegs: [] });
-		expect(first.fixedStart.some((w) => w.kind === 'service')).toBe(false);
+		expect(first.fixedStart.map((w) => w.name)).toEqual(['Stansted', base.hotelName]);
 	});
 });

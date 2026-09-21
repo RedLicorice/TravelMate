@@ -142,22 +142,33 @@ export function tripDays(trip: Trip): Day[] {
 	});
 
 	/**
-	 * The services themselves, at the terminal's coordinates so the walk to
-	 * them is nothing. Arriving they come before the terminal -- you fly, then
-	 * you are at the airport -- and leaving they come after it.
+	 * The journey, card by card: every terminal it touches and every service
+	 * between them. Rome, the train, Milan, the airport, the flight, Stansted.
+	 *
+	 * All of them sit at `at` -- the terminal where the trip actually begins or
+	 * ends -- rather than at their own coordinates. The whole journey happens
+	 * outside the day's window, so it must cost the plan nothing; giving Roma
+	 * Termini its real position would have the planner cost a leg from Rome to
+	 * London and swallow the day whole.
 	 */
-	const serviceStops = (legs: JourneyLeg[], at: LatLng): Waypoint[] =>
-		legs
-			.filter((l) => l.service || l.from || l.to)
-			.map((l) => {
-				const route = [l.from?.name, l.to?.name].filter(Boolean).join(' → ');
-				return {
-					name: l.service ? (route ? `${l.service} · ${route}` : l.service) : route,
-					at,
-					dwellMin: 0,
-					kind: 'service' as const
-				};
-			});
+	const journeyStops = (legs: JourneyLeg[], at: LatLng): Waypoint[] => {
+		const out: Waypoint[] = [];
+		const push = (name: string | null | undefined, kind: 'terminal' | 'service') => {
+			if (!name) return;
+			// A connection names the same station twice -- arriving on one leg
+			// and leaving on the next. It is one card.
+			if (out[out.length - 1]?.name === name) return;
+			out.push({ name, at, dwellMin: 0, kind });
+		};
+
+		for (const leg of legs) {
+			push(leg.from?.name, 'terminal');
+			const route = [leg.from?.name, leg.to?.name].filter(Boolean).join(' → ');
+			push(leg.service ?? (route || null), 'service');
+			push(leg.to?.name, 'terminal');
+		}
+		return out;
+	};
 
 	return dates.map((date, i) => {
 		const windowStart = zonedInstant(date, trip.dayStart, tz);
@@ -181,8 +192,11 @@ export function tripDays(trip: Trip): Day[] {
 
 		const fixedStart: Waypoint[] = [];
 		if (i === 0 && trip.arrivalPoint) {
-			fixedStart.push(...serviceStops(trip.arrivalLegs, trip.arrivalPoint.at));
-			fixedStart.push(placeStop(trip.arrivalPoint));
+			const journey = journeyStops(trip.arrivalLegs, trip.arrivalPoint.at);
+			// The journey already ends at the terminal the traveller landed at,
+			// so adding it again would draw the airport twice.
+			if (journey.length) fixedStart.push(...journey);
+			else fixedStart.push(placeStop(trip.arrivalPoint));
 			// You cannot drag a suitcase around the Colosseum.
 			if (trip.bagDropMin > 0) fixedStart.push(hotelStop(trip.bagDropMin));
 		} else {
@@ -192,8 +206,9 @@ export function tripDays(trip: Trip): Day[] {
 		const fixedEnd: Waypoint[] = [];
 		if (i === lastIndex && trip.departurePoint) {
 			if (trip.bagDropMin > 0) fixedEnd.push(hotelStop(trip.bagDropMin));
-			fixedEnd.push(placeStop(trip.departurePoint));
-			fixedEnd.push(...serviceStops(trip.departureLegs, trip.departurePoint.at));
+			const journey = journeyStops(trip.departureLegs, trip.departurePoint.at);
+			if (journey.length) fixedEnd.push(...journey);
+			else fixedEnd.push(placeStop(trip.departurePoint));
 		} else {
 			fixedEnd.push(hotelStop(0));
 		}
