@@ -35,6 +35,12 @@ export type PlanPoi = {
 	 */
 	pinned?: boolean;
 	/**
+	 * The exact moment a pin holds, as an ISO instant. A pin without one holds
+	 * only its day and its place in the order, which is what every pin made
+	 * before times were held does.
+	 */
+	pinnedAt?: string | null;
+	/**
 	 * Where this stop lets you out, when that is not where you got on. A cable
 	 * car, a ferry, a funicular. Null is the ordinary case, and is also what a
 	 * return trip amounts to -- you end up back where you started.
@@ -359,12 +365,32 @@ export function orderDay(
 	// neighbour from wherever the day currently stands, which for a slot that
 	// follows a pin is the pin itself.
 	const remaining = pois.filter((p) => !p.pinned);
+	// By the moment they are held at, where they have one: two pins at 13:00
+	// and 19:00 have an order whatever their stored indices say.
 	const pins = pois
 		.filter((p) => p.pinned)
-		.sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0));
+		.sort(
+			(a, b) =>
+				(a.pinnedAt ? Date.parse(a.pinnedAt) : Infinity) -
+					(b.pinnedAt ? Date.parse(b.pinnedAt) : Infinity) ||
+				(a.orderIndex ?? 0) - (b.orderIndex ?? 0)
+		);
 
 	const route: PlanPoi[] = [];
-	const held = new Map(pins.map((p, i) => [Math.min(p.orderIndex ?? i, pois.length - 1), p]));
+	// Slots for the pins, in the order the moments they hold put them. Keyed
+	// off the stored index where that is free and does not contradict the
+	// times -- two pins that both claim index 9 must still come out in the
+	// order their clocks say.
+	const held = new Map<number, PlanPoi>();
+	let nextFree = 0;
+	pins.forEach((pin, rank) => {
+		const wanted = pin.pinnedAt ? rank : (pin.orderIndex ?? rank);
+		let slot = Math.min(Math.max(wanted, nextFree), pois.length - 1);
+		while (held.has(slot) && slot < pois.length - 1) slot++;
+		while (held.has(slot) && slot > 0) slot--;
+		held.set(slot, pin);
+		nextFree = slot + 1;
+	});
 	let cursor = start;
 	for (let slot = 0; slot < pois.length; slot++) {
 		const pin = held.get(slot);
@@ -491,7 +517,10 @@ function walkClock(
 		terminal: boolean,
 		exitAt: LatLng | null = null,
 		anchorKind: 'hotel' | 'terminal' | 'service' | 'chore' | 'meal' | null = null,
-		timeLabel: string | null = null
+		timeLabel: string | null = null,
+		runsLate = false,
+		/** A pinned moment. The clock is set to it rather than arriving at it. */
+		heldAt: number | null = null
 	) => {
 		let legIn: Leg | null = null;
 		if (cursor) {
@@ -499,12 +528,17 @@ function walkClock(
 			clock += legIn.minutes * 60_000;
 			travelMin += legIn.minutes;
 		}
+		// A pinned stop happens when the traveller said it happens. Being early
+		// is waiting; being late means the day is over-full, and the warning
+		// below says so rather than the plan quietly sliding the pin.
+		const late = heldAt !== null && clock > heldAt;
+		if (heldAt !== null) clock = heldAt;
 		let arrive = new Date(clock);
 
 		// A meal reached before its slot waits for it rather than being eaten at
 		// the wrong hour -- but only if the day can absorb the wait. Otherwise
 		// the stop keeps its early time and picks up an off-hours warning below.
-		if (!anchor && isMeal(category)) {
+		if (!anchor && heldAt === null && isMeal(category)) {
 			const opens = waitUntilSlot(arrive, timezone, slots);
 			if (
 				opens &&
@@ -524,6 +558,12 @@ function walkClock(
 		if (busyness !== null) crowdSum += busyness;
 
 		const warnings: Warning[] = [];
+		if (runsLate) {
+			warnings.push({ kind: 'overflow', message: 'Runs past the end of the day' });
+		}
+		if (late) {
+			warnings.push({ kind: 'overflow', message: 'The day does not reach this in time' });
+		}
 		if (busyness !== null && busyness >= 0.8) {
 			warnings.push({ kind: 'crowded', message: 'Usually packed at this hour' });
 		}
@@ -652,6 +692,7 @@ function walkClock(
 		// a nap -- happens wherever they already are, the same as a meal the
 		// plan supplies. Its stored coordinates are a formality.
 		const where = p.category === BLOCK_CATEGORY ? (cursor ?? at(p)) : at(p);
+		const held = p.pinned && p.pinnedAt ? new Date(p.pinnedAt).getTime() : null;
 		const probe = leg(cursor ?? where, where, allowedModes, cursorTerminal, travel);
 		const finish = clock + (cursor ? probe.minutes : 0) * 60_000 + p.durationMin * 60_000;
 		// Anything whose window opens before this stop would end. Offered here so
@@ -662,11 +703,28 @@ function walkClock(
 		// measuring it from the entrance would price a cable car's whole span
 		// at zero.
 		const leaves = p.exitAt ?? where;
-		if (finish + tailCost(leaves) * 60_000 > day.end.getTime()) {
+		// A stop the traveller pinned is not the planner's to drop. They put it
+		// there; it goes in, and if the day runs long the plan says so rather
+		// than quietly deciding for them.
+		const runsLate = finish + tailCost(leaves) * 60_000 > day.end.getTime();
+		if (runsLate && !p.pinned) {
 			overflowed.push(p);
 			continue;
 		}
-		push(p.name, where, p.durationMin, false, p.id, p.category, false, p.exitAt ?? null);
+		push(
+			p.name,
+			where,
+			p.durationMin,
+			false,
+			p.id,
+			p.category,
+			false,
+			p.exitAt ?? null,
+			null,
+			null,
+			runsLate,
+			held
+		);
 	}
 
 	// Whatever the day never got round to, while there is still room for it.

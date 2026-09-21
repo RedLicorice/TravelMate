@@ -387,7 +387,8 @@
 		);
 		try {
 			await saveAssignments(rows);
-			await restore();
+			// Moved by hand is held by hand: Regenerate plans around it.
+			await restore({ hold: draggedId });
 		} catch (e) {
 			error = (e as Error).message;
 			pois = await listPois(tripId);
@@ -400,7 +401,7 @@
 	 * is the plan of record, so a drag has to be written back to it or the
 	 * move survives only until the page reloads.
 	 */
-	async function restore() {
+	async function restore(opts: { hold?: string } = {}) {
 		if (!row || !days.length) return;
 		const input = {
 			pois: pois.map(toPlanPoi),
@@ -420,6 +421,19 @@
 		// to neither place: absent from the plan because it did not fit, and
 		// absent from the wishlist because it still claims a day. That is how
 		// a restaurant added to a full evening disappeared without a word.
+		// Whatever the traveller just moved keeps the moment the plan gave it.
+		if (opts.hold) {
+			const at = next.days
+				.flatMap((d) => d.stops)
+				.find((st) => st.poiId === opts.hold)?.arrive;
+			if (at) {
+				await updatePoi(opts.hold, { pinned: true, pinned_at: at.toISOString() });
+				pois = pois.map((p) =>
+					p.id === opts.hold ? { ...p, pinned: true, pinned_at: at.toISOString() } : p
+				);
+			}
+		}
+
 		const stranded = next.unplaced
 			.filter((u) => !u.poi.pinned)
 			.filter((u) => pois.find((p) => p.id === u.poi.id)?.day_index !== null)
@@ -564,7 +578,9 @@
 			await saveAssignments(rows);
 			pois = await listPois(tripId);
 			dayIndex = target.day;
-			await restore();
+			// Put there on purpose, so it is held there -- at the time the
+			// re-timed plan gives it, not merely in that position.
+			await restore({ hold: poiId });
 		} catch (e) {
 			error = (e as Error).message;
 		} finally {

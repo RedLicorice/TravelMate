@@ -631,49 +631,90 @@ describe('pinned stops', () => {
 	});
 });
 
-describe('a pin the day cannot fit', () => {
-	it('is reported as unplaced but keeps its pin, so the caller can leave it be', () => {
-		const tight: Trip = {
-			hotelName: 'Hotel',
-			hotel: { lat: 51.5145, lng: -0.127 },
-			timezone: 'Europe/London',
-			arrivalAt: '2026-10-02T06:00:00Z',
-			departureAt: '2026-10-02T20:00:00Z',
-			arrivalPoint: null,
-			departurePoint: null,
-			arrivalLegs: [],
-			departureLegs: [],
-			prep: null,
-			arrivalBufferMin: 0,
-			departureBufferMin: 0,
-			bagDropMin: 0,
-			// Half an hour of usable day, and a stop that wants eight times that.
-			dayStart: '09:00',
-			dayEnd: '09:30'
-		};
-		const days = tripDays(tight);
-		const result = replan({
-			pois: [
-				{
-					id: 'long',
-					name: 'long',
-					lat: 51.5081,
-					lng: -0.0759,
-					category: 'attraction',
-					durationMin: 240,
-					priority: 3,
-					dayIndex: 0,
-					orderIndex: 0,
-					pinned: true
-				}
-			],
-			days,
+describe('a pin is the traveller\'s, not the planner\'s', () => {
+	const tight: Trip = {
+		hotelName: 'Hotel',
+		hotel: { lat: 51.5145, lng: -0.127 },
+		timezone: 'Europe/London',
+		arrivalAt: '2026-10-02T06:00:00Z',
+		departureAt: '2026-10-02T23:00:00Z',
+		arrivalPoint: null,
+		departurePoint: null,
+		arrivalLegs: [],
+		departureLegs: [],
+		prep: null,
+		arrivalBufferMin: 0,
+		departureBufferMin: 0,
+		bagDropMin: 0,
+		// Half an hour of day, and a stop that wants eight times that.
+		dayStart: '09:00',
+		dayEnd: '09:30'
+	};
+	const stubborn: PlanPoi = {
+		id: 'long',
+		name: 'long',
+		lat: 51.5081,
+		lng: -0.0759,
+		category: 'attraction',
+		durationMin: 240,
+		priority: 3,
+		dayIndex: 0,
+		orderIndex: 0,
+		pinned: true
+	};
+
+	const run = (poi: PlanPoi) =>
+		replan({
+			pois: [poi],
+			days: tripDays(tight),
 			allowedModes: ['walk'],
 			timezone: 'Europe/London'
 		});
-		const [out] = result.unplaced;
-		expect(out?.reason).toBe('day-full');
-		expect(out?.poi.pinned).toBe(true);
+
+	it('goes on the plan however badly it fits', () => {
+		const result = run(stubborn);
+		expect(result.days[0].stops.some((s) => s.poiId === 'long')).toBe(true);
+		expect(result.unplaced).toEqual([]);
+	});
+
+	it('says the day runs long rather than deciding for them', () => {
+		expect(
+			run(stubborn).days[0].stops.find((s) => s.poiId === 'long')!.warnings.map((w) => w.kind)
+		).toContain('overflow');
+	});
+
+	it('still drops one nobody pinned', () => {
+		expect(run({ ...stubborn, pinned: false }).unplaced.map((u) => u.reason)).toEqual([
+			'day-full'
+		]);
+	});
+
+	it('starts exactly when it was pinned for, not when the route arrives', () => {
+		const held = '2026-10-02T12:30:00.000Z';
+		const result = run({ ...stubborn, durationMin: 30, pinnedAt: held });
+		expect(result.days[0].stops.find((s) => s.poiId === 'long')!.arrive.toISOString()).toBe(held);
+	});
+
+	it('orders two pins by the moments they hold', () => {
+		const at = (id: string, iso: string): PlanPoi => ({
+			...stubborn,
+			id,
+			name: id,
+			durationMin: 30,
+			pinnedAt: iso,
+			orderIndex: 9
+		});
+		const result = replan({
+			// Deliberately given in the wrong order, with equal indices.
+			pois: [at('evening', '2026-10-02T18:00:00.000Z'), at('noon', '2026-10-02T11:00:00.000Z')],
+			days: tripDays({ ...tight, dayEnd: '22:00' }),
+			allowedModes: ['walk'],
+			timezone: 'Europe/London'
+		});
+		expect(result.days[0].stops.filter((s) => s.poiId).map((s) => s.poiId)).toEqual([
+			'noon',
+			'evening'
+		]);
 	});
 });
 
