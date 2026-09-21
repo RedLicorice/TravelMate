@@ -63,6 +63,9 @@
 		} catch (e) {
 			error = (e as Error).message;
 		}
+		// Carried from the slot sheet. Run it once the city box is known, or
+		// the search would be unbounded and answer with another country.
+		if (query.trim()) onInput();
 	});
 
 	// Bounded by the city's own box, not a guess drawn around the hotel: a wrong

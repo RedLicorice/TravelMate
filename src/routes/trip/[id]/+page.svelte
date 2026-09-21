@@ -92,6 +92,13 @@
 	 */
 	type Allowance = 'prep' | 'bags' | 'out' | 'checkin';
 	let carded = $state<PoiRow | null>(null);
+
+	// A sheet opened for one slot should not still be filtered by what was
+	// typed into the last one.
+	$effect(() => {
+		void slot;
+		slotQuery = '';
+	});
 	let allowanced = $state<{ kind: Allowance; name: string; minutes: number } | null>(null);
 
 	const ALLOWANCE_HINT: Record<Allowance, string> = {
@@ -611,6 +618,8 @@
 	 * searching for it again is the wrong first offer.
 	 */
 	let slot = $state<{ day: number; before: string | null; meal?: string } | null>(null);
+	/** Narrows the wishlist inside the slot sheet. */
+	let slotQuery = $state('');
 
 	/** Which day a place currently sits on, for the ones that sit on one. */
 	const dayOfPoi = $derived(
@@ -632,7 +641,15 @@
 	const unassigned = $derived.by(() => {
 		const waiting = (p: PoiRow) => (dayOfPoi.has(p.id) ? 1 : 0);
 		const food = (p: PoiRow) => (slot?.meal && isMeal(p.category) ? 0 : 1);
-		return [...pois].sort((a, b) => waiting(a) - waiting(b) || food(a) - food(b));
+		const q = slotQuery.trim().toLowerCase();
+		return [...pois]
+			.filter(
+				(p) =>
+					!q ||
+					p.name.toLowerCase().includes(q) ||
+					(p.category ?? '').toLowerCase().includes(q)
+			)
+			.sort((a, b) => waiting(a) - waiting(b) || food(a) - food(b));
 	});
 
 	let blockName = $state('');
@@ -1514,6 +1531,34 @@
 						: `Add to ${dayLabel(days[target.day].date, row.timezone)}`}
 				</p>
 
+				<div class="tm-search mb-2">
+					<svg
+						width="15"
+						height="15"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2.2"
+						stroke-linecap="round"
+					>
+						<circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" />
+					</svg>
+					<input
+						bind:value={slotQuery}
+						placeholder="Find it on your wishlist"
+						aria-label="Filter your wishlist"
+					/>
+					{#if slotQuery}
+						<button
+							onclick={() => (slotQuery = '')}
+							aria-label="Clear"
+							style="background:none;border:none;cursor:pointer;color:var(--tm-text-faint);font-size:18px;line-height:1;padding:0 2px"
+						>
+							&times;
+						</button>
+					{/if}
+				</div>
+
 				{#if unassigned.length}
 					<p class="tm-hint mb-2">
 						{target.meal ? 'From your wishlist, places to eat first' : 'From your wishlist'}
@@ -1541,7 +1586,11 @@
 						{/each}
 					</div>
 				{:else}
-					<p class="tm-hint mb-2">Nothing waiting on your wishlist.</p>
+					<p class="tm-hint mb-2">
+						{slotQuery.trim()
+							? `Nothing on your wishlist matches “${slotQuery.trim()}”.`
+							: 'Nothing on your wishlist yet.'}
+					</p>
 				{/if}
 
 				<p class="tm-hint mt-4 mb-2">Or a stretch of time</p>
@@ -1582,9 +1631,10 @@
 				<a
 					class="tm-btn tm-btn--primary tm-btn--block mt-4"
 					style="text-decoration:none"
-					href={slotHref(target.day, target.before)}
+					href={slotHref(target.day, target.before) +
+						(slotQuery.trim() ? `&q=${encodeURIComponent(slotQuery.trim())}` : '')}
 				>
-					Find a new place
+					{slotQuery.trim() ? `Search for “${slotQuery.trim()}”` : 'Find a new place'}
 				</a>
 			</div>
 		{/if}
