@@ -1,8 +1,9 @@
 <script lang="ts">
 	import type { Day } from '$lib/trip/days';
-	import type { PlannedDay } from '$lib/plan/planner';
+	import type { PlannedDay, PlannedStop } from '$lib/plan/planner';
 	import { toHours, type MealWindows } from '$lib/plan/meals';
 	import type { createDrag } from '$lib/dnd.svelte';
+	import { stack } from '$lib/board';
 
 	type Props = {
 		days: Day[];
@@ -30,6 +31,84 @@
 		onpin,
 		onadd
 	}: Props = $props();
+
+	type Card = {
+		key: string;
+		top: number;
+		height: number;
+		accent: string;
+		fill: string;
+		ink: string;
+		title: string;
+		sub: string | null;
+		icon: string | null;
+		stop: PlannedStop | null;
+	};
+
+	/**
+	 * A day as cards, in time order and pushed apart so none overlaps.
+	 *
+	 * Built up front rather than positioned inline, because "does this block
+	 * run into the next one" is a question about the whole day and cannot be
+	 * answered one block at a time.
+	 */
+	function cardsFor(day: PlannedDay, dayIndex: number): Card[] {
+		const out: Card[] = [];
+
+		day.stops.forEach((stop, j) => {
+			const startMin = minutesOf(stop.arrive);
+
+			// Travel is a card like any other. It takes time, and a board that
+			// drew it as a gap said the day was emptier than it is.
+			if (stop.legIn && j > 0) {
+				const leaveMin = minutesOf(day.stops[j - 1].depart);
+				out.push({
+					key: `leg:${j}`,
+					top: top(leaveMin),
+					height: Math.max(MIN_BLOCK_PX, (startMin - leaveMin) * PX_PER_MIN),
+					accent: 'var(--tm-border-strong)',
+					fill: 'var(--tm-surface-2)',
+					ink: 'var(--tm-text-muted)',
+					title: MODE_LABEL[stop.legIn.mode] ?? 'Travel',
+					sub: `${stop.legIn.minutes} min`,
+					icon: MODE_ICON[stop.legIn.mode] ?? MODE_ICON.walk,
+					stop: null
+				});
+			}
+
+			const height = Math.max(MIN_BLOCK_PX, stop.durationMin * PX_PER_MIN);
+			if (stop.anchor) {
+				const tone = stop.anchorKind === 'terminal' ? 'peach' : 'butter';
+				out.push({
+					key: `stop:${j}`,
+					top: top(startMin),
+					height,
+					accent: `var(--tm-${tone})`,
+					fill: `var(--tm-${tone}-soft)`,
+					ink: `var(--tm-${tone}-ink)`,
+					title: stop.name,
+					sub: stop.durationMin ? `${stop.durationMin} min` : null,
+					icon: null,
+					stop: null
+				});
+			} else {
+				out.push({
+					key: `stop:${j}`,
+					top: top(startMin),
+					height,
+					accent: stop.poiId && pinned.has(stop.poiId) ? 'var(--tm-butter)' : dayColor(dayIndex),
+					fill: 'var(--tm-surface)',
+					ink: 'var(--tm-text-faint)',
+					title: stop.name,
+					sub: `${stop.durationMin} min${stop.exitAt ? ' · ends elsewhere' : ''}`,
+					icon: null,
+					stop
+				});
+			}
+		});
+
+		return stack(out);
+	}
 
 	/**
 	 * Which stop a tap at this height should land above. The first real stop
@@ -65,6 +144,14 @@
 		carshare: 'M3 13l2-5h14l2 5v4h-3M3 17v-4M6 17h9'
 	};
 
+	const MODE_LABEL: Record<string, string> = {
+		walk: 'Walk',
+		bike: 'Cycle',
+		transit: 'Transit',
+		car: 'Drive',
+		carshare: 'Drive'
+	};
+
 	const PX_PER_MIN = 1.1; // 66px an hour: an hour is a comfortable thumb target
 	const MIN_BLOCK_PX = 26;
 
@@ -78,7 +165,19 @@
 		return { from, to: Math.max(to, from + 180) };
 	});
 
-	const height = $derived((range.to - range.from) * PX_PER_MIN);
+	const clockHeight = $derived((range.to - range.from) * PX_PER_MIN);
+
+	/**
+	 * Tall enough for the clock, and for any day whose cards were pushed past
+	 * the end of it by stacking. Every column is the same height so the hour
+	 * lines stay level across the board.
+	 */
+	const height = $derived(
+		planned.reduce((tallest, day, i) => {
+			const last = cardsFor(day, i).at(-1);
+			return last ? Math.max(tallest, last.top + last.height + 8) : tallest;
+		}, clockHeight)
+	);
 	const top = (minutes: number) => (minutes - range.from) * PX_PER_MIN;
 
 	const hours = $derived(
@@ -100,6 +199,77 @@
 		}))
 	);
 </script>
+
+
+<!--
+  One card shape for everything on the board. A stop, the hotel, a terminal and
+  a leg of travel are all the same object to a traveller reading a day: a block
+  of time with a name on it. They differ by colour, not by shape.
+-->
+{#snippet card(o: Card)}
+	{@const held = o.stop?.poiId ? pinned.has(o.stop.poiId) : false}
+	<div
+		class="tm-board-card"
+		data-drop-stop={o.stop?.poiId ?? undefined}
+		title={o.sub ? `${o.title} · ${o.sub}` : o.title}
+		style="top:{o.top}px;height:{o.height}px;background:{o.fill};
+		border-left-color:{o.accent};
+		{o.stop && drag.state.id === o.stop.poiId ? 'opacity:0.35;' : ''}
+		{o.stop && drag.state.target?.kind === 'stop' && drag.state.target.id === o.stop.poiId
+			? 'outline:2px solid var(--tm-primary);outline-offset:-1px;'
+			: ''}"
+	>
+		<div style="display:flex;align-items:flex-start;gap:4px">
+			{#if o.stop?.poiId}
+				<span
+					{@attach (node) => drag.handle(node as HTMLElement, o.stop!.poiId!)}
+					aria-hidden="true"
+					style="cursor:grab;touch-action:none;color:var(--tm-text-faint);
+					font-size:11px;line-height:1.2;user-select:none;flex:none"
+				>⠿</span>
+			{:else if o.icon}
+				<svg
+					width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+					stroke-width="2.4" stroke-linecap="round" aria-hidden="true"
+					style="flex:none;margin-top:1px;color:{o.ink}"
+				>
+					<path d={o.icon} />
+				</svg>
+			{/if}
+
+			{#if o.stop?.poiId}
+				<button class="tm-board-title" onclick={() => onpick?.(o.stop!.poiId!)}>{o.title}</button>
+			{:else}
+				<span class="tm-board-title" style="color:{o.ink}">{o.title}</span>
+			{/if}
+
+			{#if onpin && o.stop?.poiId}
+				<button
+					class="tm-board-pin"
+					class:tm-board-pin--on={held}
+					aria-pressed={held}
+					aria-label={held ? `Unpin ${o.title}` : `Pin ${o.title}`}
+					title={held ? 'Replan may not move this' : 'Hold this where it is'}
+					onclick={() => onpin?.(o.stop!.poiId!)}
+				>
+					<svg width="10" height="10" viewBox="0 0 24 24" fill={held ? 'currentColor' : 'none'}
+						stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+						<path d="M12 17v5M9 3h6l-1 6 3 3v2H7v-2l3-3z" />
+					</svg>
+				</button>
+			{/if}
+		</div>
+
+		{#if o.sub && o.height > 38}
+			<p class="tm-board-sub" style="color:{o.ink}">{o.sub}</p>
+		{/if}
+		{#if o.stop?.warnings.length && o.height > 54}
+			<p class="tm-board-sub" style="color:var(--tm-warn-ink);font-weight:600">
+				{o.stop.warnings[0].message}
+			</p>
+		{/if}
+	</div>
+{/snippet}
 
 <div class="flex h-full flex-col">
 	<div class="flex-1 overflow-auto" style="-webkit-overflow-scrolling: touch">
@@ -175,99 +345,8 @@
 							></button>
 						{/if}
 
-						{#each day.stops as stop, j (stop.name + j)}
-							{@const startMin = minutesOf(stop.arrive)}
-							{#if stop.legIn && j > 0}
-								{@const leaveMin = minutesOf(day.stops[j - 1].depart)}
-								{@const travelHeight = Math.max(14, (startMin - leaveMin) * PX_PER_MIN)}
-								<!-- Travel occupies the board, it is not a gap between cards.
-								     An empty space reads as free time; it is not. -->
-								<div
-									title="{stop.legIn.minutes} min by {stop.legIn.mode}"
-									style="position:absolute;left:10px;right:10px;top:{top(leaveMin)}px;
-									height:{travelHeight}px;border-radius:6px;
-									background:var(--tm-surface-2);
-									border:1px solid var(--tm-border);
-									display:flex;align-items:center;justify-content:center;gap:4px;
-									overflow:hidden;color:var(--tm-text-faint)"
-								>
-									<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-										stroke-width="2.4" stroke-linecap="round">
-										<path d={MODE_ICON[stop.legIn.mode] ?? MODE_ICON.walk} />
-									</svg>
-									{#if travelHeight > 24}
-										<span style="font:600 9px/1 var(--tm-font)">{stop.legIn.minutes}m</span>
-									{/if}
-								</div>
-							{/if}
-							{@const blockHeight = Math.max(MIN_BLOCK_PX, stop.durationMin * PX_PER_MIN)}
-							{#if stop.anchor}
-								<div
-									style="position:absolute;left:4px;right:4px;top:{top(startMin)}px;
-									height:{Math.max(18, blockHeight)}px;border-radius:6px;
-									background:var(--tm-butter-soft);
-									display:flex;align-items:center;padding:0 6px;
-									font:500 10px/1.1 var(--tm-font);color:var(--tm-butter-ink);overflow:hidden"
-								>
-									{stop.name}
-								</div>
-							{:else}
-								<div
-									data-drop-stop={stop.poiId}
-									style="position:absolute;left:4px;right:4px;top:{top(startMin)}px;
-									height:{blockHeight}px;border-radius:8px;overflow:hidden;
-									background:var(--tm-surface);
-									border-left:3px solid {stop.poiId && pinned.has(stop.poiId) ? 'var(--tm-butter)' : dayColor(i)};
-									border-top:1px solid var(--tm-border);border-right:1px solid var(--tm-border);
-									border-bottom:1px solid var(--tm-border);padding:4px 6px;
-									{drag.state.id === stop.poiId ? 'opacity:0.35;' : ''}
-									{drag.state.target?.kind === 'stop' && drag.state.target.id === stop.poiId
-										? 'outline:2px solid var(--tm-primary);outline-offset:-1px;'
-										: ''}"
-								>
-									<div style="display:flex;align-items:flex-start;gap:4px">
-										<span
-											{@attach (node) => drag.handle(node as HTMLElement, stop.poiId!)}
-											aria-hidden="true"
-											style="cursor:grab;touch-action:none;color:var(--tm-text-faint);
-											font-size:11px;line-height:1.2;user-select:none;flex:none"
-										>⠿</span>
-										<button
-											onclick={() => stop.poiId && onpick?.(stop.poiId)}
-											style="background:none;border:none;padding:0;text-align:left;cursor:pointer;
-											color:inherit;font:600 11px/1.2 var(--tm-font);overflow:hidden;flex:1"
-										>
-											{stop.name}
-										</button>
-										{#if onpin && stop.poiId}
-											{@const held = pinned.has(stop.poiId)}
-											<button
-												class="tm-board-pin"
-												class:tm-board-pin--on={held}
-												aria-pressed={held}
-												aria-label={held ? 'Unpin {stop.name}' : 'Pin {stop.name}'}
-												title={held ? 'Replan may not move this' : 'Hold this where it is'}
-												onclick={() => onpin?.(stop.poiId!)}
-											>
-												<svg width="10" height="10" viewBox="0 0 24 24" fill={held ? 'currentColor' : 'none'}
-													stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
-													<path d="M12 17v5M9 3h6l-1 6 3 3v2H7v-2l3-3z" />
-												</svg>
-											</button>
-										{/if}
-									</div>
-									{#if blockHeight > 38}
-										<p style="font:400 9.5px/1.2 var(--tm-font);color:var(--tm-text-faint);margin-top:2px">
-											{stop.durationMin} min{stop.exitAt ? ' · ends elsewhere' : ''}
-										</p>
-									{/if}
-									{#if stop.warnings.length && blockHeight > 54}
-										<p style="font:600 9px/1.2 var(--tm-font);color:var(--tm-warn-ink);margin-top:3px">
-											{stop.warnings[0].message}
-										</p>
-									{/if}
-								</div>
-							{/if}
+						{#each cardsFor(day, i) as block (block.key)}
+							{@render card(block)}
 						{/each}
 					</div>
 				</div>
@@ -286,7 +365,17 @@
 			background:var(--tm-surface-2);
 			border:1px solid var(--tm-border);vertical-align:-1px"
 		></span>
-		travelling · hold ⠿ to move a stop between days · tap empty time to add
+		travelling ·
+		<span
+			style="display:inline-block;width:10px;height:10px;border-radius:2px;
+			background:var(--tm-butter-soft);border-left:3px solid var(--tm-butter);vertical-align:-1px"
+		></span>
+		hotel ·
+		<span
+			style="display:inline-block;width:10px;height:10px;border-radius:2px;
+			background:var(--tm-peach-soft);border-left:3px solid var(--tm-peach);vertical-align:-1px"
+		></span>
+		terminal · hold ⠿ to move a stop between days · tap empty time to add
 	</p>
 </div>
 
@@ -301,6 +390,40 @@
 		border: none;
 		padding: 0;
 		cursor: copy;
+	}
+
+	/* Every block on the board: a stop, the hotel, a terminal, a leg of travel.
+	   Only the accent and the fill change. */
+	.tm-board-card {
+		position: absolute;
+		left: 4px;
+		right: 4px;
+		border-radius: 8px;
+		overflow: hidden;
+		padding: 4px 6px;
+		border: 1px solid var(--tm-border);
+		border-left: 3px solid var(--tm-border-strong);
+	}
+
+	.tm-board-title {
+		flex: 1;
+		min-width: 0;
+		overflow: hidden;
+		text-align: left;
+		font: 600 11px/1.2 var(--tm-font);
+		color: inherit;
+		background: none;
+		border: none;
+		padding: 0;
+	}
+
+	button.tm-board-title {
+		cursor: pointer;
+	}
+
+	.tm-board-sub {
+		font: 400 9.5px/1.2 var(--tm-font);
+		margin-top: 2px;
 	}
 
 	.tm-board-pin {

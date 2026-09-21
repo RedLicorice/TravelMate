@@ -7,6 +7,7 @@ const row = (p: Partial<PlanStopRow> & { day_index: number; order_index: number 
 	lat: 51.5,
 	lng: -0.12,
 	anchor: false,
+	anchor_kind: null,
 	starts_at: '2026-10-03T09:00:00.000Z',
 	ends_at: '2026-10-03T10:00:00.000Z',
 	duration_min: 60,

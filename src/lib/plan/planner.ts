@@ -65,6 +65,8 @@ export type PlannedStop = {
 	durationMin: number;
 	legIn: Leg | null;
 	anchor: boolean;
+	/** For an anchor, which kind. Null for a real stop. */
+	anchorKind?: 'hotel' | 'terminal' | null;
 	busyness: number | null;
 	warnings: Warning[];
 	/** Where the next leg departs from, when that is not `at`. */
@@ -417,7 +419,8 @@ function walkClock(
 		poiId: string | null,
 		category: string | null,
 		terminal: boolean,
-		exitAt: LatLng | null = null
+		exitAt: LatLng | null = null,
+		anchorKind: 'hotel' | 'terminal' | null = null
 	) => {
 		let legIn: Leg | null = null;
 		if (cursor) {
@@ -466,6 +469,7 @@ function walkClock(
 			durationMin,
 			legIn,
 			anchor,
+			anchorKind,
 			busyness,
 			warnings,
 			exitAt
@@ -476,7 +480,7 @@ function walkClock(
 	};
 
 	for (const w of day.fixedStart) {
-		push(w.name, w.at, w.dwellMin, true, null, null, w.kind === 'terminal');
+		push(w.name, w.at, w.dwellMin, true, null, null, w.kind === 'terminal', null, w.kind);
 	}
 
 	const tailMin = day.fixedEnd.reduce((s, w) => s + w.dwellMin, 0);
@@ -502,7 +506,7 @@ function walkClock(
 	}
 
 	for (const w of day.fixedEnd) {
-		push(w.name, w.at, w.dwellMin, true, null, null, w.kind === 'terminal');
+		push(w.name, w.at, w.dwellMin, true, null, null, w.kind === 'terminal', null, w.kind);
 	}
 
 	return { stops, overflowed, travelMin, crowdSum, mealMissHours, waitedMin };
