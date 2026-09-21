@@ -7,10 +7,14 @@
 		cityBBox,
 		deleteTrip,
 		getTrip,
+		noTerminals,
+		terminalsOf,
 		updateCityBBox,
 		updateTrip,
+		type Terminals,
 		type TripRow
 	} from '$lib/trip/repo';
+	import TerminalFields from '$lib/TerminalFields.svelte';
 	import { fromLocalInput, toLocalInput } from '$lib/trip/days';
 	import { poi as provider, type City } from '$lib/poi';
 	import Autocomplete from '$lib/Autocomplete.svelte';
@@ -35,6 +39,7 @@
 	let dayStart = $state('09:00');
 	let dayEnd = $state('19:00');
 	let bbox = $state<ReturnType<typeof cityBBox>>(null);
+	let terminals = $state<Terminals>(noTerminals());
 
 	onMount(async () => {
 		try {
@@ -51,6 +56,7 @@
 			dayStart = row.day_start.slice(0, 5);
 			dayEnd = row.day_end.slice(0, 5);
 			bbox = cityBBox(row);
+			terminals = terminalsOf(row);
 		} catch (e) {
 			error = (e as Error).message;
 		} finally {
@@ -91,7 +97,8 @@
 				departureAt: fromLocalInput(departure, timezone),
 				allowedModes: modes,
 				dayStart,
-				dayEnd
+				dayEnd,
+				terminals
 			});
 			if (bbox) await updateCityBBox(tripId, bbox);
 			await goto(`${base}/trip/${tripId}`, { replaceState: true });
@@ -182,6 +189,10 @@
 					{m}
 				</button>
 			{/each}
+		</div>
+
+		<div class="mb-5" style="border-top: 1px solid var(--tm-border); padding-top: 1rem">
+			<TerminalFields bind:terminals {city} />
 		</div>
 
 		<div class="mb-5 flex gap-3">

@@ -1,5 +1,6 @@
 import { photon } from './photon';
-export type { BBox, City, Place, Poi, PoiProvider } from './types';
+export type { BBox, City, Place, Poi, PoiProvider, Terminal } from './types';
+export { ADVANCE_DEFAULT, terminalKind, type TerminalKind } from './photon';
 
 /**
  * The active provider. Photon answers partial words as the traveller types,

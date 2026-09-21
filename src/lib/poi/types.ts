@@ -22,6 +22,9 @@ export type Poi = Place & {
 	osmId: string | null;
 };
 
+/** An airport, station, coach station or ferry terminal. */
+export type Terminal = Place & { kind: 'airport' | 'train' | 'bus' | 'ferry' | 'other' };
+
 export type City = Place & {
 	countryCode: string | null;
 	/** Used to bound a later hotel search to this city. */
@@ -37,4 +40,6 @@ export interface PoiProvider {
 	searchCities(query: string, signal?: AbortSignal): Promise<City[]>;
 	searchHotels(query: string, city: City, signal?: AbortSignal): Promise<Place[]>;
 	searchPlaces(query: string, city: City, signal?: AbortSignal): Promise<Poi[]>;
+	/** Bounded loosely: an airport often sits outside the city's own box. */
+	searchTerminals(query: string, city: City | null, signal?: AbortSignal): Promise<Terminal[]>;
 }

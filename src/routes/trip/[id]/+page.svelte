@@ -18,6 +18,7 @@
 	import { replan, schedule, REASON_TEXT, type PlanResult, type UnplacedReason } from '$lib/plan/planner';
 	import { isMeal, tightest, type MealWindows } from '$lib/plan/meals';
 	import { resolveCurves, type CrowdCurves } from '$lib/plan/crowd';
+	import { routeShape } from '$lib/plan/route';
 	import { avatarDataUri } from '$lib/avatar';
 	import { displayName, loadTripProfiles, type Profile } from '$lib/profile.svelte';
 	import type { Mode } from '$lib/plan/modes';
@@ -317,12 +318,40 @@
 			: [])
 	]);
 
+	/**
+	 * Real routed geometry, fetched per visible day. Straight lines are drawn
+	 * until it arrives, and stay if it never does: a day that cannot be routed
+	 * should still show where its stops are.
+	 */
+	let shapes = $state<Record<string, { lat: number; lng: number }[]>>({});
+
+	$effect(() => {
+		const wanted = shownDays;
+		if (view !== 'map' || !row) return;
+		for (const day of wanted) {
+			const points = day.stops.map((st) => st.at);
+			if (points.length < 2) continue;
+			// Keyed by the stops themselves, so dragging re-routes and merely
+			// toggling a day back on reuses what was already fetched.
+			const key = `${day.index}:${points.map((q) => `${q.lat.toFixed(4)},${q.lng.toFixed(4)}`).join('|')}`;
+			if (shapes[key]) continue;
+			const mode = (day.stops.find((st) => st.legIn)?.legIn?.mode ?? 'walk') as Mode;
+			routeShape(points, mode).then((shape) => {
+				if (shape) shapes = { ...shapes, [key]: shape };
+			});
+		}
+	});
+
 	const routes = $derived(
-		shownDays.map((day) => ({
-			id: String(day.index),
-			points: day.stops.map((s) => s.at),
-			color: dayColor(day.index)
-		}))
+		shownDays.map((day) => {
+			const points = day.stops.map((st) => st.at);
+			const key = `${day.index}:${points.map((q) => `${q.lat.toFixed(4)},${q.lng.toFixed(4)}`).join('|')}`;
+			return {
+				id: String(day.index),
+				points: shapes[key] ?? points,
+				color: dayColor(day.index)
+			};
+		})
 	);
 </script>
 

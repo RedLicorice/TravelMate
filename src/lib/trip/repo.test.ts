@@ -19,6 +19,8 @@ const row: TripRow = {
 	departure_point_name: null,
 	departure_point_lat: null,
 	departure_point_lng: null,
+	arrival_kind: 'airport',
+	departure_kind: null,
 	arrival_buffer_min: 45,
 	departure_buffer_min: 120,
 	bag_drop_min: 30,

@@ -20,6 +20,8 @@ export type TripRow = {
 	departure_point_name: string | null;
 	departure_point_lat: number | null;
 	departure_point_lng: number | null;
+	arrival_kind: string | null;
+	departure_kind: string | null;
 	arrival_buffer_min: number;
 	departure_buffer_min: number;
 	bag_drop_min: number;
@@ -44,7 +46,64 @@ export type NewTrip = {
 	arrivalAt: string;
 	departureAt: string;
 	cityBBox: BBox | null;
+	terminals: Terminals;
 };
+
+/**
+ * Where the trip begins and ends, and how early to be there.
+ *
+ * Null points are the off switch. There is deliberately no separate "use
+ * terminals" flag: a flag can disagree with the data, and then the traveller
+ * sees an airport on the screen that the planner is ignoring.
+ */
+export type Terminals = {
+	arrivalName: string | null;
+	arrivalLat: number | null;
+	arrivalLng: number | null;
+	arrivalKind: string | null;
+	arrivalBufferMin: number;
+	departureName: string | null;
+	departureLat: number | null;
+	departureLng: number | null;
+	departureKind: string | null;
+	departureBufferMin: number;
+	bagDropMin: number;
+};
+
+const terminalColumns = (t: Terminals) => ({
+	arrival_point_name: t.arrivalName,
+	arrival_point_lat: t.arrivalLat,
+	arrival_point_lng: t.arrivalLng,
+	arrival_kind: t.arrivalKind,
+	arrival_buffer_min: t.arrivalBufferMin,
+	departure_point_name: t.departureName,
+	departure_point_lat: t.departureLat,
+	departure_point_lng: t.departureLng,
+	departure_kind: t.departureKind,
+	departure_buffer_min: t.departureBufferMin,
+	bag_drop_min: t.bagDropMin
+});
+
+/** A trip with no terminals: the planner then shapes every day the same way. */
+export const noTerminals = (): Terminals => ({
+	arrivalName: null, arrivalLat: null, arrivalLng: null, arrivalKind: null, arrivalBufferMin: 45,
+	departureName: null, departureLat: null, departureLng: null, departureKind: null,
+	departureBufferMin: 120, bagDropMin: 30
+});
+
+export const terminalsOf = (row: TripRow): Terminals => ({
+	arrivalName: row.arrival_point_name,
+	arrivalLat: row.arrival_point_lat,
+	arrivalLng: row.arrival_point_lng,
+	arrivalKind: row.arrival_kind,
+	arrivalBufferMin: row.arrival_buffer_min,
+	departureName: row.departure_point_name,
+	departureLat: row.departure_point_lat,
+	departureLng: row.departure_point_lng,
+	departureKind: row.departure_kind,
+	departureBufferMin: row.departure_buffer_min,
+	bagDropMin: row.bag_drop_min
+});
 
 function place(name: string | null, lat: number | null, lng: number | null): Place | null {
 	// The column constraint forbids a half-set pair, so either all three are
@@ -110,7 +169,8 @@ export async function createTrip(input: NewTrip): Promise<string> {
 			city_south: input.cityBBox?.south ?? null,
 			city_north: input.cityBBox?.north ?? null,
 			city_west: input.cityBBox?.west ?? null,
-			city_east: input.cityBBox?.east ?? null
+			city_east: input.cityBBox?.east ?? null,
+			...terminalColumns(input.terminals)
 		})
 		.select('id')
 		.single();
@@ -165,6 +225,7 @@ export type TripEdit = {
 	allowedModes: string[];
 	dayStart: string;
 	dayEnd: string;
+	terminals: Terminals;
 };
 
 export async function updateTrip(id: string, edit: TripEdit): Promise<void> {
@@ -181,7 +242,8 @@ export async function updateTrip(id: string, edit: TripEdit): Promise<void> {
 			departure_at: edit.departureAt,
 			allowed_modes: edit.allowedModes,
 			day_start: edit.dayStart,
-			day_end: edit.dayEnd
+			day_end: edit.dayEnd,
+			...terminalColumns(edit.terminals)
 		})
 		.eq('id', id);
 	if (error) throw new Error(error.message);

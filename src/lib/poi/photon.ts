@@ -139,6 +139,36 @@ export function safePhone(raw: string | undefined | null): string | null {
 	return /^[+０-９0-9][0-9\s\-().]{3,30}$/.test(trimmed) ? trimmed : null;
 }
 
+/** Where a journey starts and ends, and how early to be there. */
+export type TerminalKind = 'airport' | 'train' | 'bus' | 'ferry' | 'other';
+
+/** Minutes to be there before departure. Airports ask far more of you. */
+export const ADVANCE_DEFAULT: Record<TerminalKind, number> = {
+	airport: 120,
+	train: 60,
+	bus: 60,
+	ferry: 90,
+	other: 60
+};
+
+/** OSM's own words for these places, mapped to ours. */
+export function terminalKind(osmValue: string | null | undefined): TerminalKind {
+	switch (osmValue) {
+		case 'aerodrome':
+		case 'airport':
+			return 'airport';
+		case 'station':
+		case 'halt':
+			return 'train';
+		case 'bus_station':
+			return 'bus';
+		case 'ferry_terminal':
+			return 'ferry';
+		default:
+			return 'other';
+	}
+}
+
 /** Anything a traveller would never choose to "visit". */
 const NOT_A_STOP = new Set(['house', 'residential', 'street', 'postcode', 'yes', 'commercial']);
 
@@ -179,6 +209,20 @@ export const photon: PoiProvider = {
 			? rows
 			: (await get({ q: query, limit: '8', ...(city.bbox ? { bbox: asParam(city.bbox) } : {}) }, signal));
 		return features.map(toPlace);
+	},
+
+	async searchTerminals(query, city, signal) {
+		// Repeated osm_tag params are OR'd by Photon, so one request covers
+		// airports, rail, coach and ferry rather than four round trips.
+		const tags = 'osm_tag=aeroway:aerodrome&osm_tag=railway:station&osm_tag=amenity:bus_station&osm_tag=amenity:ferry_terminal';
+		const bounds = city?.bbox ? `&bbox=${asParam(city.bbox)}` : '';
+		const url = `${ENDPOINT}?${new URLSearchParams({ lang: 'en', q: query, limit: '8' })}&${tags}${bounds}`;
+		const res = await fetch(url, { signal, headers: { Accept: 'application/json' } });
+		if (!res.ok) throw new Error(`Terminal search failed (${res.status})`);
+		const body = await res.json();
+		return ((body.features ?? []) as PhotonFeature[])
+			.filter((f) => f.properties.name)
+			.map((f) => ({ ...toPlace(f), kind: terminalKind(f.properties.osm_value) }));
 	},
 
 	async searchPlaces(query, city, signal) {

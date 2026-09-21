@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { base } from '$app/paths';
-	import { createTrip } from '$lib/trip/repo';
+	import { createTrip, noTerminals, type Terminals } from '$lib/trip/repo';
+	import TerminalFields from '$lib/TerminalFields.svelte';
 	import { fromLocalInput } from '$lib/trip/days';
 	import Autocomplete from '$lib/Autocomplete.svelte';
 	import { poi } from '$lib/poi';
@@ -18,6 +19,7 @@
 	// The browser's zone is the best guess available without geocoding. Shown,
 	// not hidden, so someone planning from home can correct it.
 	let timezone = $state(Intl.DateTimeFormat().resolvedOptions().timeZone);
+	let terminals = $state<Terminals>(noTerminals());
 
 	const titles = ['Where are you going?', 'When?', 'Check and save'];
 
@@ -45,7 +47,8 @@
 				// would otherwise store the arrival eight hours out.
 				arrivalAt: fromLocalInput(arrivalAt, timezone),
 				departureAt: fromLocalInput(departureAt, timezone),
-				cityBBox: city!.bbox
+				cityBBox: city!.bbox,
+				terminals
 			});
 			// replaceState so the finished wizard is not left in history: a
 			// swipe-back from the new trip would otherwise reopen step 3.
@@ -104,9 +107,13 @@
 			<input class="tm-input" id="tz" bind:value={timezone} />
 			<span class="tm-hint">Times are local to the city you're visiting.</span>
 		</div>
+
+		<div class="mt-6" style="border-top: 1px solid var(--tm-border); padding-top: 1rem">
+			<TerminalFields bind:terminals {city} />
+		</div>
 	{:else}
 		<dl class="flex flex-col gap-3">
-			{#each [['City', city?.name ?? ''], ['Hotel', hotel?.name ?? ''], ['Arrival', arrivalAt], ['Departure', departureAt], ['Timezone', timezone]] as [label, value]}
+			{#each [['City', city?.name ?? ''], ['Hotel', hotel?.name ?? ''], ['Arrival', arrivalAt], ['Departure', departureAt], ['Timezone', timezone], ['Arriving at', terminals.arrivalName ?? 'no terminal'], ['Leaving from', terminals.departureName ?? 'no terminal']] as [label, value]}
 				<div>
 					<dt style="font: 400 var(--tm-text-sm)/1 var(--tm-font); color: var(--tm-text-faint)">
 						{label}
