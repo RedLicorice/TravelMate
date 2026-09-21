@@ -37,6 +37,8 @@ const row: TripRow = {
 	city_east: 12.6,
 	day_start: '09:00:00',
 	day_end: '19:00:00',
+	image_url: null,
+	country_code: null,
 	share_token: null,
 	plan_generated_at: null,
 	created_at: '2026-03-01T00:00:00Z'

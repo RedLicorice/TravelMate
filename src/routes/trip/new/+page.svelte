@@ -48,6 +48,7 @@
 				arrivalAt: fromLocalInput(arrivalAt, timezone),
 				departureAt: fromLocalInput(departureAt, timezone),
 				cityBBox: city!.bbox,
+				countryCode: city!.countryCode,
 				terminals
 			});
 			// replaceState so the finished wizard is not left in history: a

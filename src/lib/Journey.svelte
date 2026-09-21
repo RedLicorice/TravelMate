@@ -98,8 +98,8 @@
 			/>
 		</div>
 
-		<div class="flex gap-3 mt-3">
-			<div class="tm-field" style="flex:2">
+		<div class="mt-3 flex flex-col gap-3">
+			<div class="tm-field">
 				<label class="tm-label" for="{direction}-svc-{i}">{serviceLabel(leg)}</label>
 				<input
 					class="tm-input"
@@ -109,7 +109,7 @@
 					oninput={(e) => patch(i, { service: field(e) })}
 				/>
 			</div>
-			<div class="tm-field" style="flex:1">
+			<div class="tm-field">
 				<label class="tm-label" for="{direction}-ref-{i}">Booking</label>
 				<input
 					class="tm-input"
@@ -121,8 +121,8 @@
 			</div>
 		</div>
 
-		<div class="flex gap-3 mt-3">
-			<div class="tm-field" style="flex:1">
+		<div class="mt-3 flex flex-col gap-3">
+			<div class="tm-field">
 				<label class="tm-label" for="{direction}-dep-{i}">Departs</label>
 				<input
 					class="tm-input"
@@ -132,7 +132,7 @@
 					oninput={(e) => patch(i, { departLocal: field(e) })}
 				/>
 			</div>
-			<div class="tm-field" style="flex:1">
+			<div class="tm-field">
 				<label class="tm-label" for="{direction}-arr-{i}">Arrives</label>
 				<input
 					class="tm-input"

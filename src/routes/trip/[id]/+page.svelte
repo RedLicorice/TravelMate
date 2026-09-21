@@ -9,7 +9,9 @@
 		hotelMissing,
 		setShareToken,
 		toTrip,
+		setTripImage,
 		updateCityBBox,
+		updateCountryCode,
 		updateHotel,
 		type TripRow
 	} from '$lib/trip/repo';
@@ -41,6 +43,8 @@
 	import { dayTruncated, dayUrl, routePoints } from '$lib/maps';
 	import { createDrag, reorder } from '$lib/dnd.svelte';
 	import PlanBoard from '$lib/PlanBoard.svelte';
+	import TripAvatar from '$lib/TripAvatar.svelte';
+	import { supabase } from '$lib/supabase';
 	import LeafletMap from '$lib/Map.svelte';
 	import { poi as provider, type City } from '$lib/poi';
 
@@ -53,6 +57,45 @@
 	let busy = $state(false);
 	/** What the Replan button is up to, since routing a trip is not instant. */
 	let step = $state<string | null>(null);
+
+	let picking = $state(false);
+
+	/**
+	 * Keyed by trip id because that is what the storage policy checks, with a
+	 * fresh name each time so a cached old picture cannot linger.
+	 */
+	async function uploadImage(event: Event) {
+		const input = event.target as HTMLInputElement;
+		const file = input.files?.[0];
+		if (!file) return;
+		picking = true;
+		error = null;
+		try {
+			const ext = file.name.split('.').pop()?.toLowerCase() ?? 'png';
+			const path = `${tripId}/${crypto.randomUUID()}.${ext}`;
+			const { error: upErr } = await supabase.storage
+				.from('trip-images')
+				.upload(path, file, { upsert: true, contentType: file.type });
+			if (upErr) throw new Error(upErr.message);
+			const { data } = supabase.storage.from('trip-images').getPublicUrl(path);
+			await setTripImage(tripId, data.publicUrl);
+			if (row) row = { ...row, image_url: data.publicUrl };
+		} catch (e) {
+			error = (e as Error).message;
+		} finally {
+			picking = false;
+			input.value = '';
+		}
+	}
+
+	async function clearImage() {
+		try {
+			await setTripImage(tripId, null);
+			if (row) row = { ...row, image_url: null };
+		} catch (e) {
+			error = (e as Error).message;
+		}
+	}
 	let dayIndex = $state(0);
 	let view = $state<'plan' | 'board' | 'map' | 'wishlist'>('plan');
 	let showDetails = $state(false);
@@ -92,11 +135,17 @@
 			if (Number.isInteger(asked) && asked >= 0) dayIndex = asked;
 			if (row.share_token) shareUrl = linkFor(row.share_token);
 			bbox = cityBBox(row);
-			if (!bbox) {
+			// Trips saved before the city box -- and before the country code --
+			// was captured. One geocode fills in whichever is missing.
+			if (!bbox || !row.country_code) {
 				const [match] = await provider.searchCities(row.city);
-				if (match?.bbox) {
+				if (match?.bbox && !bbox) {
 					bbox = match.bbox;
 					await updateCityBBox(tripId, match.bbox);
+				}
+				if (match?.countryCode && !row.country_code) {
+					row = { ...row, country_code: match.countryCode };
+					await updateCountryCode(tripId, match.countryCode);
 				}
 			}
 		} catch (e) {
@@ -624,10 +673,16 @@
 				<div>
 					<a href="{base}/" class="tm-attrib" style="text-decoration: none">← Trips</a>
 					<button
-						style="background:none;border:none;padding:0;cursor:pointer;color:inherit;display:flex;align-items:center;gap:6px"
+						style="background:none;border:none;padding:0;cursor:pointer;color:inherit;display:flex;align-items:center;gap:8px"
 						aria-expanded={showDetails}
 						onclick={() => (showDetails = !showDetails)}
 					>
+						<TripAvatar
+							imageUrl={row.image_url}
+							countryCode={row.country_code}
+							city={row.city}
+							size={34}
+						/>
 						<span style="font: 700 var(--tm-text-xl)/1.15 var(--tm-font)">{row.city}</span>
 						<span style="color: var(--tm-text-faint); font-size: 12px">{showDetails ? '▴' : '▾'}</span>
 					</button>
@@ -665,6 +720,37 @@
 							</div>
 						{/each}
 					</dl>
+
+					<div class="mt-3 flex items-center gap-3" style="border-top: 1px solid var(--tm-border); padding-top: 0.75rem">
+						<TripAvatar
+							imageUrl={row.image_url}
+							countryCode={row.country_code}
+							city={row.city}
+							size={48}
+						/>
+						<div class="flex flex-wrap items-center gap-2">
+							<label class="tm-btn tm-btn--secondary" style="min-height:34px;cursor:pointer">
+								{picking ? 'Uploading…' : row.image_url ? 'Change picture' : 'Add a picture'}
+								<input
+									type="file"
+									accept="image/png,image/jpeg,image/webp,image/gif"
+									onchange={uploadImage}
+									disabled={picking}
+									style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none"
+								/>
+							</label>
+							{#if row.image_url}
+								<button
+									class="tm-btn tm-btn--ghost"
+									style="min-height:34px"
+									onclick={clearImage}
+								>
+									Use the flag
+								</button>
+							{/if}
+						</div>
+					</div>
+
 					<div class="mt-3" style="border-top: 1px solid var(--tm-border); padding-top: 0.75rem">
 						<p class="tm-label mb-2">
 							{people.length > 1 ? `${people.length} travellers` : 'Just you'}

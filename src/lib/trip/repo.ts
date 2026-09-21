@@ -42,6 +42,10 @@ export type TripRow = {
 	city_east: number | null;
 	day_start: string;
 	day_end: string;
+	/** An uploaded picture for the trip. Null falls back to the country flag. */
+	image_url: string | null;
+	/** ISO 3166-1 alpha-2, from the city that was picked. */
+	country_code: string | null;
 	share_token: string | null;
 	/** When Regenerate last produced a plan. Null before the first one. */
 	plan_generated_at: string | null;
@@ -58,6 +62,7 @@ export type NewTrip = {
 	arrivalAt: string;
 	departureAt: string;
 	cityBBox: BBox | null;
+	countryCode: string | null;
 	terminals: Terminals;
 };
 
@@ -223,6 +228,7 @@ export async function createTrip(input: NewTrip): Promise<string> {
 			city_north: input.cityBBox?.north ?? null,
 			city_west: input.cityBBox?.west ?? null,
 			city_east: input.cityBBox?.east ?? null,
+			country_code: input.countryCode,
 			...terminalColumns(input.terminals, input.timezone)
 		})
 		.select('id')
@@ -251,6 +257,23 @@ export async function updateHotel(
 		.from('trips')
 		.update({ hotel_name: hotel.name, hotel_lat: hotel.lat, hotel_lng: hotel.lng })
 		.eq('id', id);
+	if (error) throw new Error(error.message);
+}
+
+/**
+ * Set the trip's picture, or clear it back to the country flag.
+ *
+ * The object is keyed by trip id, which is exactly what the storage policy
+ * checks, so a collaborator can change it and a stranger cannot.
+ */
+export async function setTripImage(id: string, url: string | null): Promise<void> {
+	const { error } = await supabase.from('trips').update({ image_url: url }).eq('id', id);
+	if (error) throw new Error(error.message);
+}
+
+/** Trips saved before the country was captured. Filled in once, on sight. */
+export async function updateCountryCode(id: string, code: string): Promise<void> {
+	const { error } = await supabase.from('trips').update({ country_code: code }).eq('id', id);
 	if (error) throw new Error(error.message);
 }
 

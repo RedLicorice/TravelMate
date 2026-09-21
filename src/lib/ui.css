@@ -21,7 +21,10 @@
    auto margins, so a capped-width block button would not centre. */
 .tm-btn--block     { width: 100%; display: flex; }
 
-.tm-field { display: flex; flex-direction: column; gap: var(--tm-space-2); }
+.tm-field { display: flex; flex-direction: column; gap: var(--tm-space-2); min-width: 0; }
+/* A date or time input carries an intrinsic width wider than a phone's column.
+   Without this it pushes its card past the screen edge instead of fitting. */
+.tm-field > .tm-input { min-width: 0; max-width: 100%; }
 .tm-label { font: 600 var(--tm-text-sm)/1 var(--tm-font); color: var(--tm-text); }
 .tm-input {
   font: 400 var(--tm-text-base)/1 var(--tm-font);

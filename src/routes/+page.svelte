@@ -6,6 +6,7 @@
 	import { watchInstall } from '$lib/pwa.svelte';
 	import InstallCard from '$lib/InstallCard.svelte';
 	import ProfileButton from '$lib/ProfileButton.svelte';
+	import TripAvatar from '$lib/TripAvatar.svelte';
 
 	let trips = $state<TripRow[]>([]);
 	let error = $state<string | null>(null);
@@ -55,16 +56,29 @@
 		<ul class="flex flex-col gap-3">
 			{#each trips as trip (trip.id)}
 				<li>
-					<a href="{base}/trip/{trip.id}" class="tm-card block" style="text-decoration: none">
-						<p class="tm-card__title">{trip.city}</p>
-						<p class="tm-card__meta">{range(trip)} · {dayCount(trip)} days</p>
-						<div class="mt-3 flex gap-1.5">
-							{#each Array(dots(trip)) as _, i}
-								<span
-									style="width:11px;height:11px;border-radius:50%;background:var(--tm-day-{i + 1})"
-								></span>
-							{/each}
-						</div>
+					<a
+						href="{base}/trip/{trip.id}"
+						class="tm-card flex items-center gap-3"
+						style="text-decoration: none"
+					>
+						<TripAvatar
+							imageUrl={trip.image_url}
+							countryCode={trip.country_code}
+							city={trip.city}
+						/>
+						<span style="min-width: 0; flex: 1">
+							<span class="tm-card__title" style="display:block">{trip.city}</span>
+							<span class="tm-card__meta" style="display:block">
+								{range(trip)} · {dayCount(trip)} days
+							</span>
+							<span class="mt-3 flex gap-1.5">
+								{#each Array(dots(trip)) as _, i}
+									<span
+										style="width:11px;height:11px;border-radius:50%;background:var(--tm-day-{i + 1})"
+									></span>
+								{/each}
+							</span>
+						</span>
 					</a>
 				</li>
 			{/each}
