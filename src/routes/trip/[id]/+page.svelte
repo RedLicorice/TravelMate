@@ -1272,14 +1272,14 @@
 					</p>
 					<div class="flex flex-col gap-1" style="margin: 0 calc(-1 * var(--tm-space-2))">
 						{#each unassigned as p (p.id)}
-							<button class="tm-result" style="text-align:left" onclick={() => placeHere(p.id)}>
+							<button class="tm-result" onclick={() => placeHere(p.id)}>
 								<span>
 									<span class="tm-result__name">{p.name}</span>
 									<span class="tm-result__meta" style="display:block">
 										{p.category ?? 'place'} · {p.duration_min} min
 									</span>
 								</span>
-								<span style="color: var(--tm-text-faint)">+</span>
+								<span class="tm-add" aria-hidden="true">+</span>
 							</button>
 						{/each}
 					</div>

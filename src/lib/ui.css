@@ -129,6 +129,18 @@
   align-items: center; padding: 10px 0;
   border-bottom: 1px solid var(--tm-border);
 }
+/* The same row as a control: the whole row is the target, not the glyph at the
+   end of it. A button does not stretch or align like the anchor this class was
+   written for, so both are stated. */
+button.tm-result {
+  width: 100%; min-height: var(--tm-tap-min); text-align: left;
+  padding: 10px var(--tm-space-2); border: none;
+  border-bottom: 1px solid var(--tm-border);
+  border-radius: var(--tm-r-md);
+  background: none; color: inherit; font: inherit; cursor: pointer;
+  transition: background var(--tm-motion);
+}
+button.tm-result:hover, button.tm-result:focus-visible { background: var(--tm-surface-2); }
 .tm-result__name { font: 600 var(--tm-text-base)/1.25 var(--tm-font); }
 .tm-result__meta { font: 400 var(--tm-text-sm)/1.4 var(--tm-font); color: var(--tm-text-faint); margin-top: 2px; }
 .tm-add {
