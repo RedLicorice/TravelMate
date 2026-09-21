@@ -66,6 +66,11 @@
   --tm-sky:           oklch(0.90 0.055 240);
   --tm-sky-soft:      oklch(0.950 0.038 240);
   --tm-sky-ink:       oklch(0.45 0.10 240);
+  /* Lilac is the trip's housekeeping: getting ready, the bags. Its own hue so
+     a chore does not read as the hotel it happens in. */
+  --tm-lilac:         oklch(0.90 0.060 300);
+  --tm-lilac-soft:    oklch(0.950 0.040 300);
+  --tm-lilac-ink:     oklch(0.45 0.11 300);
 
   /* ---- semantic ----
    * Warning is deliberately more saturated than --tm-butter. The spec commits
@@ -154,6 +159,9 @@
     --tm-sky:           oklch(0.73 0.070 240);
     --tm-sky-soft:      oklch(0.32 0.045 240);
     --tm-sky-ink:       oklch(0.85 0.070 240);
+    --tm-lilac:         oklch(0.74 0.075 300);
+    --tm-lilac-soft:    oklch(0.32 0.048 300);
+    --tm-lilac-ink:     oklch(0.85 0.075 300);
 
     --tm-warn:          oklch(0.72 0.115 80);
     --tm-warn-soft:     oklch(0.33 0.060 78);
@@ -196,6 +204,7 @@
   --tm-butter: oklch(0.92 0.065 95); --tm-butter-soft: oklch(0.955 0.040 95); --tm-butter-ink: oklch(0.46 0.11 95);
   --tm-mint: oklch(0.91 0.060 165); --tm-mint-soft: oklch(0.950 0.040 165); --tm-mint-ink: oklch(0.45 0.10 165);
   --tm-sky: oklch(0.90 0.055 240); --tm-sky-soft: oklch(0.950 0.038 240); --tm-sky-ink: oklch(0.45 0.10 240);
+  --tm-lilac: oklch(0.90 0.060 300); --tm-lilac-soft: oklch(0.950 0.040 300); --tm-lilac-ink: oklch(0.45 0.11 300);
   --tm-warn: oklch(0.86 0.105 80); --tm-warn-soft: oklch(0.955 0.055 80); --tm-warn-ink: oklch(0.45 0.13 75);
   --tm-ok: oklch(0.88 0.085 155); --tm-ok-soft: oklch(0.955 0.045 155); --tm-ok-ink: oklch(0.44 0.11 155);
   --tm-danger-soft: oklch(0.955 0.045 25); --tm-danger-ink: oklch(0.48 0.15 25);
@@ -220,6 +229,7 @@
   --tm-butter: oklch(0.76 0.085 95); --tm-butter-soft: oklch(0.33 0.050 95); --tm-butter-ink: oklch(0.87 0.080 95);
   --tm-mint: oklch(0.75 0.075 165); --tm-mint-soft: oklch(0.32 0.048 165); --tm-mint-ink: oklch(0.85 0.075 165);
   --tm-sky: oklch(0.73 0.070 240); --tm-sky-soft: oklch(0.32 0.045 240); --tm-sky-ink: oklch(0.85 0.070 240);
+  --tm-lilac: oklch(0.74 0.075 300); --tm-lilac-soft: oklch(0.32 0.048 300); --tm-lilac-ink: oklch(0.85 0.075 300);
   --tm-warn: oklch(0.72 0.115 80); --tm-warn-soft: oklch(0.33 0.060 78); --tm-warn-ink: oklch(0.88 0.105 82);
   --tm-ok: oklch(0.74 0.095 155); --tm-ok-soft: oklch(0.31 0.050 155); --tm-ok-ink: oklch(0.86 0.090 155);
   --tm-danger-soft: oklch(0.32 0.055 25); --tm-danger-ink: oklch(0.84 0.110 25);

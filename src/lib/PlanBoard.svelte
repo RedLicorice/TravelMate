@@ -83,7 +83,7 @@
 					height: Math.max(MIN_BLOCK_PX, (startMin - leaveMin) * PX_PER_MIN),
 					accent: 'var(--tm-border-strong)',
 					fill: 'var(--tm-surface-2)',
-					ink: 'var(--tm-text-muted)',
+					ink: 'var(--tm-text-faint)',
 					title: MODE_LABEL[stop.legIn.mode] ?? 'Travel',
 					sub: `${stop.legIn.minutes} min`,
 					icon: MODE_ICON[stop.legIn.mode] ?? MODE_ICON.walk,
@@ -94,16 +94,21 @@
 			const height = Math.max(MIN_BLOCK_PX, stop.durationMin * PX_PER_MIN);
 			if (stop.anchor) {
 				const kind = anchorKind(stop, dayIndex);
-				// Chores wear the hotel's colour because that is where they
-				// happen: getting ready, and the bags.
-				const tone = kind === 'terminal' ? 'peach' : kind === 'service' ? 'mint' : 'sky';
+				const tone =
+					kind === 'terminal'
+						? 'peach'
+						: kind === 'service'
+							? 'mint'
+							: kind === 'chore'
+								? 'lilac'
+								: 'sky';
 				out.push({
 					key: `stop:${j}`,
 					top: top(startMin),
 					height,
 					accent: `var(--tm-${tone})`,
 					fill: `var(--tm-${tone}-soft)`,
-					ink: `var(--tm-${tone}-ink)`,
+					ink: 'var(--tm-text-faint)',
 					title: stop.name,
 					// A journey card's real time is on the ticket, not on the
 					// trip's clock -- they all cost nothing, so the clock gives
@@ -244,7 +249,7 @@
 				<svg
 					width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor"
 					stroke-width="2.4" stroke-linecap="round" aria-hidden="true"
-					style="flex:none;margin-top:1px;color:{o.ink}"
+					style="flex:none;margin-top:1px"
 				>
 					<path d={o.icon} />
 				</svg>
@@ -253,7 +258,7 @@
 			{#if o.stop?.poiId}
 				<button class="tm-board-title" onclick={() => onpick?.(o.stop!.poiId!)}>{o.title}</button>
 			{:else}
-				<span class="tm-board-title" style="color:{o.ink}">{o.title}</span>
+				<span class="tm-board-title">{o.title}</span>
 			{/if}
 
 			{#if onpin && o.stop?.poiId}
@@ -274,7 +279,7 @@
 		</div>
 
 		{#if o.sub && o.height > 38}
-			<p class="tm-board-sub" style="color:{o.ink}">{o.sub}</p>
+			<p class="tm-board-sub">{o.sub}</p>
 		{/if}
 		{#if o.stop?.warnings.length && o.height > 54}
 			<p class="tm-board-sub" style="color:var(--tm-warn-ink);font-weight:600">
@@ -363,25 +368,34 @@
 	<p class="tm-hint px-4 py-2" style="border-top: 1px solid var(--tm-border)">
 		<span
 			style="display:inline-block;width:10px;height:10px;border-radius:2px;
-			background:var(--tm-surface-2);
+			background:var(--tm-surface-2);border:1px solid var(--tm-border);
 			border-left:3px solid var(--tm-border-strong);vertical-align:-1px"
 		></span>
 		travelling ·
 		<span
 			style="display:inline-block;width:10px;height:10px;border-radius:2px;
-			background:var(--tm-sky-soft);border-left:3px solid var(--tm-sky);vertical-align:-1px"
+			background:var(--tm-sky-soft);border:1px solid var(--tm-border);
+			border-left:3px solid var(--tm-sky);vertical-align:-1px"
 		></span>
 		hotel ·
 		<span
 			style="display:inline-block;width:10px;height:10px;border-radius:2px;
-			background:var(--tm-peach-soft);border-left:3px solid var(--tm-peach);vertical-align:-1px"
+			background:var(--tm-peach-soft);border:1px solid var(--tm-border);
+			border-left:3px solid var(--tm-peach);vertical-align:-1px"
 		></span>
 		terminal ·
 		<span
 			style="display:inline-block;width:10px;height:10px;border-radius:2px;
-			background:var(--tm-mint-soft);border-left:3px solid var(--tm-mint);vertical-align:-1px"
+			background:var(--tm-mint-soft);border:1px solid var(--tm-border);
+			border-left:3px solid var(--tm-mint);vertical-align:-1px"
 		></span>
-		flight or train · hold ⠿ to move a stop between days · tap empty time to add
+		flight or train ·
+		<span
+			style="display:inline-block;width:10px;height:10px;border-radius:2px;
+			background:var(--tm-lilac-soft);border:1px solid var(--tm-border);
+			border-left:3px solid var(--tm-lilac);vertical-align:-1px"
+		></span>
+		bags and getting ready · hold ⠿ to move a stop between days · tap empty time to add
 	</p>
 </div>
 
@@ -430,6 +444,7 @@
 	.tm-board-sub {
 		font: 400 9.5px/1.2 var(--tm-font);
 		margin-top: 2px;
+		color: var(--tm-text-faint);
 	}
 
 	.tm-board-pin {

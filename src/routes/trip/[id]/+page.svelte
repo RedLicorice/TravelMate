@@ -1006,7 +1006,9 @@
 						<div
 							class="tm-stop"
 							class:tm-stop--anchor={stop.anchor}
+							class:tm-stop--terminal={stop.anchorKind === 'terminal'}
 							class:tm-stop--service={stop.anchorKind === 'service'}
+							class:tm-stop--chore={stop.anchorKind === 'chore'}
 							class:tm-stop--pinned={stop.poiId ? pinnedIds.has(stop.poiId) : false}
 							data-drop-stop={stop.poiId ?? undefined}
 							style={drag.state.id === stop.poiId
