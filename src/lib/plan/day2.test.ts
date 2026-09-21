@@ -256,3 +256,70 @@ describe('a meal the traveller chose', () => {
 		expect(day('2026-10-02T15:00:00.000Z').stops.map((s) => s.name)).toContain('Breakfast');
 	});
 });
+
+describe('meal slots are containers', () => {
+	const cafe = (id: string, lat: number, lng: number): PlanPoi => ({
+		id,
+		name: id,
+		lat,
+		lng,
+		category: 'cafe',
+		durationMin: 20,
+		priority: 3,
+		dayIndex: 1,
+		orderIndex: 9,
+		pinned: false
+	});
+
+	const run = (meals?: Map<string, MealSlotRow>) =>
+		schedule({
+			pois: [
+				stop('Notting Hill', 51.509, -0.196, 'suburb', 60, 0),
+				cafe('near', 51.5154, -0.141),
+				cafe('other', 51.5152, -0.1408)
+			],
+			days: tripDays(trip),
+			allowedModes: ['walk', 'transit'],
+			timezone: 'Europe/London',
+			mealWindows: tightest([A]).windows,
+			meals
+		}).days[1];
+
+	const say = (meal: string, row: Partial<MealSlotRow>) =>
+		new Map([
+			[
+				`1:${meal}`,
+				{ day_index: 1, meal, poi_id: null, at: null, skipped: false, ...row } as MealSlotRow
+			]
+		]);
+
+	it('fills an untouched slot with somewhere suitable nearby', () => {
+		const names = run().stops.map((s) => s.name);
+		expect(names.includes('near') || names.includes('other')).toBe(true);
+	});
+
+	it('takes the place the traveller put in it', () => {
+		const names = run(say('breakfast', { poi_id: 'other' })).stops.map((s) => s.name);
+		expect(names).toContain('other');
+	});
+
+	it('skips the meal entirely when told to', () => {
+		const names = run(say('breakfast', { skipped: true })).stops.map((s) => s.name);
+		expect(names).not.toContain('Breakfast');
+		expect(names).not.toContain('near');
+	});
+
+	it('never puts an eating place between two sights', () => {
+		// Everything with a meal category is either in a slot or not on the day.
+		const windows = slotsFrom(tightest([A]).windows);
+		for (const s of run().stops) {
+			if (s.poiId !== 'near' && s.poiId !== 'other') continue;
+			expect(slotAt(s.arrive, 'Europe/London', windows)).not.toBeNull();
+		}
+	});
+
+	it('leaves the one it did not seat off the day', () => {
+		const seated = run().stops.filter((s) => s.poiId === 'near' || s.poiId === 'other');
+		expect(seated).toHaveLength(1);
+	});
+});

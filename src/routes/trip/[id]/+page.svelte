@@ -27,6 +27,14 @@
 		type PoiRow
 	} from '$lib/trip/pois';
 	import { describe as describeJourney } from '$lib/trip/journey';
+	import {
+		loadMeals,
+		mealKey,
+		resetMeal,
+		saveMeal,
+		toMealPlan,
+		type MealSlotRow
+	} from '$lib/trip/meals';
 	import { tripDays, type Day } from '$lib/trip/days';
 	import {
 		replan,
@@ -44,7 +52,10 @@
 		isMeal,
 		latestPrep,
 		latestReady,
+		MEAL_LABEL,
+		MEAL_NAMES,
 		tightest,
+		type MealName,
 		type MealWindows
 	} from '$lib/plan/meals';
 	import { resolveCurves, type CrowdCurves } from '$lib/plan/crowd';
@@ -67,6 +78,7 @@
 	import { dayTruncated, dayUrl, routePoints } from '$lib/maps';
 	import { createDrag, insertInto, reorder } from '$lib/dnd.svelte';
 	import { cardTime } from '$lib/board';
+	import { haversineKm } from '$lib/plan/geo';
 	import { longPress } from '$lib/longpress.svelte';
 	import PlanBoard from '$lib/PlanBoard.svelte';
 	import TripAvatar from '$lib/TripAvatar.svelte';
@@ -100,6 +112,30 @@
 		slotQuery = '';
 	});
 	let allowanced = $state<{ kind: Allowance; name: string; minutes: number } | null>(null);
+	/** A meal container the traveller is holding down on. */
+	let mealed = $state<{ day: number; meal: MealName; name: string; poiId: string | null } | null>(
+		null
+	);
+
+	async function sayMeal(
+		dayIdx: number,
+		meal: MealName,
+		change: { poiId?: string | null; skipped?: boolean } | 'reset'
+	) {
+		mealed = null;
+		slot = null;
+		busy = true;
+		try {
+			if (change === 'reset') await resetMeal(tripId, dayIdx, meal);
+			else await saveMeal(tripId, { dayIndex: dayIdx, meal, ...change });
+			mealRows = await loadMeals(tripId);
+			await restore();
+		} catch (e) {
+			error = (e as Error).message;
+		} finally {
+			busy = false;
+		}
+	}
 
 	const ALLOWANCE_HINT: Record<Allowance, string> = {
 		prep: 'Waking and getting out of the door. Yours, on every trip.',
@@ -113,6 +149,15 @@
 		if (stop.anchorKind === 'chore') return stop.name === 'Getting ready' ? 'prep' : 'bags';
 		if (stop.anchorKind !== 'terminal') return null;
 		return dayIdx === 0 ? 'out' : dayIdx === days.length - 1 ? 'checkin' : null;
+	}
+
+	/** Which meal a container card is, from the name the planner gave it. */
+	const mealOf = (name: string) =>
+		(MEAL_NAMES.find((m) => MEAL_LABEL[m] === name) ?? null) as MealName | null;
+
+	function holdMeal(stop: PlannedStop, dayIdx: number) {
+		const meal = mealOf(stop.name);
+		if (meal) mealed = { day: dayIdx, meal, name: stop.name, poiId: null };
 	}
 
 	function holdAllowance(stop: PlannedStop, dayIdx: number) {
@@ -238,6 +283,9 @@
 
 	/** The plan of record, as Regenerate last wrote it. */
 	let stored = $state<PlanStopRow[]>([]);
+	/** What the traveller has said about particular meals. */
+	let mealRows = $state<MealSlotRow[]>([]);
+	const mealPlan = $derived(toMealPlan(mealRows));
 	let planAt = $state<string | null>(null);
 	/**
 	 * A plan this session has just produced. It wins over `stored` until the
@@ -248,11 +296,12 @@
 
 	onMount(async () => {
 		try {
-			[row, pois, people, stored] = await Promise.all([
+			[row, pois, people, stored, mealRows] = await Promise.all([
 				getTrip(tripId),
 				listPois(tripId),
 				loadTripProfiles(tripId),
-				loadPlan(tripId)
+				loadPlan(tripId),
+				loadMeals(tripId)
 			]);
 			if (!row) return;
 			planAt = row.plan_generated_at;
@@ -519,7 +568,8 @@
 			allowedModes: row.allowed_modes as Mode[],
 			timezone: row.timezone,
 			mealWindows: agreed.windows,
-			curves
+			curves,
+			meals: mealPlan
 		};
 		const first = schedule({ ...input, travel });
 		const routed = firstOf([await routedTable(first.days), ...(travel ? [travel] : [])]);
@@ -638,6 +688,28 @@
 	 * traveller could see it on the plan and not pick it. Waiting places come
 	 * first, then, for a meal slot, the ones you could actually eat at.
 	 */
+	/**
+	 * Where the day has the traveller just before the slot being filled, so a
+	 * choice can say how far off the path it is.
+	 */
+	const slotFrom = $derived.by(() => {
+		const here = slot;
+		if (!here) return null;
+		const day = (fresh ?? toPlannedDays(stored, days))[here.day];
+		if (!day) return null;
+		const before = here.before
+			? day.stops.findIndex((st) => st.poiId === here.before)
+			: day.stops.length;
+		for (let i = Math.min(before, day.stops.length) - 1; i >= 0; i--) {
+			const st = day.stops[i];
+			if (st.at) return st;
+		}
+		return null;
+	});
+
+	const detour = (p: PoiRow) =>
+		slotFrom ? haversineKm(slotFrom.at, { lat: p.lat, lng: p.lng }).toFixed(1) : null;
+
 	const unassigned = $derived.by(() => {
 		const waiting = (p: PoiRow) => (dayOfPoi.has(p.id) ? 1 : 0);
 		const food = (p: PoiRow) => (slot?.meal && isMeal(p.category) ? 0 : 1);
@@ -700,6 +772,13 @@
 	 */
 	async function placeHere(poiId: string) {
 		if (!slot) return;
+		// Filling a meal container is not the same as putting a stop on the
+		// day: it says what goes in that meal, and the plan builds round it.
+		const meal = slot.meal ? mealOf(slot.meal) : null;
+		if (meal) {
+			await sayMeal(slot.day, meal, { poiId });
+			return;
+		}
 		const target = slot;
 		const source = pois.find((p) => p.id === poiId);
 		slot = null;
@@ -790,7 +869,8 @@
 				allowedModes: row.allowed_modes as Mode[],
 				timezone: row.timezone,
 				mealWindows: agreed.windows,
-				curves
+				curves,
+				meals: mealPlan
 			};
 			const ordered = replan({ ...input, travel });
 
@@ -1324,9 +1404,11 @@
 							data-drop-stop={stop.poiId ?? undefined}
 							{@attach stop.poiId
 								? longPress(() => (carded = pois.find((p) => p.id === stop.poiId) ?? null))
-								: allowanceOf(stop, dayIndex)
-									? longPress(() => holdAllowance(stop, dayIndex))
-									: () => {}}
+								: stop.anchorKind === 'meal'
+									? longPress(() => holdMeal(stop, dayIndex))
+									: allowanceOf(stop, dayIndex)
+										? longPress(() => holdAllowance(stop, dayIndex))
+										: () => {}}
 							style={stop.poiId && drag.state.id === stop.poiId
 								? 'opacity:0.35'
 								: stop.poiId &&
@@ -1426,6 +1508,57 @@
 						{/if}
 					{/each}
 				{/if}
+			</div>
+		{/if}
+
+		{#if mealed}
+			{@const m = mealed}
+			{@const said = mealPlan.get(mealKey(m.day, m.meal))}
+			<div
+				role="presentation"
+				style="position:fixed;inset:0;z-index:60;background:rgba(0,0,0,0.35)"
+				onclick={() => (mealed = null)}
+			></div>
+			<div class="tm-sheet" style="position:fixed;z-index:61">
+				<div class="tm-sheet__grip"></div>
+				<p class="tm-card__title">{m.name}</p>
+				<p class="tm-card__meta">
+					{said?.poi_id
+						? 'You chose what goes here.'
+						: 'Nothing chosen: the plan fills it with somewhere suitable nearby.'}
+				</p>
+
+				<button
+					class="tm-btn tm-btn--primary tm-btn--block mt-3"
+					onclick={() => {
+						mealed = null;
+						slot = { day: m.day, before: null, meal: m.name };
+					}}
+				>
+					{said?.poi_id ? 'Change the place' : 'Choose a place'}
+				</button>
+
+				{#if said?.poi_id}
+					<button
+						class="tm-btn tm-btn--secondary tm-btn--block mt-2"
+						disabled={busy}
+						onclick={() => sayMeal(m.day, m.meal, 'reset')}
+					>
+						Let the plan choose
+					</button>
+				{/if}
+
+				<button
+					class="tm-btn tm-btn--block mt-2"
+					style="background: var(--tm-danger-soft); color: var(--tm-danger-ink)"
+					disabled={busy}
+					onclick={() => sayMeal(m.day, m.meal, { skipped: true })}
+				>
+					Skip {m.name.toLowerCase()} this day
+				</button>
+				<button class="tm-btn tm-btn--ghost tm-btn--block mt-2" onclick={() => (mealed = null)}>
+					Cancel
+				</button>
 			</div>
 		{/if}
 
@@ -1573,6 +1706,9 @@
 									</span>
 									<span class="tm-result__meta" style="display:block">
 										{p.category ?? 'place'} · {p.duration_min} min
+										{#if detour(p)}
+											· {detour(p)} km from {slotFrom?.name}
+										{/if}
 										{#if dayOfPoi.has(p.id)}
 											· another, as well as {dayLabel(
 												days[dayOfPoi.get(p.id)!].date,

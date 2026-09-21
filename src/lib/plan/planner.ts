@@ -1,6 +1,7 @@
 import { zonedInstant, type Day, type LatLng } from '$lib/trip/days';
 import { haversineKm } from './geo';
 import { nearestBranch } from '$lib/poi/branches';
+import { mealKey, type MealPlan, type MealSlotRow } from '$lib/trip/meals';
 import { leg, type Leg, type Mode } from './modes';
 import { noTravel, type TravelTable } from './travel';
 import { categoryCurves, type CrowdCurves } from './crowd';
@@ -122,6 +123,11 @@ export type PlanInput = {
 	 * busyness: this is read inside 2-opt and cannot await.
 	 */
 	travel?: TravelTable;
+	/**
+	 * What the traveller has said about particular meals, keyed by day and
+	 * meal. Absent entries are the plan's to decide, which is most of them.
+	 */
+	meals?: MealPlan;
 };
 
 const at = (p: { lat: number; lng: number }): LatLng => ({ lat: p.lat, lng: p.lng });
@@ -518,7 +524,10 @@ function walkClock(
 	 * part of the route: the route settles first, and then each meal window
 	 * takes whichever of these is nearest to wherever the day has them.
 	 */
-	diners: PlanPoi[] = []
+	diners: PlanPoi[] = [],
+	/** What the traveller has said about this day's meals. */
+	says: Map<string, MealSlotRow> = new Map(),
+	dayIndex = 0
 ): ClockResult {
 	const stops: PlannedStop[] = [];
 	const overflowed: PlanPoi[] = [];
@@ -670,8 +679,16 @@ function walkClock(
 		for (const slot of slots) {
 			if (served.has(slot.name)) continue;
 
-			const opens = zonedInstant(day.date, toHHMM(slot.from), timezone).getTime();
-			const closes = zonedInstant(day.date, toHHMM(slot.to), timezone).getTime();
+			// What the traveller has said about this meal on this day.
+			const say = says.get(mealKey(dayIndex, slot.name));
+			// Skipped: there is no breakfast that day, and no container either.
+			if (say?.skipped) continue;
+
+			const moved = say?.at ? new Date(say.at).getTime() : null;
+			const opens = moved ?? zonedInstant(day.date, toHHMM(slot.from), timezone).getTime();
+			const closes = moved
+				? moved + 12 * 3_600_000
+				: zonedInstant(day.date, toHHMM(slot.to), timezone).getTime();
 			// Not yet, or the window closed before the day even started.
 			if (opens > until || closes < clock) continue;
 
@@ -685,28 +702,37 @@ function walkClock(
 			const here = cursor ?? day.fixedStart[0]?.at;
 			if (!here) continue;
 
-			// Whichever of the day's restaurants is nearest, if any is near
-			// enough to be worth the detour.
+			// A place the traveller put in this slot themselves. It goes in
+			// whatever the distance: they chose it.
 			let chosen: PlanPoi | null = null;
 			let chosenAt: LatLng = here;
-			let best = MEAL_DETOUR_KM;
-			for (const diner of unseated) {
-				// A coffee shop is breakfast and is not dinner. Nothing unsuited
-				// to this window is a candidate for it at any distance.
-				const fit = mealFit(diner.category, slot.name);
-				if (fit === 0) continue;
+			if (say?.poi_id) {
+				chosen = unseated.find((d) => d.id === say.poi_id) ?? null;
+				if (chosen) chosenAt = nearestBranch(chosen, here, haversineKm);
+			}
 
-				// A chain answers with whichever of its shops is nearest here,
-				// which is often the difference between lunch and a trek.
-				const branch = nearestBranch(diner, here, haversineKm);
-				// Suitability is worth walking for, but not far: half a
-				// kilometre a step, so the right sort of place wins a close
-				// call and never a long one.
-				const cost = haversineKm(here, branch) - fit * MEAL_PREFERENCE_KM;
-				if (cost <= best) {
-					best = cost;
-					chosen = diner;
-					chosenAt = branch;
+			// Otherwise whichever of the day's restaurants is nearest, if any
+			// is near enough to be worth the detour.
+			let best = MEAL_DETOUR_KM;
+			if (!chosen) {
+				for (const diner of unseated) {
+					// A coffee shop is breakfast and is not dinner. Nothing unsuited
+					// to this window is a candidate for it at any distance.
+					const fit = mealFit(diner.category, slot.name);
+					if (fit === 0) continue;
+
+					// A chain answers with whichever of its shops is nearest here,
+					// which is often the difference between lunch and a trek.
+					const branch = nearestBranch(diner, here, haversineKm);
+					// Suitability is worth walking for, but not far: half a
+					// kilometre a step, so the right sort of place wins a close
+					// call and never a long one.
+					const cost = haversineKm(here, branch) - fit * MEAL_PREFERENCE_KM;
+					if (cost <= best) {
+						best = cost;
+						chosen = diner;
+						chosenAt = branch;
+					}
 				}
 			}
 
@@ -728,6 +754,8 @@ function walkClock(
 				unseated.splice(unseated.indexOf(chosen), 1);
 				push(chosen.name, chosenAt, minutes, false, chosen.id, chosen.category, false, null);
 			} else {
+				// An empty container. It keeps its place and its time, because
+				// a meal nobody has chosen yet is still a meal that will happen.
 				push(MEAL_LABEL[slot.name], here, minutes, true, null, slot.name, false, null, 'meal');
 			}
 		}
@@ -857,7 +885,9 @@ export function schedule(input: PlanInput): PlanResult {
 			curves,
 			slots,
 			travel,
-			diners
+			diners,
+			input.meals ?? new Map(),
+			i
 		);
 		unplaced.push(...result.overflowed.map((poi) => ({ poi, reason: 'day-full' as const })));
 		// A restaurant no mealtime came near enough to reach.
