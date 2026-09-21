@@ -1,74 +1,52 @@
 <script lang="ts">
-	import Autocomplete from '$lib/Autocomplete.svelte';
-	import { poi as provider, ADVANCE_DEFAULT, type City, type Terminal, type TerminalKind } from '$lib/poi';
+	import Journey from '$lib/Journey.svelte';
+	import { ADVANCE_DEFAULT, type City, type TerminalKind } from '$lib/poi';
+	import { endpointOf } from '$lib/trip/journey';
 	import type { Terminals } from '$lib/trip/repo';
 
 	type Props = { terminals: Terminals; city: City | null };
 	let { terminals = $bindable(), city }: Props = $props();
 
 	/**
-	 * Presence of an arrival or departure point is the switch. There is no
-	 * separate flag, because a flag can disagree with the data -- and then the
-	 * traveller sees an airport on screen that the planner quietly ignores.
+	 * Having a journey is the switch. There is no separate flag, because a flag
+	 * can disagree with the data -- and then the traveller sees an airport on
+	 * screen that the planner quietly ignores.
 	 */
-	let on = $state(!!(terminals.arrivalName || terminals.departureName));
+	let on = $state(!!(terminals.arrivalLegs.length || terminals.departureLegs.length));
 
 	function toggle() {
 		on = !on;
-		if (!on) {
-			terminals = {
-				...terminals,
-				arrivalName: null, arrivalLat: null, arrivalLng: null, arrivalKind: null,
-				arrivalService: null, arrivalBookingRef: null,
-				departureName: null, departureLat: null, departureLng: null, departureKind: null,
-				departureService: null, departureBookingRef: null
-			};
-		}
+		if (!on) terminals = { ...terminals, arrivalLegs: [], departureLegs: [] };
 	}
 
 	const NOUN: Record<string, string> = {
-		airport: 'airport', train: 'station', bus: 'coach station', ferry: 'ferry terminal', other: 'terminal'
+		airport: 'airport',
+		train: 'station',
+		bus: 'coach station',
+		ferry: 'ferry terminal',
+		other: 'terminal'
 	};
 
-	/** What the ticket calls the service, so the field asks for what they hold. */
-	const SERVICE: Record<string, string> = {
-		airport: 'Flight number', train: 'Train number', bus: 'Coach number',
-		ferry: 'Sailing', other: 'Service number'
-	};
-	const SERVICE_EG: Record<string, string> = {
-		airport: 'BA117', train: 'IC 9612', bus: 'FX010', ferry: 'DFDS 1830', other: ''
-	};
+	/** The one they have to catch, which is what "be there in advance" is about. */
+	const leaving = $derived(endpointOf(terminals.departureLegs, 'departure'));
+	const departureNoun = $derived(NOUN[leaving?.point.kind ?? 'other'] ?? 'terminal');
 
-	const arrivalService = $derived(SERVICE[terminals.arrivalKind ?? 'other'] ?? SERVICE.other);
-	const departureService = $derived(SERVICE[terminals.departureKind ?? 'other'] ?? SERVICE.other);
-
-	function pickArrival(t: Terminal) {
-		terminals = { ...terminals, arrivalName: t.name, arrivalLat: t.lat, arrivalLng: t.lng, arrivalKind: t.kind };
-	}
-
-	function pickDeparture(t: Terminal) {
-		terminals = {
-			...terminals,
-			departureName: t.name, departureLat: t.lat, departureLng: t.lng, departureKind: t.kind,
-			// Only follow the kind's default while the traveller has not moved
-			// the slider themselves -- overwriting a deliberate 90 minutes with
-			// 120 because they re-picked the airport would be rude.
-			departureBufferMin: touchedAdvance ? terminals.departureBufferMin : ADVANCE_DEFAULT[t.kind]
-		};
-	}
-
+	// Follow the kind's default only while the traveller has not moved the
+	// slider themselves -- replacing a deliberate 90 minutes with 120 because
+	// they re-picked the airport would be rude.
 	let touchedAdvance = $state(false);
-
-	/** Empty means unset, not an empty string: the column is nullable. */
-	const value = (e: Event) => (e.currentTarget as HTMLInputElement).value.trim() || null;
+	$effect(() => {
+		const kind = leaving?.point.kind as TerminalKind | undefined;
+		if (!touchedAdvance && kind) {
+			terminals = { ...terminals, departureBufferMin: ADVANCE_DEFAULT[kind] };
+		}
+	});
 
 	const advanceLabel = $derived(
 		terminals.departureBufferMin >= 60
 			? `${Math.floor(terminals.departureBufferMin / 60)} h${terminals.departureBufferMin % 60 ? ` ${terminals.departureBufferMin % 60} min` : ''}`
 			: `${terminals.departureBufferMin} min`
 	);
-
-	const departureNoun = $derived(NOUN[terminals.departureKind ?? 'other'] ?? 'terminal');
 </script>
 
 <div class="tm-field" style="gap: var(--tm-space-3)">
@@ -83,8 +61,8 @@
 		<span>
 			<span class="tm-label">Arriving by plane, train or boat</span>
 			<span class="tm-hint" style="display:block">
-				Day one starts at the terminal and drops your bags at the hotel. The last day ends with the
-				journey back.
+				Day one starts where you land and drops your bags at the hotel. The last day ends in
+				time for the journey out.
 			</span>
 		</span>
 		<span
@@ -100,38 +78,11 @@
 </div>
 
 {#if on}
-	<div class="mt-4">
-		<Autocomplete
-			label="Arriving at"
-			placeholder={terminals.arrivalName ?? 'Airport, station or port'}
-			hint={terminals.arrivalName ? `Currently ${terminals.arrivalName}.` : 'Where you land.'}
-			search={(q, signal) => provider.searchTerminals(q, city, signal)}
-			onpick={pickArrival}
-		/>
-	</div>
-
-	<div class="flex gap-3 mt-4">
-		<div class="tm-field" style="flex:2">
-			<label class="tm-label" for="arrsvc">{arrivalService}</label>
-			<input
-				class="tm-input"
-				id="arrsvc"
-				value={terminals.arrivalService ?? ''}
-				placeholder={SERVICE_EG[terminals.arrivalKind ?? 'other']}
-				oninput={(e) => (terminals = { ...terminals, arrivalService: value(e) })}
-			/>
-		</div>
-		<div class="tm-field" style="flex:1">
-			<label class="tm-label" for="arrref">Booking</label>
-			<input
-				class="tm-input"
-				id="arrref"
-				value={terminals.arrivalBookingRef ?? ''}
-				placeholder="ABC123"
-				oninput={(e) => (terminals = { ...terminals, arrivalBookingRef: value(e) })}
-			/>
-		</div>
-	</div>
+	<h3 class="tm-label mt-5">Getting there</h3>
+	<p class="tm-hint">
+		One leg, or several. Rome to Milan by train and Milan to London by air is one arrival.
+	</p>
+	<Journey direction="arrival" bind:legs={terminals.arrivalLegs} {city} />
 
 	<div class="tm-field mt-4">
 		<label class="tm-label" for="arrbuf">
@@ -149,38 +100,8 @@
 		<span class="tm-hint">Passport queues, baggage reclaim. Nothing is planned before this.</span>
 	</div>
 
-	<div class="mt-4">
-		<Autocomplete
-			label="Leaving from"
-			placeholder={terminals.departureName ?? 'Airport, station or port'}
-			hint={terminals.departureName ? `Currently ${terminals.departureName}.` : 'Where you leave from.'}
-			search={(q, signal) => provider.searchTerminals(q, city, signal)}
-			onpick={pickDeparture}
-		/>
-	</div>
-
-	<div class="flex gap-3 mt-4">
-		<div class="tm-field" style="flex:2">
-			<label class="tm-label" for="depsvc">{departureService}</label>
-			<input
-				class="tm-input"
-				id="depsvc"
-				value={terminals.departureService ?? ''}
-				placeholder={SERVICE_EG[terminals.departureKind ?? 'other']}
-				oninput={(e) => (terminals = { ...terminals, departureService: value(e) })}
-			/>
-		</div>
-		<div class="tm-field" style="flex:1">
-			<label class="tm-label" for="depref">Booking</label>
-			<input
-				class="tm-input"
-				id="depref"
-				value={terminals.departureBookingRef ?? ''}
-				placeholder="ABC123"
-				oninput={(e) => (terminals = { ...terminals, departureBookingRef: value(e) })}
-			/>
-		</div>
-	</div>
+	<h3 class="tm-label mt-6">Getting home</h3>
+	<Journey direction="departure" bind:legs={terminals.departureLegs} {city} />
 
 	<div class="tm-field mt-4">
 		<label class="tm-label" for="advance">Be there {advanceLabel} in advance</label>
@@ -195,8 +116,8 @@
 			style="width:100%;accent-color:var(--tm-primary)"
 		/>
 		<span class="tm-hint">
-			Check-in. The plan has you standing in the {departureNoun} {advanceLabel} before you
-			leave -- the journey there is counted, not squeezed in afterwards.
+			Check-in. The plan has you standing in the {departureNoun} {advanceLabel} before you leave --
+			the journey there is counted, not squeezed in afterwards.
 		</span>
 	</div>
 

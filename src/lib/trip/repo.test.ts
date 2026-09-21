@@ -20,6 +20,8 @@ const row: TripRow = {
 	departure_point_lat: null,
 	departure_point_lng: null,
 	arrival_kind: 'airport',
+	arrival_legs: [],
+	departure_legs: [],
 	arrival_service: null,
 	arrival_booking_ref: null,
 	departure_service: null,

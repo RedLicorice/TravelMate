@@ -14,6 +14,7 @@
 		type TripRow
 	} from '$lib/trip/repo';
 	import { listPois, saveAssignments, toPlanPoi, updatePoi, type PoiRow } from '$lib/trip/pois';
+	import { describe as describeJourney } from '$lib/trip/journey';
 	import { tripDays, type Day } from '$lib/trip/days';
 	import {
 		replan,
@@ -521,10 +522,14 @@
 					['City', row.city],
 					['Hotel', row.hotel_name],
 					['Arrival', stamp(row.arrival_at, row.timezone)],
-					row.arrival_service ? ['Arriving on', row.arrival_service] : null,
+					describeJourney(row.arrival_legs ?? [])
+						? ['Getting there', describeJourney(row.arrival_legs)]
+						: null,
 					row.arrival_booking_ref ? ['Arrival booking', row.arrival_booking_ref] : null,
 					['Departure', stamp(row.departure_at, row.timezone)],
-					row.departure_service ? ['Leaving on', row.departure_service] : null,
+					describeJourney(row.departure_legs ?? [])
+						? ['Getting home', describeJourney(row.departure_legs)]
+						: null,
 					row.departure_booking_ref ? ['Departure booking', row.departure_booking_ref] : null,
 					['Timezone', row.timezone],
 					['Getting around', (row.allowed_modes ?? []).join(', ')]

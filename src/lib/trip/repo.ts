@@ -3,6 +3,7 @@ import type { BBox } from '$lib/poi';
 import type { Place, Trip } from './days';
 import type { PoiRow } from './pois';
 import type { PlanStopRow } from './plan';
+import { emptyLeg, summaryOf, type JourneyLeg } from './journey';
 
 export type TripRow = {
 	id: string;
@@ -22,6 +23,9 @@ export type TripRow = {
 	departure_point_lat: number | null;
 	departure_point_lng: number | null;
 	arrival_kind: string | null;
+	/** The way in and the way out, leg by leg. */
+	arrival_legs: JourneyLeg[];
+	departure_legs: JourneyLeg[];
 	departure_kind: string | null;
 	/** Flight, train or sailing number, as printed on the ticket. */
 	arrival_service: string | null;
@@ -69,45 +73,64 @@ export type Terminals = {
 	arrivalLat: number | null;
 	arrivalLng: number | null;
 	arrivalKind: string | null;
-	/** Flight, train or sailing number, as printed on the ticket. */
-	arrivalService: string | null;
-	arrivalBookingRef: string | null;
+	arrivalLegs: JourneyLeg[];
 	arrivalBufferMin: number;
 	departureName: string | null;
 	departureLat: number | null;
 	departureLng: number | null;
 	departureKind: string | null;
-	departureService: string | null;
-	departureBookingRef: string | null;
+	departureLegs: JourneyLeg[];
 	departureBufferMin: number;
 	bagDropMin: number;
 };
 
-const terminalColumns = (t: Terminals) => ({
-	arrival_point_name: t.arrivalName,
-	arrival_point_lat: t.arrivalLat,
-	arrival_point_lng: t.arrivalLng,
-	arrival_kind: t.arrivalKind,
-	arrival_service: t.arrivalService,
-	arrival_booking_ref: t.arrivalBookingRef,
-	arrival_buffer_min: t.arrivalBufferMin,
-	departure_point_name: t.departureName,
-	departure_point_lat: t.departureLat,
-	departure_point_lng: t.departureLng,
-	departure_kind: t.departureKind,
-	departure_service: t.departureService,
-	departure_booking_ref: t.departureBookingRef,
-	departure_buffer_min: t.departureBufferMin,
-	bag_drop_min: t.bagDropMin
-});
+/**
+ * The journey is what the traveller edits; these columns are what the planner
+ * reads. Derived on every write rather than kept in step by hand, because two
+ * places holding the same fact is how an airport ends up on screen that the
+ * planner has never heard of.
+ *
+ * A journey that states no time leaves the trip's own arrival or departure
+ * time alone: the traveller may well have typed it before filling in the legs.
+ */
+const terminalColumns = (t: Terminals, timezone: string) => {
+	const arrival = summaryOf(t.arrivalLegs, 'arrival', timezone);
+	const departure = summaryOf(t.departureLegs, 'departure', timezone);
+	const endLeg = t.arrivalLegs[t.arrivalLegs.length - 1];
+	const startLeg = t.departureLegs[0];
+
+	return {
+		arrival_legs: t.arrivalLegs,
+		departure_legs: t.departureLegs,
+
+		arrival_point_name: arrival.name,
+		arrival_point_lat: arrival.lat,
+		arrival_point_lng: arrival.lng,
+		arrival_kind: arrival.kind,
+		arrival_service: endLeg?.service ?? null,
+		arrival_booking_ref: endLeg?.bookingRef ?? null,
+		arrival_buffer_min: t.arrivalBufferMin,
+
+		departure_point_name: departure.name,
+		departure_point_lat: departure.lat,
+		departure_point_lng: departure.lng,
+		departure_kind: departure.kind,
+		departure_service: startLeg?.service ?? null,
+		departure_booking_ref: startLeg?.bookingRef ?? null,
+		departure_buffer_min: t.departureBufferMin,
+
+		bag_drop_min: t.bagDropMin,
+		...(arrival.at ? { arrival_at: arrival.at } : {}),
+		...(departure.at ? { departure_at: departure.at } : {})
+	};
+};
 
 /** A trip with no terminals: the planner then shapes every day the same way. */
 export const noTerminals = (): Terminals => ({
 	arrivalName: null, arrivalLat: null, arrivalLng: null, arrivalKind: null,
-	arrivalService: null, arrivalBookingRef: null, arrivalBufferMin: 45,
+	arrivalLegs: [], arrivalBufferMin: 45,
 	departureName: null, departureLat: null, departureLng: null, departureKind: null,
-	departureService: null, departureBookingRef: null,
-	departureBufferMin: 120, bagDropMin: 30
+	departureLegs: [], departureBufferMin: 120, bagDropMin: 30
 });
 
 export const terminalsOf = (row: TripRow): Terminals => ({
@@ -115,15 +138,13 @@ export const terminalsOf = (row: TripRow): Terminals => ({
 	arrivalLat: row.arrival_point_lat,
 	arrivalLng: row.arrival_point_lng,
 	arrivalKind: row.arrival_kind,
-	arrivalService: row.arrival_service,
-	arrivalBookingRef: row.arrival_booking_ref,
+	arrivalLegs: row.arrival_legs ?? [],
 	arrivalBufferMin: row.arrival_buffer_min,
 	departureName: row.departure_point_name,
 	departureLat: row.departure_point_lat,
 	departureLng: row.departure_point_lng,
 	departureKind: row.departure_kind,
-	departureService: row.departure_service,
-	departureBookingRef: row.departure_booking_ref,
+	departureLegs: row.departure_legs ?? [],
 	departureBufferMin: row.departure_buffer_min,
 	bagDropMin: row.bag_drop_min
 });
@@ -202,7 +223,7 @@ export async function createTrip(input: NewTrip): Promise<string> {
 			city_north: input.cityBBox?.north ?? null,
 			city_west: input.cityBBox?.west ?? null,
 			city_east: input.cityBBox?.east ?? null,
-			...terminalColumns(input.terminals)
+			...terminalColumns(input.terminals, input.timezone)
 		})
 		.select('id')
 		.single();
@@ -275,7 +296,7 @@ export async function updateTrip(id: string, edit: TripEdit): Promise<void> {
 			allowed_modes: edit.allowedModes,
 			day_start: edit.dayStart,
 			day_end: edit.dayEnd,
-			...terminalColumns(edit.terminals)
+			...terminalColumns(edit.terminals, edit.timezone)
 		})
 		.eq('id', id);
 	if (error) throw new Error(error.message);
