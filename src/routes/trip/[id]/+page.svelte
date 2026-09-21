@@ -87,7 +87,7 @@
 	import TripAvatar from '$lib/TripAvatar.svelte';
 	import { supabase } from '$lib/supabase';
 	import { zoneAt } from '$lib/trip/timezone';
-	import LeafletMap from '$lib/Map.svelte';
+	import TripMap from '$lib/GoogleMap.svelte';
 	import { poi as provider, type City } from '$lib/poi';
 
 	const tripId = page.params.id!;
@@ -1357,7 +1357,7 @@
 				{/if}
 			</div>
 		{:else if view === 'map'}
-			<div class="flex-1"><LeafletMap {markers} {routes} center={centre} /></div>
+			<div class="flex-1"><TripMap {markers} {routes} center={centre} /></div>
 		{:else if view === 'wishlist'}
 			<div class="flex-1 overflow-y-auto p-4">
 				{#if !pois.length}

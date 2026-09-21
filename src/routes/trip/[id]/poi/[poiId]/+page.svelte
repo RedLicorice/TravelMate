@@ -22,7 +22,7 @@
 	import { loadTripProfiles } from '$lib/profile.svelte';
 	import { safePhone, safeUrl } from '$lib/poi/photon';
 	import Stars from '$lib/Stars.svelte';
-	import LeafletMap from '$lib/Map.svelte';
+	import TripMap from '$lib/GoogleMap.svelte';
 	import { placeUrl } from '$lib/maps';
 
 	const tripId = page.params.id!;
@@ -284,7 +284,7 @@
 			style="height:180px;border-radius:var(--tm-r-md);overflow:hidden;
 			border:1px solid var(--tm-border)"
 		>
-			<LeafletMap
+			<TripMap
 				markers={[
 					{ id: poi.id, lat: poi.lat, lng: poi.lng, color: 'var(--tm-primary)', selected: true },
 					...(trip

@@ -13,7 +13,7 @@
 	import { isMeal } from '$lib/plan/meals';
 	import Autocomplete from '$lib/Autocomplete.svelte';
 	import { haversineKm } from '$lib/plan/geo';
-	import LeafletMap from '$lib/Map.svelte';
+	import TripMap from '$lib/GoogleMap.svelte';
 
 	const tripId = page.params.id!;
 
@@ -393,7 +393,7 @@
 		</div>
 	{:else if view === 'map' && trip}
 		<div class="relative flex-1">
-			<LeafletMap
+			<TripMap
 				{markers}
 				center={centre}
 				onselect={(id) => (selectedId = id)}
