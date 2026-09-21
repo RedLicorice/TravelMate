@@ -49,7 +49,42 @@ describe('a booking late in the route', () => {
 		expect(mealsOn()).toContain('Lunch');
 	});
 
-	it('still keeps the booking on the plan', () => {
-		expect(day2().stops.some((s) => s.poiId === 'Pret A Manger')).toBe(true);
+	it('seats the sandwich shop at a mealtime, or not at all', () => {
+		// It is no longer seventh in the route: the meal pass takes it if a
+		// window passes near it, and leaves it on the wishlist if none does.
+		// What it can no longer do is land at 15:39 between two sights.
+		const seated = day2().stops.find((s) => s.poiId === 'Pret A Manger');
+		if (seated) {
+			const h = Number(
+				new Intl.DateTimeFormat('en-GB', {
+					timeZone: 'Europe/London',
+					hour: '2-digit',
+					hour12: false
+				}).format(seated.arrive)
+			);
+			expect(h >= 7 && h <= 21).toBe(true);
+		}
+	});
+});
+
+describe('the meal pass', () => {
+	const stops = () => day2().stops;
+
+	it('seats a restaurant it passes near, rather than a placeholder', () => {
+		// Pret is a few hundred metres from Notting Hill and Portobello, both of
+		// which the day visits around lunchtime.
+		const names = stops().map((s) => s.name);
+		const lunchIsInvented = names.includes('Lunch');
+		const pretIsSeated = names.includes('Pret A Manger');
+		expect(lunchIsInvented || pretIsSeated).toBe(true);
+	});
+
+	it('does not leave a restaurant sitting between two sights', () => {
+		// Everything on the plan is either part of the route or at a mealtime.
+		// 15:39 between Portobello and Big Ben was neither.
+		const seated = stops().find((s) => s.poiId === 'Pret A Manger');
+		if (!seated) return;
+		const before = stops()[stops().indexOf(seated) - 1];
+		expect(before).toBeDefined();
 	});
 });

@@ -55,7 +55,8 @@ export type UnplacedReason =
 	| 'not-planned-yet'
 	| 'day-full'
 	| 'no-usable-days'
-	| 'hotel-unknown';
+	| 'hotel-unknown'
+	| 'no-mealtime';
 
 export type Unplaced = { poi: PlanPoi; reason: UnplacedReason };
 
@@ -63,7 +64,9 @@ export const REASON_TEXT: Record<UnplacedReason, string> = {
 	'not-planned-yet': 'Added since the last plan. Tap Replan to fit it in.',
 	'day-full': 'Every day was already full by the time this came up.',
 	'no-usable-days': 'This trip has no day with usable time — check the dates and buffers.',
-	'hotel-unknown': 'The hotel has no location, so nothing can be measured from it.'
+	'hotel-unknown': 'The hotel has no location, so nothing can be measured from it.',
+	'no-mealtime':
+		'No mealtime on its day passes near enough. Pin it to a time to eat there anyway.'
 };
 
 export type PlannedStop = {
@@ -156,6 +159,15 @@ const PRIORITY_ORDER_WEIGHT_MIN = 2;
  * warning, which is the honest answer.
  */
 const MAX_MEAL_WAIT_MIN = 45;
+
+/**
+ * How far off the day's path a restaurant may sit and still be lunch.
+ *
+ * Past this the traveller eats near where they already are: a place across
+ * town is a destination, not a meal, and one is chosen by pinning it rather
+ * than by putting it on the wishlist.
+ */
+const MEAL_DETOUR_KM = 2;
 
 /**
  * A stretch of time the traveller put on the day themselves, with a name and a
@@ -490,7 +502,13 @@ function walkClock(
 	timezone: string,
 	curves: CrowdCurves,
 	slots: MealSlot[],
-	travel: TravelTable
+	travel: TravelTable,
+	/**
+	 * Restaurants for this day that the traveller did not pin. Deliberately not
+	 * part of the route: the route settles first, and then each meal window
+	 * takes whichever of these is nearest to wherever the day has them.
+	 */
+	diners: PlanPoi[] = []
 ): ClockResult {
 	const stops: PlannedStop[] = [];
 	const overflowed: PlanPoi[] = [];
@@ -504,8 +522,7 @@ function walkClock(
 	let cursorTerminal = false;
 	/** Meals the day has already had, whether from the wishlist or from us. */
 	const served = new Set<string>();
-	/** Restaurants from the wishlist still to come; each will claim a slot. */
-	let mealsToCome = pois.filter((p) => isMeal(p.category)).length;
+	const unseated = [...diners];
 
 	const push = (
 		name: string,
@@ -572,7 +589,6 @@ function walkClock(
 			// plan does not then offer a placeholder for the same meal.
 			const slot = slotAt(arrive, timezone, slots);
 			if (slot) served.add(slot);
-			mealsToCome = Math.max(0, mealsToCome - 1);
 			const miss = mealMiss(arrive, timezone, slots);
 			mealMissHours += miss;
 			if (miss > 0.5) {
@@ -616,7 +632,17 @@ function walkClock(
 	 * offered if its window is open before then, so the day fills in order
 	 * rather than collecting three meals at the end.
 	 */
-	const offerMeals = (until: number, patient = false, ahead: PlanPoi[] = []) => {
+	/**
+	 * The meal pass: fill whatever window is open, from the day's own
+	 * restaurants where one is near enough and from nothing where none is.
+	 *
+	 * Run against a route that is already settled. Restaurants are not part of
+	 * that route -- which is the whole point. Leaving them in it let a sandwich
+	 * shop decide the shape of a day: the route bent towards it, the clock
+	 * stalled waiting for its window, and whichever window it happened to reach
+	 * became the meal. A meal is a thing you do near where you already are.
+	 */
+	const offerMeals = (until: number, patient = false) => {
 		for (const slot of slots) {
 			if (served.has(slot.name)) continue;
 
@@ -625,24 +651,6 @@ function walkClock(
 			// Not yet, or the window closed before the day even started.
 			if (opens > until || closes < clock) continue;
 
-			// A restaurant the traveller chose has first claim on a window -- but
-			// only on a window it could actually reach. The earliest it can
-			// arrive is now plus the stops that come before it, ignoring travel,
-			// which is a lower bound; if even that lands after this window has
-			// closed, the booking was never going to take this slot and holding
-			// it costs the traveller the meal.
-			//
-			// Holding every window while any restaurant remained is what lost a
-			// day both its breakfast and its lunch to a sandwich shop that was
-			// seventh in the route and arrived at 15:39.
-			const next = ahead.findIndex((p) => isMeal(p.category));
-			if (next >= 0) {
-				const soonest =
-					clock +
-					ahead.slice(0, next).reduce((sum, p) => sum + p.durationMin, 0) * 60_000;
-				if (soonest <= closes) continue;
-			}
-
 			// Not worth standing about for while there are still stops to make:
 			// skipped now, offered again after the next one, by which time the
 			// window is open and there is no gap. At the end of the day there is
@@ -650,21 +658,41 @@ function walkClock(
 			// that finishes at four has no dinner at all.
 			if (!patient && opens - clock > MAX_MEAL_WAIT_MIN * 60_000) continue;
 
-			const where = cursor ?? day.fixedStart[0]?.at;
-			if (!where) continue;
+			const here = cursor ?? day.fixedStart[0]?.at;
+			if (!here) continue;
 
-			const minutes = MEAL_MINUTES[slot.name];
-			const at = Math.max(clock, opens);
-			// Only when it actually fits, the way home included: "when possible".
-			if (at + (minutes + tailCost(where)) * 60_000 > dayEndMs) continue;
+			// Whichever of the day's restaurants is nearest, if any is near
+			// enough to be worth the detour.
+			let chosen: PlanPoi | null = null;
+			let nearest = MEAL_DETOUR_KM;
+			for (const diner of unseated) {
+				const km = haversineKm(here, at(diner));
+				if (km <= nearest) {
+					nearest = km;
+					chosen = diner;
+				}
+			}
 
-			// The clock really does move, but this wait is not counted against the
-			// route: a placeholder eats wherever the traveller happens to be, so
-			// letting it price orderings would have 2-opt chase meal windows
-			// across the city -- the very thing rating was stopped from doing.
-			clock = Math.max(clock, at);
+			const to = chosen ? at(chosen) : here;
+			const minutes = chosen?.durationMin ?? MEAL_MINUTES[slot.name];
+			const hop = chosen ? leg(here, to, allowedModes, cursorTerminal, travel).minutes : 0;
+			const start = Math.max(clock + hop * 60_000, opens);
+			// Only when it actually fits, the way home included.
+			if (start + (minutes + tailCost(to)) * 60_000 > dayEndMs) continue;
+
+			// The clock really does move, but a placeholder's wait is not
+			// counted against the route: it eats wherever the traveller happens
+			// to be, so letting it price orderings would have 2-opt chase meal
+			// windows across the city.
+			clock = Math.max(clock, start - hop * 60_000);
 			served.add(slot.name);
-			push(MEAL_LABEL[slot.name], where, minutes, true, null, slot.name, false, null, 'meal');
+
+			if (chosen) {
+				unseated.splice(unseated.indexOf(chosen), 1);
+				push(chosen.name, to, minutes, false, chosen.id, chosen.category, false, null);
+			} else {
+				push(MEAL_LABEL[slot.name], here, minutes, true, null, slot.name, false, null, 'meal');
+			}
 		}
 	};
 
@@ -703,7 +731,7 @@ function walkClock(
 		const finish = clock + (cursor ? probe.minutes : 0) * 60_000 + p.durationMin * 60_000;
 		// Anything whose window opens before this stop would end. Offered here so
 		// the day fills in order rather than saving every meal until the end.
-		offerMeals(finish, false, pois.slice(pois.indexOf(p)));
+		offerMeals(finish);
 
 		// The way home starts from wherever the stop lets the traveller out --
 		// measuring it from the entrance would price a cable car's whole span
@@ -743,6 +771,18 @@ function walkClock(
 	return { stops, overflowed, travelMin, crowdSum, mealMissHours, waitedMin };
 }
 
+/**
+ * A day's stops split in two: what the route is made of, and the restaurants
+ * the meal pass may seat.
+ *
+ * A pinned restaurant stays in the route -- the traveller said where and when,
+ * and that is not the meal pass's to reconsider.
+ */
+function split(list: PlanPoi[]): { route: PlanPoi[]; diners: PlanPoi[] } {
+	const diners = list.filter((p) => isMeal(p.category) && !p.pinned);
+	return { route: list.filter((p) => !diners.includes(p)), diners };
+}
+
 // ------------------------------------------------------------------ entrypoints
 
 /** Steps 3-5. Respects the day/order the traveller already chose. */
@@ -768,8 +808,25 @@ export function schedule(input: PlanInput): PlanResult {
 	}
 
 	const days = input.days.map((day, i) => {
-		const result = walkClock(byDay.get(i)!, day, input.allowedModes, input.timezone, curves, slots, travel);
+		const { route, diners } = split(byDay.get(i)!);
+		const result = walkClock(
+			route,
+			day,
+			input.allowedModes,
+			input.timezone,
+			curves,
+			slots,
+			travel,
+			diners
+		);
 		unplaced.push(...result.overflowed.map((poi) => ({ poi, reason: 'day-full' as const })));
+		// A restaurant no mealtime came near enough to reach.
+		const seated = new Set(result.stops.map((st) => st.poiId));
+		unplaced.push(
+			...diners
+				.filter((d) => !seated.has(d.id))
+				.map((poi) => ({ poi, reason: 'no-mealtime' as const }))
+		);
 		return { index: i, date: day.date, stops: result.stops, overflowed: result.overflowed };
 	});
 
@@ -813,16 +870,27 @@ export function replan(input: PlanInput): PlanResult {
 		// three restaurants in one day, and nobody eats three sit-down meals.
 		const byWant = (a: PlanPoi, b: PlanPoi) =>
 			(b.priority ?? NEUTRAL_PRIORITY) - (a.priority ?? NEUTRAL_PRIORITY);
-		const meals = list.filter((p) => isMeal(p.category)).sort(byWant);
-		const rest = list.filter((p) => !isMeal(p.category));
-		spilled.push(...meals.slice(MEALS_PER_DAY));
+		const { route, diners } = split(list);
+		// More restaurants than the day has sittings. The least wanted wait for
+		// another day rather than crowding out the sights.
+		const seatable = diners.sort(byWant).slice(0, MEALS_PER_DAY);
+		spilled.push(...diners.slice(MEALS_PER_DAY));
 
 		// Sorted most-wanted-first so that when the day runs out of hours, it is
 		// the least wanted stops that fall off the end rather than whichever
 		// happened to be furthest along the route.
-		const keep = [...rest.sort(byWant), ...meals.slice(0, MEALS_PER_DAY)];
-		const ordered = orderDay(keep, input.days[dayIndex], input.allowedModes, input.timezone, curves, slots, travel);
+		const ordered = orderDay(
+			route.sort(byWant),
+			input.days[dayIndex],
+			input.allowedModes,
+			input.timezone,
+			curves,
+			slots,
+			travel
+		);
 		ordered.forEach((p, orderIndex) => assigned.push({ ...p, dayIndex, orderIndex }));
+		// The meal pass places these; they only need to belong to the day.
+		seatable.forEach((p, i) => assigned.push({ ...p, dayIndex, orderIndex: ordered.length + i }));
 	});
 
 	const result = schedule({ ...input, pois: assigned, curves, travel });
