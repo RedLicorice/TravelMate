@@ -1,5 +1,6 @@
 import type { LatLng } from '$lib/trip/days';
 import { DETOUR, haversineKm } from './geo';
+import { noTravel, type TravelTable } from './travel';
 
 export type Mode = 'walk' | 'bike' | 'transit' | 'car' | 'carshare';
 
@@ -33,9 +34,23 @@ export function chooseMode(km: number, allowed: Mode[], terminal = false): Mode 
 	return preferred ?? allowed[0] ?? 'walk';
 }
 
-export function leg(from: LatLng, to: LatLng, allowed: Mode[], terminal = false): Leg {
+export function leg(
+	from: LatLng,
+	to: LatLng,
+	allowed: Mode[],
+	terminal = false,
+	travel: TravelTable = noTravel
+): Leg {
+	// Mode is still chosen on straight-line distance: it decides which network
+	// to use, and a routed distance would not change that answer.
 	const km = haversineKm(from, to) * DETOUR;
 	const mode = chooseMode(km, allowed, terminal);
+
+	// A real routed time when one was resolved ahead of planning; the speed
+	// model only when it was not.
+	const routed = travel.get(from, to, mode);
+	if (routed) return { mode, minutes: routed.minutes, km: routed.km };
+
 	const minutes = (km / SPEED[mode]) * 60 + (mode === 'transit' ? TRANSIT_OVERHEAD_MIN : 0);
 	return { mode, minutes: Math.round(minutes), km: Math.round(km * 10) / 10 };
 }

@@ -19,6 +19,7 @@
 	import { effectiveDayStart, isMeal, latestReady, tightest, type MealWindows } from '$lib/plan/meals';
 	import { resolveCurves, type CrowdCurves } from '$lib/plan/crowd';
 	import { routeShape } from '$lib/plan/route';
+	import { resolveTravel, type TravelTable } from '$lib/plan/travel';
 	import { avatarDataUri } from '$lib/avatar';
 	import { displayName, loadTripProfiles, type Profile } from '$lib/profile.svelte';
 	import type { Mode } from '$lib/plan/modes';
@@ -48,6 +49,7 @@
 	let bbox = $state<ReturnType<typeof cityBBox>>(null);
 	let people = $state<Profile[]>([]);
 	let curves = $state<CrowdCurves | undefined>(undefined);
+	let travel = $state<TravelTable | undefined>(undefined);
 
 	onMount(async () => {
 		try {
@@ -103,11 +105,31 @@
 		);
 	}
 
+	/**
+	 * Real travel times for every pair the planner might consider -- including
+	 * the hotel and any terminals, since the airport transfer is the leg the
+	 * straight-line model got most wrong.
+	 */
+	async function refreshTravel() {
+		if (!row || !days.length) return;
+		const anchors = days.flatMap((d) => [...d.fixedStart, ...d.fixedEnd].map((w) => w.at));
+		const stops = pois.map((p) => ({ lat: p.lat, lng: p.lng }));
+		const seen = new Set<string>();
+		const points = [...anchors, ...stops].filter((p) => {
+			const key = `${p.lat.toFixed(5)},${p.lng.toFixed(5)}`;
+			if (seen.has(key)) return false;
+			seen.add(key);
+			return true;
+		});
+		travel = await resolveTravel(points, row.allowed_modes as Mode[]);
+	}
+
 	$effect(() => {
 		// Re-resolve when the stops or the dates change, not on every render.
 		void pois.length;
 		void days.length;
 		refreshCurves();
+		refreshTravel();
 	});
 
 	$effect(() => {
@@ -132,7 +154,8 @@
 					allowedModes: row.allowed_modes as Mode[],
 					timezone: row.timezone,
 					mealWindows: agreed.windows,
-					curves
+					curves,
+					travel
 				})
 			: null
 	);
@@ -209,7 +232,8 @@
 				allowedModes: row.allowed_modes as Mode[],
 				timezone: row.timezone,
 				mealWindows: agreed.windows,
-				curves
+				curves,
+				travel
 			});
 			const assignments = next.days.flatMap((d) =>
 				d.stops.filter((s) => s.poiId).map((s, i) => ({ id: s.poiId!, dayIndex: d.index, orderIndex: i }))

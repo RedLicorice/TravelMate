@@ -1,6 +1,7 @@
 import type { Day, LatLng } from '$lib/trip/days';
 import { haversineKm } from './geo';
 import { leg, type Leg, type Mode } from './modes';
+import { noTravel, type TravelTable } from './travel';
 import { categoryCurves, type CrowdCurves } from './crowd';
 import {
 	DEFAULT_WINDOWS,
@@ -79,6 +80,11 @@ export type PlanInput = {
 	curves?: CrowdCurves;
 	/** The window everyone on the trip agrees on. Defaults when nobody said. */
 	mealWindows?: MealWindows;
+	/**
+	 * Routed travel times, resolved ahead of planning for the same reason as
+	 * busyness: this is read inside 2-opt and cannot await.
+	 */
+	travel?: TravelTable;
 };
 
 const at = (p: { lat: number; lng: number }): LatLng => ({ lat: p.lat, lng: p.lng });
@@ -243,7 +249,8 @@ export function orderDay(
 	allowedModes: Mode[],
 	timezone: string,
 	curves: CrowdCurves,
-	slots: MealSlot[]
+	slots: MealSlot[],
+	travel: TravelTable
 ): PlanPoi[] {
 	if (pois.length < 2) return pois;
 
@@ -270,7 +277,7 @@ export function orderDay(
 	// is what lets a museum move out of its 11-15 peak, and what stops it moving
 	// when the detour costs more than the queue.
 	const score = (order: PlanPoi[]) => {
-		const sim = walkClock(order, day, allowedModes, timezone, curves, slots);
+		const sim = walkClock(order, day, allowedModes, timezone, curves, slots, travel);
 		return (
 			sim.travelMin +
 			CROWD_WEIGHT_MIN * sim.crowdSum +
@@ -326,7 +333,8 @@ function walkClock(
 	allowedModes: Mode[],
 	timezone: string,
 	curves: CrowdCurves,
-	slots: MealSlot[]
+	slots: MealSlot[],
+	travel: TravelTable
 ): ClockResult {
 	const stops: PlannedStop[] = [];
 	const overflowed: PlanPoi[] = [];
@@ -350,7 +358,7 @@ function walkClock(
 	) => {
 		let legIn: Leg | null = null;
 		if (cursor) {
-			legIn = leg(cursor, point, allowedModes, terminal || cursorTerminal);
+			legIn = leg(cursor, point, allowedModes, terminal || cursorTerminal, travel);
 			clock += legIn.minutes * 60_000;
 			travelMin += legIn.minutes;
 		}
@@ -411,10 +419,11 @@ function walkClock(
 		// Would this stop, plus getting to the day's final anchor, run past the
 		// end of the day? If so it does not fit -- and neither will anything
 		// after it, since the route is ordered.
-		const probe = leg(cursor ?? at(p), at(p), allowedModes, cursorTerminal);
+		const probe = leg(cursor ?? at(p), at(p), allowedModes, cursorTerminal, travel);
 		const finish = clock + (cursor ? probe.minutes : 0) * 60_000 + p.durationMin * 60_000;
 		const home = day.fixedEnd[0]
-			? leg(at(p), day.fixedEnd[0].at, allowedModes, day.fixedEnd[0].kind === 'terminal').minutes
+			? leg(at(p), day.fixedEnd[0].at, allowedModes, day.fixedEnd[0].kind === 'terminal', travel)
+					.minutes
 			: 0;
 		if (finish + (home + tailMin) * 60_000 > day.end.getTime()) {
 			overflowed.push(p);
@@ -436,6 +445,7 @@ function walkClock(
 export function schedule(input: PlanInput): PlanResult {
 	const curves = input.curves ?? categoryCurves(input.pois, input.days, input.timezone);
 	const slots = slotsFrom(input.mealWindows ?? DEFAULT_WINDOWS);
+	const travel = input.travel ?? noTravel;
 	const byDay = new Map<number, PlanPoi[]>();
 	input.days.forEach((_, i) => byDay.set(i, []));
 	const unplaced: Unplaced[] = [];
@@ -454,7 +464,7 @@ export function schedule(input: PlanInput): PlanResult {
 	}
 
 	const days = input.days.map((day, i) => {
-		const result = walkClock(byDay.get(i)!, day, input.allowedModes, input.timezone, curves, slots);
+		const result = walkClock(byDay.get(i)!, day, input.allowedModes, input.timezone, curves, slots, travel);
 		unplaced.push(...result.overflowed.map((poi) => ({ poi, reason: 'day-full' as const })));
 		return { index: i, date: day.date, stops: result.stops, overflowed: result.overflowed };
 	});
@@ -466,6 +476,7 @@ export function schedule(input: PlanInput): PlanResult {
 export function replan(input: PlanInput): PlanResult {
 	const curves = input.curves ?? categoryCurves(input.pois, input.days, input.timezone);
 	const slots = slotsFrom(input.mealWindows ?? DEFAULT_WINDOWS);
+	const travel = input.travel ?? noTravel;
 
 	// Nothing can be measured from a hotel at 0,0, so say so rather than
 	// producing a plan built on a point in the Gulf of Guinea.
@@ -474,7 +485,7 @@ export function replan(input: PlanInput): PlanResult {
 			days: input.days.map((day, index) => ({
 				index,
 				date: day.date,
-				stops: walkClock([], day, input.allowedModes, input.timezone, curves, slots).stops,
+				stops: walkClock([], day, input.allowedModes, input.timezone, curves, slots, travel).stops,
 				overflowed: []
 			})),
 			unplaced: input.pois.map((poi) => ({ poi, reason: 'no-usable-days' as const }))
@@ -498,11 +509,11 @@ export function replan(input: PlanInput): PlanResult {
 		// the least wanted stops that fall off the end rather than whichever
 		// happened to be furthest along the route.
 		const keep = [...rest.sort(byWant), ...meals.slice(0, MEALS_PER_DAY)];
-		const ordered = orderDay(keep, input.days[dayIndex], input.allowedModes, input.timezone, curves, slots);
+		const ordered = orderDay(keep, input.days[dayIndex], input.allowedModes, input.timezone, curves, slots, travel);
 		ordered.forEach((p, orderIndex) => assigned.push({ ...p, dayIndex, orderIndex }));
 	});
 
-	const result = schedule({ ...input, pois: assigned, curves });
+	const result = schedule({ ...input, pois: assigned, curves, travel });
 	return {
 		days: result.days,
 		unplaced: [
