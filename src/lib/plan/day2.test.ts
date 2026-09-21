@@ -211,3 +211,48 @@ describe('the right sort of place for the right meal', () => {
 		);
 	});
 });
+
+describe('a meal the traveller chose', () => {
+	const chosen = (iso: string): PlanPoi => ({
+		id: 'cafe',
+		name: 'Starbucks',
+		lat: 51.5154,
+		lng: -0.141,
+		category: 'cafe',
+		durationMin: 20,
+		priority: 3,
+		dayIndex: 1,
+		orderIndex: 0,
+		pinned: true,
+		pinnedAt: iso
+	});
+
+	const day = (iso: string) =>
+		schedule({
+			pois: [chosen(iso), stop('Notting Hill', 51.509, -0.196, 'suburb', 60, 1)],
+			days: tripDays(trip),
+			allowedModes: ['walk', 'transit'],
+			timezone: 'Europe/London',
+			mealWindows: tightest([A]).windows
+		}).days[1];
+
+	it('takes the slot instead of appearing under an invented one', () => {
+		// 08:50 London, inside breakfast. The placeholder used to be offered
+		// first, because the window opens before the route reaches the stop --
+		// so the morning was spent twice.
+		const stops = day('2026-10-02T07:50:00.000Z').stops;
+		expect(stops.map((s) => s.name)).toContain('Starbucks');
+		expect(stops.map((s) => s.name)).not.toContain('Breakfast');
+	});
+
+	it('still leaves the other meals to the plan', () => {
+		const names = day('2026-10-02T07:50:00.000Z').stops.map((s) => s.name);
+		expect(names.includes('Lunch') || names.includes('Dinner')).toBe(true);
+	});
+
+	it('does not claim a window it does not fall in', () => {
+		// Pinned to the middle of the afternoon: breakfast is still the plan's
+		// to offer.
+		expect(day('2026-10-02T15:00:00.000Z').stops.map((s) => s.name)).toContain('Breakfast');
+	});
+});

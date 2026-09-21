@@ -534,6 +534,20 @@ function walkClock(
 	const served = new Set<string>();
 	const unseated = [...diners];
 
+	// Meals the traveller placed themselves. Their slots are claimed before the
+	// day is walked, not when the clock reaches them: the meal pass offers a
+	// window as soon as it opens, which is earlier than the route gets to the
+	// stop, so a chosen breakfast would otherwise arrive to find an invented
+	// one already sitting in it and the morning counted twice.
+	//
+	// Every meal left in the route is pinned -- the meal pass owns the rest --
+	// so the time each will be had is known in advance.
+	for (const p of pois) {
+		if (!isMeal(p.category) || !p.pinnedAt) continue;
+		const slot = slotAt(new Date(p.pinnedAt), timezone, slots);
+		if (slot) served.add(slot);
+	}
+
 	const push = (
 		name: string,
 		point: LatLng,
