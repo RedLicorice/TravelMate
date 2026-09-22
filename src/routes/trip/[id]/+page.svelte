@@ -374,6 +374,23 @@
 	let copied = $state(false);
 	let bbox = $state<ReturnType<typeof cityBBox>>(null);
 	let people = $state<Profile[]>([]);
+
+	/** What the traveller has typed to find a place in a long wishlist. */
+	let hunt = $state('');
+
+	/**
+	 * The wishlist, narrowed to what was typed.
+	 *
+	 * Name, category and the traveller's own notes: a place is as often
+	 * remembered by "the one near the station" as by what it is called.
+	 */
+	const shortlist = $derived.by(() => {
+		const needle = hunt.trim().toLowerCase();
+		if (!needle) return pois;
+		return pois.filter((p) =>
+			[p.name, p.category, p.notes].some((field) => field?.toLowerCase().includes(needle))
+		);
+	});
 	/** A share link is a look at the trip. Editing is given by the owner, and
 	    the policies enforce it -- so a control that writes is shown to whoever
 	    may write and to nobody else. */
@@ -1693,7 +1710,19 @@
 						<p class="tm-card__meta">Add places and they will be arranged into days.</p>
 					</div>
 				{:else}
-					{#each pois as p (p.id)}
+					<!-- type=search, so a phone offers the right keyboard and its own
+					     clear button rather than one drawn here. -->
+					<input
+						class="tm-input mb-3"
+						type="search"
+						bind:value={hunt}
+						placeholder="Find a place"
+						aria-label="Filter the wishlist"
+					/>
+					{#if !shortlist.length}
+						<p class="tm-hint">Nothing matches “{hunt.trim()}”.</p>
+					{/if}
+					{#each shortlist as p (p.id)}
 						{@const assigned = dayOf.has(p.id)}
 						<button
 							class="tm-result"
