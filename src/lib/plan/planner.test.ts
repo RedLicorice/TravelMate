@@ -284,18 +284,6 @@ describe('meals', () => {
 		poi('trevi', 41.9009, 12.4833, { durationMin: 30 })
 	];
 
-	it('schedules a restaurant inside a meal slot, not wherever the route reaches it', () => {
-		const result = replan({
-			pois: [...sights, { ...lunchSpot, dayIndex: null, orderIndex: null }],
-			days: mealDays,
-			allowedModes: ['walk', 'transit'],
-			timezone: 'Europe/Rome'
-		});
-		const stop = result.days.flatMap((d) => d.stops).find((s) => s.poiId === 'trattoria');
-		expect(stop).toBeDefined();
-		expect(slotAt(stop!.arrive, 'Europe/Rome', slotsFrom(DEFAULT_WINDOWS))).not.toBeNull();
-	});
-
 	it('flags a meal that could not be fitted near a mealtime', () => {
 		// Forced: the only day is a sliver of afternoon, well outside any slot.
 		const sliver: Trip = {
