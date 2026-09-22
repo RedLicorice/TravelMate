@@ -430,21 +430,21 @@ button.tm-slot {
   text-decoration: underline;
 }
 
-/* The day's own line, drawn behind its cards, with the day before and the day
-   after standing beside it. Off by default: a plain list is the usual way to
-   read a day, and the lines are for placing things in it -- so a drag turns
-   them on whether or not the traveller asked for them. */
-/* A leg the plan is still guessing at. It reads as provisional because it is:
-   the real journey has been asked for and has not come back yet. */
-.tm-leg--estimate {
-  color: var(--tm-warn-ink);
-}
-
+/* Three days, standing where they belong.
+   The day on screen runs down the middle, behind its cards: where a card
+   covers the line there is something planned, and where it shows through
+   there is not. The day before and the day after stand at the edges, out of
+   the way of reading -- they are there to be leaned on, which is how a card
+   moves to another day.
+   Off by default: a plain list is the usual way to read a day, and the lines
+   are for placing things in it, so a drag turns them on whether or not the
+   traveller asked for them. */
 .tm-rails {
   position: relative;
 }
 .tm-rails--on {
-  padding-left: 46px;
+  padding-left: 24px;
+  padding-right: 24px;
 }
 .tm-rails__rail {
   position: absolute;
@@ -453,20 +453,28 @@ button.tm-slot {
   /* The rails are scenery until something is being dropped on them. */
   pointer-events: none;
 }
-.tm-rails__rail--prev {
-  left: 2px;
-  width: 8px;
-}
+/* Behind the cards, not beside them. */
 .tm-rails__rail--here {
-  left: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 10px;
+  z-index: 0;
+}
+.tm-rails__rail--prev {
+  left: 1px;
   width: 10px;
 }
 .tm-rails__rail--next {
-  left: 32px;
-  width: 8px;
+  right: 1px;
+  width: 10px;
 }
-/* Wider than they are drawn: a finger aiming for a 6px line is aiming for the
-   day, not for the pixels. */
+/* The cards sit on top of the middle line, which is the whole point of it. */
+.tm-rails--on > :not(.tm-rails__rail) {
+  position: relative;
+  z-index: 1;
+}
+/* Wider than they are drawn: a finger aiming for a 10px line is aiming for
+   the day, not for the pixels. */
 .tm-rails--drag .tm-rails__rail {
   pointer-events: auto;
 }
@@ -475,8 +483,8 @@ button.tm-slot {
   position: absolute;
   top: 0;
   bottom: 0;
-  left: -7px;
-  right: -7px;
+  left: -10px;
+  right: -10px;
 }
 
 /* Both of a card's times, stacked with a rule between them. The same shape
