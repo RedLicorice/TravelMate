@@ -21,11 +21,14 @@ import { bearer, claimsSignedIn } from './claims.ts';
  * inside the browser bundle, as it is meant to -- could call the routing
  * functions in a loop and spend the whole Google budget.
  *
+ * Answers with the traveller's id rather than yes/no: what is spent has to be
+ * spent by somebody, or the budget has nobody to charge.
+ *
  * Fails closed: if the auth server cannot be reached, nothing paid happens.
  */
-export async function signedIn(req: Request): Promise<boolean> {
+export async function signedIn(req: Request): Promise<string | null> {
 	const token = bearer(req);
-	if (!token || !claimsSignedIn(req)) return false;
+	if (!token || !claimsSignedIn(req)) return null;
 
 	try {
 		const auth = createClient(
@@ -34,8 +37,8 @@ export async function signedIn(req: Request): Promise<boolean> {
 			{ auth: { persistSession: false, autoRefreshToken: false } }
 		);
 		const { data, error } = await auth.auth.getUser(token);
-		return !error && !!data.user;
+		return !error && data.user ? data.user.id : null;
 	} catch {
-		return false;
+		return null;
 	}
 }

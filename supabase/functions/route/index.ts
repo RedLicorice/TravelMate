@@ -1,9 +1,8 @@
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { cors } from '../_shared/cors.ts';
 import { signedIn } from '../_shared/caller.ts';
-
-type LatLng = { lat: number; lng: number };
-type Mode = 'walk' | 'bike' | 'transit' | 'car' | 'carshare';
+import { afford } from '../_shared/budget.ts';
+import { isMode, isPoint, isWhen, type LatLng, type Mode } from '../_shared/input.ts';
 
 const ROUTES = 'https://routes.googleapis.com/directions/v2:computeRoutes';
 
@@ -155,7 +154,8 @@ Deno.serve(async (req) => {
 	if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
 
 	// Paid work, so it is done for a traveller and nobody else.
-	if (!(await signedIn(req))) return json({ route: null }, 401);
+	const traveller = await signedIn(req);
+	if (!traveller) return json({ route: null }, 401);
 
 	try {
 		const { from, to, mode, departAt, prefer } = (await req.json()) as {
@@ -167,6 +167,14 @@ Deno.serve(async (req) => {
 			prefer?: 'rail' | null;
 		};
 		if (!from || !to) return json({ route: null });
+		// Everything below this line is spent: a coordinate goes into a billed
+		// request, and a mode Google does not know is a drive nobody asked for.
+		if (!isMode(mode) || !isPoint(from) || !isPoint(to) || !isWhen(departAt)) {
+			return json({ route: null, error: 'bad_request' }, 400);
+		}
+		if (prefer !== undefined && prefer !== null && prefer !== 'rail') {
+			return json({ route: null, error: 'bad_request' }, 400);
+		}
 
 		const bucket = bucketOf(mode, departAt, prefer);
 		const db = createClient(
@@ -197,7 +205,7 @@ Deno.serve(async (req) => {
 			});
 		}
 
-		const travelMode = TRAVEL_MODE[mode] ?? 'WALK';
+		const travelMode = TRAVEL_MODE[mode];
 		const body: Record<string, unknown> = {
 			origin: { location: { latLng: { latitude: from.lat, longitude: from.lng } } },
 			destination: { location: { latLng: { latitude: to.lat, longitude: to.lng } } },
@@ -218,6 +226,11 @@ Deno.serve(async (req) => {
 					routingPreference: 'FEWER_TRANSFERS'
 				};
 			}
+		}
+
+		// One route is one billed element. Charged before it is asked for.
+		if (!(await afford(db, traveller, 1))) {
+			return json({ route: null, error: 'budget' }, 429);
 		}
 
 		const res = await fetch(ROUTES, {
@@ -275,6 +288,8 @@ Deno.serve(async (req) => {
 		});
 	} catch (error) {
 		console.error('route function failed', error);
-		return json({ route: null, error: String(error) });
+		// The caller gets no exception text: it names internal types and
+		// constraints, and it is read by whoever asked, not by us.
+		return json({ route: null, error: 'internal' }, 500);
 	}
 });

@@ -1,9 +1,8 @@
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { cors } from '../_shared/cors.ts';
 import { signedIn } from '../_shared/caller.ts';
-
-type LatLng = { lat: number; lng: number };
-type Mode = 'walk' | 'bike' | 'transit' | 'car' | 'carshare';
+import { afford } from '../_shared/budget.ts';
+import { isMode, isPoint, isWhen, type LatLng, type Mode } from '../_shared/input.ts';
 
 const MATRIX = 'https://routes.googleapis.com/distanceMatrix/v2:computeRouteMatrix';
 
@@ -46,7 +45,8 @@ Deno.serve(async (req) => {
 	if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
 
 	// Paid work, so it is done for a traveller and nobody else.
-	if (!(await signedIn(req))) return json({ cells: [] }, 401);
+	const traveller = await signedIn(req);
+	if (!traveller) return json({ cells: [] }, 401);
 
 	try {
 		const { points, mode, departAt } = (await req.json()) as {
@@ -56,8 +56,13 @@ Deno.serve(async (req) => {
 		};
 
 		if (!Array.isArray(points) || points.length < 2) return json({ cells: [] });
+		// Everything below this line is spent: a coordinate goes into a billed
+		// request, and a mode Google does not know is a drive nobody asked for.
+		if (!isMode(mode) || !points.every(isPoint) || !isWhen(departAt)) {
+			return json({ cells: [], error: 'bad_request' }, 400);
+		}
 
-		const travelMode = TRAVEL_MODE[mode] ?? 'WALK';
+		const travelMode = TRAVEL_MODE[mode];
 		const cap = MAX_ELEMENTS[travelMode] ?? DEFAULT_MAX_ELEMENTS;
 		// Refusing beats truncating: a partial matrix looks like a complete one
 		// and would quietly mis-order a day.
@@ -91,9 +96,10 @@ Deno.serve(async (req) => {
 		const complete = keys.every((f) => keys.every((t) => f === t || have.has(`${f}>${t}`)));
 		if (complete) return json({ cells: [...have.values()] });
 
-		// 2. Ask for the whole matrix. Requesting only the gaps would cost the
-		//    same -- billing is per element requested -- and a full matrix keeps
-		//    the cache coherent.
+		// 2. Ask for the whole matrix. Billing is per element requested, so the
+		//    gaps alone would be cheaper; a full matrix is asked for because it
+		//    keeps the cache coherent -- every pair answered at the same
+		//    departure, from the same provider, expiring together.
 		const waypoints = points.map((p) => ({
 			waypoint: { location: { latLng: { latitude: p.lat, longitude: p.lng } } }
 		}));
@@ -105,6 +111,12 @@ Deno.serve(async (req) => {
 		// departureTime is required for TRANSIT and meaningless without it.
 		// routingPreference is a DRIVE-only field that TRANSIT rejects.
 		if (travelMode === 'TRANSIT') body.departureTime = departAt ?? new Date().toISOString();
+
+		// Charged for the whole matrix before it is asked for, because that is
+		// what Google bills whether the answer is useful or not.
+		if (!(await afford(db, traveller, waypoints.length * waypoints.length))) {
+			return json({ cells: [...have.values()], error: 'budget' }, 429);
+		}
 
 		const res = await fetch(MATRIX, {
 			method: 'POST',
@@ -165,6 +177,8 @@ Deno.serve(async (req) => {
 		return json({ cells });
 	} catch (error) {
 		console.error('travel function failed', error);
-		return json({ cells: [], error: String(error) });
+		// The caller gets no exception text: it names internal types and
+		// constraints, and it is read by whoever asked, not by us.
+		return json({ cells: [], error: 'internal' }, 500);
 	}
 });
