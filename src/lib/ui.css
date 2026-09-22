@@ -117,6 +117,10 @@
   background: var(--tm-warn-soft);
   color: var(--tm-warn-ink);
 }
+.tm-chip--error {
+  background: var(--tm-danger-soft);
+  color: var(--tm-danger-ink);
+}
 .tm-chip--ok {
   background: var(--tm-ok-soft);
   color: var(--tm-ok-ink);
@@ -578,4 +582,23 @@ button.tm-slot {
 }
 @media (prefers-reduced-motion: reduce) {
   .tm-skel { animation: none; }
+}
+
+/* The card the day breaks on. Something has to give and the plan may not
+   decide what: the mark says which card to move, or to make room for. */
+.tm-stop--blocked {
+  border-color: var(--tm-danger-ink);
+}
+.tm-stop__blocked {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-right: 6px;
+  border-radius: var(--tm-r-full);
+  background: var(--tm-danger-ink);
+  color: var(--tm-surface);
+  font: 700 12px/1 var(--tm-font);
+  vertical-align: text-bottom;
 }

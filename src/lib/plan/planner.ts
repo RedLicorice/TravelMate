@@ -62,9 +62,10 @@ export type PlanPoi = {
 	dayIndex: number | null;
 	/**
 	 * This card's own clock, as an ISO instant. Everything holds one. A day is
-	 * its cards in the order their clocks say; a re-time walks each card at
-	 * its clock and says whether the traveller can make it; Replan writes new
-	 * ones onto everything it is allowed to move.
+	 * its cards in the order their clocks say; a re-time walks each card from
+	 * its clock -- never earlier, later when the legs say so -- except a pin
+	 * and the traveller's own furniture, which happen exactly then; Replan
+	 * writes new ones onto everything it is allowed to move.
 	 */
 	at: string;
 	/** Not read. Position is no longer a concept; the clock orders the day. */
@@ -89,7 +90,15 @@ export type PlanPoi = {
 	branches?: LatLng[] | null;
 };
 
-export type Warning = { kind: 'crowded' | 'overflow' | 'off-hours'; message: string };
+/**
+ * 'blocked' is the one the traveller has to answer.
+ *
+ * A card they pinned and a piece of the day's own furniture cannot be moved,
+ * so when the journeys turn out longer than the plan was built on, something
+ * else has to move -- and what moves is not the re-time's to decide. It says
+ * which card can no longer be reached and leaves it to them, or to Replan.
+ */
+export type Warning = { kind: 'crowded' | 'overflow' | 'off-hours' | 'blocked'; message: string };
 
 /** Why a stop is not on the plan. Surfaced when the traveller taps it. */
 export type UnplacedReason =
@@ -294,7 +303,7 @@ export const BLOCK_CATEGORY = 'block';
  * trip. A stored plan older than this re-times itself when the trip is opened,
  * so the traveller never has to tap Replan because the app changed.
  */
-export const PLANNER_VERSION = 4;
+export const PLANNER_VERSION = 5;
 
 /** The default when nobody has rated a stop: wanting it averagely. */
 const NEUTRAL_PRIORITY = 3;
@@ -652,9 +661,15 @@ type ClockResult = {
  *
  * `arrange` is whether the plan is deciding the day. When it is, a free stop
  * happens when the walk reaches it, meals are offered as their windows open,
- * and what does not fit is spilled for Replan to find another day. When it is
- * not, every card happens at its own clock: the walk only says whether the
- * traveller can get there by then, and what the day costs.
+ * and what does not fit is spilled for Replan to find another day.
+ *
+ * When it is not -- a re-time -- nothing is reordered, dropped, seated or
+ * invented, and nothing moves earlier than the clock it states. A leg is real
+ * time, though: where the walk reaches a free stop after its clock, that stop
+ * happens when the traveller actually arrives and the rest of the day moves
+ * with it. The two things that never move are a pin and the traveller's own
+ * furniture; where the walk cannot reach one of those in time it keeps its
+ * clock regardless, and the stop that runs into it is told so.
  */
 function walkClock(
 	pois: PlanPoi[],
@@ -738,10 +753,21 @@ function walkClock(
 		/** Anything else worth saying about this stop. */
 		note: Warning | null = null,
 		/**
-		 * The card's own clock, when it has one that holds. Null means the
-		 * walk decides: the card happens when the traveller gets there.
+		 * The card's own clock, when it has one. Null means the walk decides:
+		 * the card happens when the traveller gets there.
 		 */
-		at: number | null = null
+		at: number | null = null,
+		/**
+		 * Whether that clock holds. A pin, the traveller's own furniture and a
+		 * ticket do: the card happens exactly then, and being unable to reach it
+		 * by then is reported rather than quietly fixed. Otherwise the clock is
+		 * only a floor -- the traveller waits if they are early, and the card
+		 * happens later if the legs before it ran long, because a leg is real
+		 * time and the day moves on it.
+		 *
+		 * Returns whether the traveller cannot get here by the clock they gave.
+		 */
+		atHolds = true
 	) => {
 		let legIn: Leg | null = null;
 		if (cursor) {
@@ -758,13 +784,18 @@ function walkClock(
 			clock += legIn.minutes * 60_000;
 			travelMin += legIn.minutes;
 		}
-		// A card with a clock happens when its clock says. Being early is
+		// A card whose clock holds happens when its clock says. Being early is
 		// waiting; being late means the traveller cannot get here by then, and
 		// the warning below says so rather than the plan quietly sliding the
 		// card. Nothing is moved: the card keeps its stated time and the day
 		// carries on from the end of it.
-		const late = at !== null && clock > at;
-		if (at !== null) clock = at;
+		//
+		// A card whose clock is only a floor happens no earlier than it says --
+		// arriving early is waiting, not a reason to drag the day backwards --
+		// and later when the walk got here later. That is not lateness, it is
+		// when the day now happens, and it says nothing.
+		const late = at !== null && atHolds && clock > at;
+		if (at !== null) clock = atHolds ? at : Math.max(clock, at);
 		let arrive = new Date(clock);
 
 		// A meal reached before its slot waits for it rather than being eaten at
@@ -810,17 +841,21 @@ function walkClock(
 		// The journey is not something the traveller can be late for by
 		// planning badly: it is the ticket they hold, and its cards read what
 		// the ticket reads whatever the day around them does.
-		// Nor is furniture told, while Replan is arranging the day, that it
-		// cannot be reached: the traveller said when it happens, and the free
-		// stops are what Replan arranges to make that so. A re-time still says
-		// it, because a re-time reports the day exactly as it stands.
+		// Nor is furniture ever told that it cannot be reached: the traveller
+		// said when it happens, and a plan that cannot make it says so on the
+		// stop that runs into it. The caller puts the warning there.
 		const ticketed = anchorKind === 'terminal' || anchorKind === 'service';
 		// Never on the day's own furniture. Where the hotel is and when the
 		// traveller checks in is something they stated, not something the plan
 		// worked out, and telling them they cannot reach their own hotel is
 		// noise on every card of every day.
 		if (late && !dayIsOver && !ticketed && !anchor) {
-			warnings.push({ kind: 'overflow', message: 'You cannot get here by then' });
+			warnings.push({
+				kind: pinned ? 'blocked' : 'overflow',
+				message: pinned
+					? 'You cannot get here by then. Replan, or move something.'
+					: 'You cannot get here by then'
+			});
 		} else if (runsLate && !dayIsOver && !anchor) {
 			warnings.push({ kind: 'overflow', message: 'Runs past the end of the day' });
 		}
@@ -858,6 +893,7 @@ function walkClock(
 		// The day carries on from wherever this stop let the traveller out.
 		cursor = exitAt ?? point;
 		cursorTerminal = terminal;
+		return late;
 	};
 
 	// The way in, at the times the tickets say. Every card of a journey sits
@@ -1055,10 +1091,16 @@ function walkClock(
 		const p = pois[i];
 		const anchorKind = isAnchor(p) ? p.kind : p.kind === 'meal' ? 'meal' : null;
 		const anchor = anchorKind !== null;
-		// Its clock, where that holds: every card on a re-time, and a pin or
-		// the traveller's own furniture when the plan is arranging the day.
+		// Its clock: every card has one on a re-time, and a pin or the
+		// traveller's own furniture has one while the plan is arranging the day.
 		// Anything else happens when the walk gets there.
 		const held = !arrange || holdsClock(p) ? Date.parse(p.at) : null;
+		// Whether that clock is the card's to keep. A pin and the traveller's
+		// own furniture keep theirs whatever the walk says. On a re-time every
+		// other card takes its clock as a floor: it never happens earlier, and
+		// a leg that ran longer than the plan was built on pushes it later --
+		// and everything after it with it.
+		const holds = arrange || holdsClock(p);
 		// A block of time the traveller added themselves -- a rest, an errand,
 		// a nap -- happens wherever they already are, the same as a meal. Its
 		// stored coordinates are a formality. An anchor's are not: the hotel
@@ -1068,11 +1110,12 @@ function walkClock(
 			: p.kind === 'meal' || p.category === BLOCK_CATEGORY
 				? (cursor ?? at(p))
 				: nearestBranch(p, cursor ?? at(p), haversineKm);
-		/** When this card would be over: its clock plus its length, or the walk's. */
+		/** When this card would be over: when it happens, plus its length. */
 		const ends = () => {
 			const leg_ = leg(cursor ?? where, where, allowedModes, cursorTerminal, travel);
 			const reach = clock + (cursor ? leg_.minutes : 0) * 60_000;
-			return (held ?? reach) + p.durationMin * 60_000;
+			const starts = held === null ? reach : holds ? held : Math.max(held, reach);
+			return starts + p.durationMin * 60_000;
 		};
 		// Anything whose window opens before this stop would end. Offered here
 		// so the day fills in order rather than saving every meal until the end.
@@ -1132,7 +1175,7 @@ function walkClock(
 			const slot = slots.find((s) => s.name === p.meal);
 			if (slot && mealMiss(new Date(held), timezone, [slot]) > 0.5) note = OFF_HOURS;
 		}
-		push(
+		const missed = push(
 			p.name,
 			where,
 			p.durationMin,
@@ -1147,8 +1190,25 @@ function walkClock(
 			runsLate,
 			p.pinned ?? false,
 			note,
-			held
+			held,
+			holds
 		);
+
+		// The traveller cannot be at their own hotel at six if what they put
+		// before it runs past six. The furniture keeps its clock and says
+		// nothing -- where the hotel is and when they check in is what they
+		// told the plan, not something it worked out. The stop that runs into
+		// it is the one that does not fit, so that is the card that says so.
+		// One overflow warning per card, since the screen draws them by kind.
+		if (!arrange && missed && anchor && dayEndMs > day.start.getTime()) {
+			const before = stops.at(-2);
+			if (before && !before.anchor && !before.warnings.some((w) => w.kind === 'overflow')) {
+				before.warnings.push({
+					kind: 'blocked',
+					message: `You cannot get to ${p.name} after this. Replan, or move something.`
+				});
+			}
+		}
 	}
 
 	// Whatever the day never got round to, while there is still room for it --
@@ -1185,13 +1245,22 @@ function split(list: PlanPoi[]): { route: PlanPoi[]; diners: PlanPoi[]; containe
 // ------------------------------------------------------------------ entrypoints
 
 /**
- * A re-time. Every card happens at its own clock, in the order the clocks
- * say; the walk fills in the legs, the lengths, what the day costs and
- * whether each card can be reached by then. Nothing is moved, dropped,
- * seated or invented -- the traveller arranged this day, and a day they have
- * overfilled is walked to its end with its cards saying so. The day's limits
- * belong to Replan, which arranges the day itself and may spill what does
- * not fit.
+ * A re-time. The cards are walked in the order their clocks say, and the walk
+ * fills in the legs, the lengths and what the day costs. Nothing is
+ * reordered, dropped, seated or invented -- the traveller arranged this day.
+ *
+ * Only the times move, and only forwards. A leg is real time: where the walk
+ * reaches a card later than its clock -- a routed travel time longer than the
+ * estimate the plan was built on, say -- that card happens when the traveller
+ * actually arrives, and everything after it shifts by the same difference. An
+ * early arrival waits: no card is moved earlier than it says.
+ *
+ * Two cards never move: one the traveller pinned, and the day's own furniture
+ * -- the hotel, a chore, a meal they placed. Those keep their stated clock
+ * even when the walk cannot reach them in time, and the cards before them are
+ * left alone too; the stop that runs into such a card is told it cannot be
+ * made, rather than the plan inventing a fix. The day's limits belong to
+ * Replan, which arranges the day itself and may spill what does not fit.
  */
 export function schedule(input: PlanInput): PlanResult {
 	const curves = input.curves ?? categoryCurves(places(input.pois), input.days, input.timezone);

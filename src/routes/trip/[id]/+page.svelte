@@ -1268,6 +1268,38 @@
 		fresh = next.days;
 		planAt = await savePlan(tripId, next, stored);
 
+		// A longer journey is a later afternoon.
+		//
+		// A leg is movement, and movement takes time: when a routed leg comes
+		// back longer than the estimate the day was built on, the cards after
+		// it happen later, and later is now what their clocks say. Only the
+		// ones the walk moved are written -- a pinned card and the day's own
+		// furniture stay at the minute the traveller gave them, so there is
+		// nothing to write for those.
+		const moved = next.days.flatMap((d) =>
+			d.stops
+				.filter((st) => st.placementId)
+				.map((st) => ({ st, was: placements.find((pl) => pl.id === st.placementId) }))
+				.filter(({ st, was }) => was && Date.parse(was.at) !== st.arrive.getTime())
+				.map(({ st, was }) => ({
+					id: st.placementId!,
+					poiId: was!.poi_id,
+					kind: was!.kind,
+					name: was!.name,
+					minutes: was!.minutes,
+					meal: was!.meal,
+					dayIndex: was!.day_index,
+					at: st.arrive.toISOString()
+				}))
+		);
+		if (moved.length) {
+			placements = placements.map((pl) => {
+				const now = moved.find((m) => m.id === pl.id);
+				return now ? { ...pl, at: now.at } : pl;
+			});
+			await savePlacements(tripId, moved);
+		}
+
 		// Nothing is taken off the plan here. A visit the walk could not seat
 		// was still put on that day by the traveller, and deleting it because
 		// the planner had an opinion is how a restaurant dragged into a free
@@ -2356,6 +2388,7 @@
 							class:tm-stop--service={stop.anchorKind === 'service'}
 							class:tm-stop--chore={stop.anchorKind === 'chore'}
 							class:tm-stop--meal={stop.anchorKind === 'meal'}
+							class:tm-stop--blocked={stop.warnings.some((w) => w.kind === 'blocked')}
 							data-drop-stop={stop.placementId ?? undefined}
 							{@attach stop.poiId
 								? longPress(() => openCard(stop.placementId ?? stop.poiId!))
@@ -2404,6 +2437,13 @@
 							</span>
 							<div>
 								<p class="tm-stop__name">
+									<!-- The card that does not fit wears a mark. Something
+									     has to move and the plan is not allowed to choose
+									     which, so the traveller is told which card the day
+									     breaks on rather than left to find it. -->
+									{#if stop.warnings.some((w) => w.kind === 'blocked')}
+										<span class="tm-stop__blocked" aria-label="Does not fit">!</span>
+									{/if}
 									{#if stop.poiId}
 										<button
 											class="tm-stop__open"
@@ -2462,7 +2502,19 @@
 								     warnings of one sort on a card used to take the whole
 								     screen down rather than draw one of them. -->
 								{#each stop.warnings as w (w.kind + w.message)}
-									<div class="mt-2"><span class="tm-chip tm-chip--warn">{w.message}</span></div>
+									<div class="mt-2">
+										<!-- A day that cannot be walked is not a remark about
+										     the weather: the card it names is one the plan is
+										     not allowed to move, so the traveller has to say
+										     what gives. -->
+										<span
+											class="tm-chip"
+											class:tm-chip--error={w.kind === 'blocked'}
+											class:tm-chip--warn={w.kind !== 'blocked'}
+										>
+											{w.message}
+										</span>
+									</div>
 								{/each}
 							</div>
 						</div>
