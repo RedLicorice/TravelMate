@@ -231,6 +231,13 @@ export async function mutate(
 		m.ops.push(op);
 		bump();
 	};
+	/**
+	 * A row this same edit creates. Changing it again inside the edit changes
+	 * what is created -- a separate write would be made against a version the
+	 * row has never had, and the server would rightly refuse it.
+	 */
+	const made = (table: Table, key: Key) =>
+		m.ops.findIndex((o) => o.op === 'insert' && o.table === table && rowId(table, o.key) === rowId(table, key));
 	const writer: Writer = {
 		insert(table, values) {
 			push({ op: 'insert', table, key: keyOf(table, values), lock: lockOf(table, values), base: null, values });
@@ -240,12 +247,26 @@ export async function mutate(
 			if (!was) throw new Error(`“${name}”: there is no such ${table} row on this device.`);
 			const changed = Object.fromEntries(Object.entries(values).filter(([k, v]) => !same(was[k], v)));
 			if (!Object.keys(changed).length) return;
+			const created = made(table, key);
+			if (created >= 0) {
+				const op = m.ops[created] as Extract<Op, { op: 'insert' }>;
+				op.values = { ...op.values, ...changed };
+				bump();
+				return;
+			}
 			const base = (confirmed.get(rowId(table, key))?.row.version as number | undefined) ?? null;
 			push({ op: 'update', table, key, lock: lockOf(table, was), base, values: changed, before: was });
 		},
 		remove(table, key) {
 			const was = view.rows.get(rowId(table, key))?.row;
 			if (!was) return;
+			// Made and unmade in one edit: nothing to send.
+			const created = made(table, key);
+			if (created >= 0) {
+				m.ops.splice(created, 1);
+				bump();
+				return;
+			}
 			const base = (confirmed.get(rowId(table, key))?.row.version as number | undefined) ?? null;
 			push({ op: 'delete', table, key, lock: lockOf(table, was), base, before: was });
 		},

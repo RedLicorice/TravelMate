@@ -982,8 +982,15 @@
 			const from = prev.depart < next.arrive ? prev.depart : prev.arrive;
 			return between(from, next.arrive);
 		}
-		if (prev) return new Date(prev.depart.getTime() + 15 * 60_000).toISOString();
-		if (next) return new Date(next.arrive.getTime() - 60 * 60_000).toISOString();
+		// Beyond the one card there is -- but never outside the day. Before it
+		// begins the traveller is still on the way in, and after it ends they
+		// are asleep or on the way out: nothing goes there, by hand either.
+		// Put above the card the day opens with, it takes the day's first
+		// free minute; below the one it closes with, the last minute before it.
+		const start = days[day]?.start.getTime() ?? -Infinity;
+		const end = days[day]?.end.getTime() ?? Infinity;
+		if (prev) return new Date(Math.min(prev.depart.getTime() + 15 * 60_000, end - 60_000)).toISOString();
+		if (next) return new Date(Math.max(next.arrive.getTime() - 60 * 60_000, start)).toISOString();
 		return (days[day]?.start ?? new Date()).toISOString();
 	}
 
@@ -1520,19 +1527,6 @@
 		}
 		busy = true;
 		try {
-			// Replan builds around what is pinned: a pinned card keeps the day
-			// and the moment its card says, and everything else is arranged to
-			// fit before and after it.
-			const input = {
-				pois: everyVisit(),
-				days,
-				allowedModes: row.allowed_modes as Mode[],
-				timezone: row.timezone,
-				mealWindows: agreed.windows,
-				curves,
-				meals: mealPlan,
-				hotel: { name: row.hotel_name, lat: row.hotel_lat, lng: row.hotel_lng }
-			};
 			// The matrix prices every pair the ordering might need. This is the
 			// one thing worth paying for up front: which stops share a day, and
 			// in what order, cannot be decided on guesses.
@@ -1541,6 +1535,24 @@
 
 			step = 'Arranging…';
 			await edit('Replanned the trip', (w) => {
+				// Read now, not before the lookup: a collaborator may have added
+				// or removed a place while it ran, and a plan built on the trip as
+				// it was would name a place that is gone -- and be refused whole.
+				const trip = row;
+				if (!trip) return;
+				// Replan builds around what is pinned: a pinned card keeps the day
+				// and the moment its card says, and everything else is arranged to
+				// fit before and after it.
+				const input = {
+					pois: everyVisit(),
+					days,
+					allowedModes: trip.allowed_modes as Mode[],
+					timezone: trip.timezone,
+					mealWindows: agreed.windows,
+					curves,
+					meals: mealPlan,
+					hotel: { name: trip.hotel_name, lat: trip.hotel_lat, lng: trip.hotel_lng }
+				};
 				const ordered = replan({ ...input, travel });
 
 				// Written back from Replan itself, not from a re-walk of it. The

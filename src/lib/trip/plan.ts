@@ -21,7 +21,11 @@ export type PlanStopRow = {
 	 */
 	placement_id: string | null;
 	day_index: number;
-	/** Written for older clients. Nothing reads it: a day goes by the clock. */
+	/**
+	 * The order the plan was written in. Not what orders a day -- the clock
+	 * does -- but loadPlan reads it, and orderedRows keeps the journey cards
+	 * at either end of a day in exactly this order, which is the ticket's.
+	 */
 	order_index: number;
 	poi_id: string | null;
 	name: string;
@@ -57,26 +61,37 @@ export type PlanStopRow = {
  * day starts and ends at the hotel. Without the count both of those are
  * "0:hotel:Hotel Artemide", the same stored row is claimed twice, and the
  * whole save is refused.
+ *
+ * A journey card -- a terminal, a service -- holds the instant off its
+ * ticket, and that instant is what it is. Counting would pair the nth
+ * airport before an edit to the legs with the nth one after it, which need
+ * not be the same card; and the journey time the server routed for one
+ * would be drawn under the other.
  */
-const identity = (
-	dayIndex: number,
-	s: { placementId?: string | null; poiId: string | null; anchorKind?: string | null; name: string },
-	nth = 0
-) => s.placementId ?? s.poiId ?? `${dayIndex}:${s.anchorKind ?? ''}:${s.name}:${nth}`;
+type Identified = {
+	placementId?: string | null;
+	poiId: string | null;
+	anchorKind?: string | null;
+	name: string;
+	/** When the card happens, in ms. */
+	at: number;
+};
+
+const isTicket = (s: Identified) => s.anchorKind === 'terminal' || s.anchorKind === 'service';
+
+const identity = (dayIndex: number, s: Identified, nth = 0) =>
+	s.placementId ??
+	s.poiId ??
+	`${dayIndex}:${s.anchorKind ?? ''}:${s.name}:${isTicket(s) ? `@${s.at}` : nth}`;
 
 /** Identity, counting repeats of the same anchor within its day. */
-function identities<
-	T extends { placementId?: string | null; poiId: string | null; anchorKind?: string | null; name: string }
->(
-	dayIndex: number,
-	stops: T[]
-): string[] {
+function identities(dayIndex: number, stops: Identified[]): string[] {
 	const seen = new Map<string, number>();
 	return stops.map((s) => {
 		const base = identity(dayIndex, s);
 		const nth = seen.get(base) ?? 0;
 		seen.set(base, nth + 1);
-		return s.placementId ?? s.poiId ?? identity(dayIndex, s, nth);
+		return identity(dayIndex, s, nth);
 	});
 }
 
@@ -148,14 +163,15 @@ export function savePlan(
 				placementId: r.placement_id,
 				poiId: r.poi_id,
 				anchorKind: r.anchor_kind,
-				name: r.name
+				name: r.name,
+				at: Date.parse(r.starts_at)
 			}))
 		);
 		keys.forEach((key, i) => ids.set(key, ordered[i].id));
 	}
 
 	const rows = result.days.flatMap((d) => {
-		const keys = identities(d.index, d.stops);
+		const keys = identities(d.index, d.stops.map((st) => ({ ...st, at: st.arrive.getTime() })));
 		return d.stops.map((s, i) => toRow(tripId, d.index, i, s, s.id ?? ids.get(keys[i]) ?? null));
 	});
 

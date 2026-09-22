@@ -13,7 +13,7 @@ import { createClient } from '@supabase/supabase-js';
 import { PUBLIC_SUPABASE_PUBLISHABLE_KEY, PUBLIC_SUPABASE_URL } from '$env/static/public';
 import { cleanupOutdatedCaches, createHandlerBoundToURL, precacheAndRoute } from 'workbox-precaching';
 import { NavigationRoute, registerRoute } from 'workbox-routing';
-import { authStorage } from '$lib/store/idb';
+import { authKey, authStorage } from '$lib/store/idb';
 import { CHANNEL, SYNC_TAG, drain } from '$lib/store/sync';
 
 declare const self: ServiceWorkerGlobalScope;
@@ -42,7 +42,7 @@ self.addEventListener('sync', (e) => {
 			// The same session the page uses, from the same place. Not refreshed
 			// on a timer: a worker lives for as long as this one event.
 			const server = createClient(PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_PUBLISHABLE_KEY, {
-				auth: { storage: authStorage, persistSession: true, autoRefreshToken: false, detectSessionInUrl: false }
+				auth: { storage: authStorage, storageKey: authKey(PUBLIC_SUPABASE_URL), persistSession: true, autoRefreshToken: false, detectSessionInUrl: false }
 			});
 			await drain(server, () => {});
 			// An open tab redraws from the device database.
