@@ -773,28 +773,32 @@ describe('a pin is the traveller\'s, not the planner\'s', () => {
 		expect(result.days[0].stops.find((s) => s.poiId === 'long')!.arrive.toISOString()).toBe(held);
 	});
 
-	it('orders two pins by the moments they hold', () => {
-		const at = (id: string, iso: string): PlanPoi => ({
+	it('orders two pins the way the traveller put them', () => {
+		// Not by the moments they hold. A pin says Replan may not move this
+		// one; which comes first is the order, the same as for everything
+		// else -- a stop dragged above another used to be pulled back under it
+		// by whichever clock happened to be earlier.
+		const at = (id: string, iso: string, orderIndex: number): PlanPoi => ({
 			...stubborn,
 			id,
 			poiId: id,
 			name: id,
 			durationMin: 30,
 			pinnedAt: iso,
-			orderIndex: 9
+			orderIndex
 		});
 		const result = replan({
-			// Deliberately given in the wrong order, with equal indices.
-			pois: [at('evening', '2026-10-02T18:00:00.000Z'), at('noon', '2026-10-02T11:00:00.000Z')],
+			pois: [at('evening', '2026-10-02T18:00:00.000Z', 0), at('noon', '2026-10-02T11:00:00.000Z', 1)],
 			days: tripDays({ ...tight, dayEnd: '22:00' }),
 			allowedModes: ['walk'],
 			timezone: 'Europe/London'
 		});
 		expect(result.days[0].stops.filter((s) => s.poiId).map((s) => s.poiId)).toEqual([
-			'noon',
-			'evening'
+			'evening',
+			'noon'
 		]);
 	});
+
 });
 
 describe('a stop you leave from somewhere else', () => {

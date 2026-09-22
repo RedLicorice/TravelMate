@@ -489,14 +489,15 @@ export function orderDay(
 	const remaining = pois.filter((p) => !stays(p));
 	// By the moment they are held at, where they have one: two pins at 13:00
 	// and 19:00 have an order whatever their stored indices say.
+	// Where the traveller put them, in the order they put them. A pin used to
+	// be seated by the moment its card happened to hold, so a stop dragged
+	// above a meal was pulled back under it by a clock nobody had asked about
+	// -- the order said one thing and the times said another, and the times
+	// won. A pin says Replan may not move this one. Which one comes first is
+	// the order, the same as for everything else on the day.
 	const pins = pois
 		.filter((p) => p.pinned && !isAnchor(p))
-		.sort(
-			(a, b) =>
-				(a.pinnedAt ? Date.parse(a.pinnedAt) : Infinity) -
-					(b.pinnedAt ? Date.parse(b.pinnedAt) : Infinity) ||
-				(a.orderIndex ?? 0) - (b.orderIndex ?? 0)
-		);
+		.sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0));
 	// An anchor has a position and nothing else to say about it: the hotel is
 	// first because the traveller put it first, not because of any clock.
 	const anchors = pois

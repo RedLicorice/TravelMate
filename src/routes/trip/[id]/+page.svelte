@@ -1044,7 +1044,12 @@
 		// put back where its old moment said -- pinned, in the place it had
 		// just been dragged out of. Clearing it is also what stops a pin from
 		// a week ago dragging today's move backwards.
-		const held = { pinned: true };
+		// A drop says where, and only where. It used to pin as well, and a pin
+		// carries the moment the card had -- so the order was written and then
+		// outranked by a clock the same gesture invented, and the card slid
+		// back under whatever had an earlier time. Pins are the traveller's to
+		// set, deliberately, and nothing else sets them.
+		const held = {};
 		// Its old card time is where it used to be, and it is not there any
 		// more: the walk about to run decides when it happens now.
 		justMoved = draggedId;
@@ -1091,7 +1096,6 @@
 						};
 					})
 			);
-			await holdPlacement(draggedId, true);
 			// Refine in the background: real road times may shift the day by a
 			// few minutes, and that is not worth a frozen screen.
 			await restore();
@@ -1149,11 +1153,11 @@
 	 */
 	let timing: Promise<void> | null = null;
 
-	async function restore(opts: { hold?: string } = {}): Promise<void> {
+	async function restore(): Promise<void> {
 		const previous = timing;
 		const mine = (async () => {
 			if (previous) await previous.catch(() => {});
-			await retime(opts);
+			await retime();
 		})();
 		timing = mine;
 		try {
@@ -1215,7 +1219,7 @@
 		};
 	}
 
-	async function retime(opts: { hold?: string } = {}) {
+	async function retime() {
 		const input = planInput();
 		if (!input) return;
 		// Scheduled on what is already known, and written straight away. The
@@ -1224,23 +1228,6 @@
 		const next = schedule({ ...input, travel: known() });
 		fresh = next.days;
 		planAt = await savePlan(tripId, next, stored);
-
-		// A stop the day could not reach has to give up its day, or it belongs
-		// to neither place: absent from the plan because it did not fit, and
-		// absent from the wishlist because it still claims a day. That is how
-		// a restaurant added to a full evening disappeared without a word.
-		// Whatever the traveller just moved keeps the moment the plan gave it.
-		if (opts.hold) {
-			const at = next.days
-				.flatMap((d) => d.stops)
-				.find((st) => st.poiId === opts.hold)?.arrive;
-			if (at) {
-				await holdPlacement(opts.hold, true);
-				placements = placements.map((pl) =>
-					pl.id === opts.hold ? { ...pl, pinned: true } : pl
-				);
-			}
-		}
 
 		// A visit the day could not reach goes back to the wishlist rather than
 		// belonging to neither place: absent from the plan because it did not
@@ -1459,7 +1446,7 @@
 			// The visit it is about to get is pinned: the traveller put this at
 			// a particular point in the day, and a block has no geography for
 			// Replan to reason about.
-			await placeInto(created.id, { ...target, hold: true });
+			await placeInto(created.id, target);
 		} catch (e) {
 			error = (e as Error).message;
 			busy = false;
@@ -1586,7 +1573,7 @@
 				? onDay.findIndex((pl) => pl.poi_id === target.before)
 				: onDay.length;
 			const at = slot < 0 ? onDay.length : slot;
-			const made = await place(tripId, poiId, target.day, at, target.hold ?? false);
+			const made = await place(tripId, poiId, target.day, at);
 			await savePlacements(tripId, [
 				{ id: made.id, poiId, dayIndex: target.day, orderIndex: at },
 				...onDay.slice(at).map((pl, i) => ({
