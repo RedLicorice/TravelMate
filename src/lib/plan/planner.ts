@@ -742,8 +742,8 @@ function walkClock(
 		anchorKind: 'hotel' | 'terminal' | 'service' | 'chore' | 'meal' | null = null,
 		timeLabel: string | null = null,
 		runsLate = false,
-		/** A pinned moment. The clock is set to it rather than arriving at it. */
-		heldAt: number | null = null,
+		/** Held where the traveller put it, which the card says on screen. */
+		pinned = false,
 		/** Anything else worth saying about this stop. */
 		note: Warning | null = null
 	) => {
@@ -770,14 +770,12 @@ function walkClock(
 		// the day: the stop was timed before the one it follows, everything
 		// after it overlapped, and the plan of record showed times that ran
 		// the wrong way.
-		const late = heldAt !== null && clock > heldAt;
-		if (heldAt !== null) clock = Math.max(clock, heldAt);
 		let arrive = new Date(clock);
 
 		// A meal reached before its slot waits for it rather than being eaten at
 		// the wrong hour -- but only if the day can absorb the wait. Otherwise
 		// the stop keeps its early time and picks up an off-hours warning below.
-		if (!anchor && heldAt === null && isMeal(category)) {
+		if (!anchor && isMeal(category)) {
 			const opens = waitUntilSlot(arrive, timezone, slots);
 			if (
 				opens &&
@@ -807,11 +805,8 @@ function walkClock(
 		// day and be one the day never reaches, and saying so twice told the
 		// traveller nothing they did not know -- while the screen, which draws
 		// warnings keyed by kind, refused to render the trip at all.
-		if ((runsLate || late) && !dayIsOver) {
-			warnings.push({
-				kind: 'overflow',
-				message: runsLate ? 'Runs past the end of the day' : 'The day does not reach this in time'
-			});
+		if (runsLate && !dayIsOver) {
+			warnings.push({ kind: 'overflow', message: 'Runs past the end of the day' });
 		}
 		if (note) warnings.push(note);
 		if (busyness !== null && busyness >= 0.8) {
@@ -833,7 +828,7 @@ function walkClock(
 			poiId,
 			placementId,
 			name,
-			pinned: heldAt !== null,
+			pinned,
 			at: point,
 			arrive,
 			depart,
@@ -1007,7 +1002,7 @@ function walkClock(
 				const miss = mealMiss(new Date(start), timezone, [slot]);
 				const note: Warning | null =
 					miss > 0.5 ? { kind: 'off-hours', message: 'Not really a mealtime' } : null;
-				push(MEAL_LABEL[slot.name], here, minutes, true, null, null, slot.name, false, null, 'meal', null, over, null, note);
+				push(MEAL_LABEL[slot.name], here, minutes, true, null, null, slot.name, false, null, 'meal', null, over, false, note);
 			}
 		}
 	};
@@ -1075,7 +1070,14 @@ function walkClock(
 			: p.category === BLOCK_CATEGORY
 				? (cursor ?? at(p))
 				: nearestBranch(p, cursor ?? at(p), haversineKm);
-		const held = p.pinned && p.pinnedAt ? new Date(p.pinnedAt).getTime() : null;
+		// A pin holds a position, not a clock.
+		//
+		// It used to hold the moment its card had, and the day was then seated
+		// around that moment -- so where a card sat and when it happened were
+		// two facts that could disagree, and when they did the clock won. They
+		// are not two facts. A day is a walk: where a card sits is when it
+		// happens, and moving it is the only way to change either.
+		const held = null;
 		// Anything whose window opens before this stop would end. Offered here
 		// so the day fills in order rather than saving every meal until the end.
 		//
@@ -1109,7 +1111,7 @@ function walkClock(
 		// in which the traveller does not go back to the hotel.
 		// A pin waits for its moment, so its real end is that moment plus its
 		// length -- not where the route happened to arrive.
-		const ends = held !== null ? Math.max(finish, held + p.durationMin * 60_000) : finish;
+		const ends = finish;
 		const runsLate = ends + tailCost(leaves, i + 1) * 60_000 > day.end.getTime();
 		if (runsLate && spill && !stays(p)) {
 			overflowed.push(p);
@@ -1128,7 +1130,7 @@ function walkClock(
 			anchorKind,
 			null,
 			runsLate,
-			held
+			p.pinned ?? false
 		);
 	}
 

@@ -767,12 +767,6 @@ describe('a pin is the traveller\'s, not the planner\'s', () => {
 		]);
 	});
 
-	it('starts exactly when it was pinned for, not when the route arrives', () => {
-		const held = '2026-10-02T12:30:00.000Z';
-		const result = run({ ...stubborn, durationMin: 30, pinnedAt: held });
-		expect(result.days[0].stops.find((s) => s.poiId === 'long')!.arrive.toISOString()).toBe(held);
-	});
-
 	it('orders two pins the way the traveller put them', () => {
 		// Not by the moments they hold. A pin says Replan may not move this
 		// one; which comes first is the order, the same as for everything
