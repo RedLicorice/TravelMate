@@ -63,13 +63,18 @@ export default defineConfig({
 				clientsClaim: false,
 				runtimeCaching: [
 					{
-						// Trip data: serve from cache immediately, refresh behind it.
-						// A stale plan beats a spinner on a hot street.
+						// Trip data: answered from the device, then refreshed behind
+						// what the traveller is already reading. Tapping a trip draws
+						// it at once -- it was on the phone the whole time.
+						//
+						// This said NetworkFirst, which is the opposite: every open
+						// waited on a round trip, and up to four seconds of nothing
+						// before it gave up and used the copy it had. A stale plan
+						// beats a spinner on a hot street.
 						urlPattern: /^https:\/\/[a-z0-9]+\.supabase\.co\/rest\/v1\/.*/i,
-						handler: 'NetworkFirst',
+						handler: 'StaleWhileRevalidate',
 						options: {
 							cacheName: 'trip-data',
-							networkTimeoutSeconds: 4,
 							expiration: { maxEntries: 200, maxAgeSeconds: 60 * 60 * 24 * 7 },
 							cacheableResponse: { statuses: [0, 200] }
 						}
