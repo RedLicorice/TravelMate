@@ -232,6 +232,7 @@
 		duration_min?: number;
 		priority?: number;
 		pinned?: boolean;
+		notes?: string | null;
 	}) {
 		const held = carded;
 		if (!held) return;
@@ -243,7 +244,14 @@
 			});
 			pois = pois.map((p) => (p.id === held.id ? updated : p));
 			carded = updated;
-			await restore();
+			// A note changes nothing the plan is built from, so it does not earn
+			// a re-time: the day would redraw underneath a traveller who had
+			// only written down a booking reference.
+			const shapesTheDay =
+				patch.duration_min !== undefined ||
+				patch.priority !== undefined ||
+				patch.pinned !== undefined;
+			if (shapesTheDay) await restore();
 		} catch (e) {
 			error = (e as Error).message;
 		} finally {
@@ -611,7 +619,31 @@
 	 * is the plan of record, so a drag has to be written back to it or the
 	 * move survives only until the page reloads.
 	 */
-	async function restore(opts: { hold?: string } = {}) {
+	/**
+	 * One re-time at a time.
+	 *
+	 * Two of these overlapping is what duplicated every stop on the plan: both
+	 * read the same state, both wrote it, and the second wrote a plan built
+	 * from what the first had already changed. A second caller waits for the
+	 * first and then runs on the settled state.
+	 */
+	let timing: Promise<void> | null = null;
+
+	async function restore(opts: { hold?: string } = {}): Promise<void> {
+		const previous = timing;
+		const mine = (async () => {
+			if (previous) await previous.catch(() => {});
+			await retime(opts);
+		})();
+		timing = mine;
+		try {
+			await mine;
+		} finally {
+			if (timing === mine) timing = null;
+		}
+	}
+
+	async function retime(opts: { hold?: string } = {}) {
 		if (!row || !days.length) return;
 		const input = {
 			pois: pois.map(toPlanPoi),

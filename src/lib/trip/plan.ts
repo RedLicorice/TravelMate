@@ -58,9 +58,10 @@ const toRow = (tripId: string, dayIndex: number, orderIndex: number, s: PlannedS
 });
 
 /**
- * Replace the trip's plan. Delete-then-insert rather than a diff: plan_stops is
- * derived data that Regenerate can always produce again, so the cost of a
- * failure between the two halves is one more tap, not lost work.
+ * Replace the trip's plan, in one write.
+ *
+ * Wholesale rather than a diff: plan_stops is derived data that Regenerate can
+ * always produce again, so there is nothing to reconcile.
  *
  * `plan_generated_at` is written last and on purpose. Everything the traveller
  * changed before this moment is now reflected in the plan, and anything stamped
@@ -72,13 +73,15 @@ export async function savePlan(tripId: string, result: PlanResult): Promise<stri
 		d.stops.map((s, i) => toRow(tripId, d.index, i, s))
 	);
 
-	const del = await supabase.from('plan_stops').delete().eq('trip_id', tripId);
-	if (del.error) throw new Error(del.error.message);
-
-	if (rows.length) {
-		const ins = await supabase.from('plan_stops').insert(rows);
-		if (ins.error) throw new Error(ins.error.message);
-	}
+	// One statement. As a delete and then an insert, two overlapping saves --
+	// an automatic re-time and a traveller's edit, say -- interleave as
+	// delete, delete, insert, insert, and the plan comes back with every stop
+	// on it twice.
+	const { error: writeError } = await supabase.rpc('replace_plan', {
+		trip: tripId,
+		rows: rows.map(({ trip_id: _ignored, ...rest }) => rest)
+	});
+	if (writeError) throw new Error(writeError.message);
 
 	const generatedAt = new Date().toISOString();
 	const { error } = await supabase

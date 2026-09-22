@@ -16,7 +16,12 @@
 		people: Profile[];
 		busy?: boolean;
 		/** Quick edits, applied where the traveller is rather than a screen away. */
-		onedit: (patch: { duration_min?: number; priority?: number; pinned?: boolean }) => void;
+		onedit: (patch: {
+			duration_min?: number;
+			priority?: number;
+			pinned?: boolean;
+			notes?: string | null;
+		}) => void;
 		onremove: () => void;
 		onclose: () => void;
 	};
@@ -24,6 +29,21 @@
 	let { poi, tripId, hotel, people, busy = false, onedit, onremove, onclose }: Props = $props();
 
 	const STEPS = [15, 30, 45, 60, 90, 120, 180];
+
+	/**
+	 * Edited locally and saved on blur, not on every keystroke: a note is a
+	 * sentence, and re-timing the day between two letters of it would be
+	 * absurd.
+	 */
+	let notes = $state('');
+	let typedFor = $state<string | null>(null);
+	$effect(() => {
+		// Reset only when the card is showing a different place, so a half
+		// written note survives the day being re-timed underneath it.
+		if (typedFor === poi.id) return;
+		typedFor = poi.id;
+		notes = poi.notes ?? '';
+	});
 
 	const addedBy = $derived(people.find((p) => p.userId === poi.added_by) ?? null);
 	const km = $derived(
@@ -91,6 +111,22 @@
 					{m < 60 ? `${m} min` : `${m / 60} h`}
 				</button>
 			{/each}
+		</div>
+
+		<div class="tm-field mt-4">
+			<label class="tm-label" for="card-notes">Notes</label>
+			<textarea
+				class="tm-input"
+				id="card-notes"
+				rows="3"
+				style="padding-top: 10px; padding-bottom: 10px; min-height: auto"
+				bind:value={notes}
+				placeholder="Booking reference, who recommended it, what to order…"
+				onblur={() => {
+					const next = notes.trim() || null;
+					if (next !== (poi.notes ?? null)) onedit({ notes: next });
+				}}
+			></textarea>
 		</div>
 
 		{#if poi.pinned}
