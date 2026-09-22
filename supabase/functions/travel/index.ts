@@ -46,7 +46,7 @@ Deno.serve(async (req) => {
 	if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
 
 	// Paid work, so it is done for a traveller and nobody else.
-	if (!signedIn(req)) return json({ cells: [] }, 401);
+	if (!(await signedIn(req))) return json({ cells: [] }, 401);
 
 	try {
 		const { points, mode, departAt } = (await req.json()) as {

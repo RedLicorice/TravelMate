@@ -155,7 +155,7 @@ Deno.serve(async (req) => {
 	if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
 
 	// Paid work, so it is done for a traveller and nobody else.
-	if (!signedIn(req)) return json({ route: null }, 401);
+	if (!(await signedIn(req))) return json({ route: null }, 401);
 
 	try {
 		const { from, to, mode, departAt, prefer } = (await req.json()) as {

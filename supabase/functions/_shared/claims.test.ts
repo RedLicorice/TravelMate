@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { signedIn } from './caller.ts';
+import { claimsSignedIn } from './claims.ts';
 
 /**
  * A token of the shape the gateway hands a function, left unsigned: signedIn
@@ -24,35 +24,35 @@ const asking = (auth?: string) =>
 
 const hour = Math.floor(Date.now() / 1000) + 3600;
 
-describe('who may spend the routing budget', () => {
+describe('the cheap claims check that runs before the auth server', () => {
 	it('lets a signed-in traveller through', () => {
-		expect(signedIn(asking(`Bearer ${token({ role: 'authenticated', exp: hour })}`))).toBe(true);
+		expect(claimsSignedIn(asking(`Bearer ${token({ role: 'authenticated', exp: hour })}`))).toBe(true);
 	});
 
 	it('turns away the publishable key, which ships in the browser', () => {
-		expect(signedIn(asking(`Bearer ${token({ role: 'anon', exp: hour })}`))).toBe(false);
+		expect(claimsSignedIn(asking(`Bearer ${token({ role: 'anon', exp: hour })}`))).toBe(false);
 	});
 
 	it('turns away a publishable key that is not a JWT at all', () => {
-		expect(signedIn(asking('Bearer sb_publishable_abc123'))).toBe(false);
+		expect(claimsSignedIn(asking('Bearer sb_publishable_abc123'))).toBe(false);
 	});
 
 	it('turns away an expired token', () => {
-		expect(signedIn(asking(`Bearer ${token({ role: 'authenticated', exp: hour - 7200 })}`))).toBe(
+		expect(claimsSignedIn(asking(`Bearer ${token({ role: 'authenticated', exp: hour - 7200 })}`))).toBe(
 			false
 		);
 	});
 
 	it('turns away a token with no role', () => {
-		expect(signedIn(asking(`Bearer ${token({ exp: hour })}`))).toBe(false);
+		expect(claimsSignedIn(asking(`Bearer ${token({ exp: hour })}`))).toBe(false);
 	});
 
 	it('turns away a caller with no token', () => {
-		expect(signedIn(asking())).toBe(false);
+		expect(claimsSignedIn(asking())).toBe(false);
 	});
 
 	it('turns away rubbish', () => {
-		expect(signedIn(asking('Bearer ...'))).toBe(false);
-		expect(signedIn(asking('Bearer a.!!!.c'))).toBe(false);
+		expect(claimsSignedIn(asking('Bearer ...'))).toBe(false);
+		expect(claimsSignedIn(asking('Bearer a.!!!.c'))).toBe(false);
 	});
 });
