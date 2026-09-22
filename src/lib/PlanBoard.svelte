@@ -16,6 +16,10 @@
 		/** Held down on: the same menu the day view opens. */
 		onhold?: (poiId: string) => void;
 		onpin?: (poiId: string) => void;
+		/** Held down on a card that is an allowance or a meal, not a place. */
+		onholdanchor?: (stop: PlannedStop, dayIndex: number) => void;
+		/** A meal container dragged to a new time, in minutes past midnight. */
+		onmovemeal?: (stop: PlannedStop, dayIndex: number, minutes: number) => void;
 		/** Tapped empty time. `beforeId` is the stop the new one should precede. */
 		onadd?: (dayIndex: number, beforeId: string | null) => void;
 	};
@@ -30,6 +34,8 @@
 		onpick,
 		onhold,
 		onpin,
+		onholdanchor,
+		onmovemeal,
 		onadd
 	}: Props = $props();
 
@@ -189,6 +195,57 @@
 	 * that has not started yet; null when the tap is after all of them, which
 	 * means the end of the day.
 	 */
+	/**
+	 * Dragging a meal container up or down the day moves when it happens.
+	 *
+	 * Vertical position is already time on this board, so the gesture needs no
+	 * explaining: the card follows the finger and lands on the minute it is let
+	 * go over, rounded to five, because nobody means twenty past one for lunch.
+	 */
+	function dragMeal(stop: PlannedStop, dayIndex: number) {
+		return (node: HTMLElement) => {
+			if (!onmovemeal) return;
+			let from: { y: number; top: number } | null = null;
+
+			const down = (e: PointerEvent) => {
+				if (e.button !== 0) return;
+				from = { y: e.clientY, top: node.offsetTop };
+				node.setPointerCapture(e.pointerId);
+			};
+
+			const move = (e: PointerEvent) => {
+				if (!from) return;
+				e.preventDefault();
+				node.style.transform = `translateY(${e.clientY - from.y}px)`;
+				node.style.zIndex = '3';
+			};
+
+			const up = (e: PointerEvent) => {
+				const start = from;
+				from = null;
+				node.style.transform = '';
+				node.style.zIndex = '';
+				if (!start) return;
+				const moved = e.clientY - start.y;
+				// A tap is not a drag: below a few pixels, leave it to the hold.
+				if (Math.abs(moved) < 6) return;
+				const minutes = range.from + (start.top + moved) / PX_PER_MIN;
+				onmovemeal(stop, dayIndex, Math.round(minutes / 5) * 5);
+			};
+
+			node.addEventListener('pointerdown', down);
+			node.addEventListener('pointermove', move);
+			node.addEventListener('pointerup', up);
+			node.addEventListener('pointercancel', up);
+			return () => {
+				node.removeEventListener('pointerdown', down);
+				node.removeEventListener('pointermove', move);
+				node.removeEventListener('pointerup', up);
+				node.removeEventListener('pointercancel', up);
+			};
+		};
+	}
+
 	function slotAtHeight(day: PlannedDay, offsetY: number): string | null {
 		const minutes = range.from + offsetY / PX_PER_MIN;
 		const next = day.stops.find((s) => s.poiId && minutesOf(s.arrive) >= minutes);
@@ -285,7 +342,14 @@
 		class="tm-board-card"
 		data-drop-stop={o.stop?.poiId ?? undefined}
 		title={o.sub ? `${o.title} · ${o.sub}` : o.title}
-		{@attach o.stop?.poiId && onhold ? longPress(() => onhold(o.stop!.poiId!)) : () => {}}
+		{@attach o.anchor?.anchorKind === 'meal' && onmovemeal
+			? dragMeal(o.anchor, o.day ?? 0)
+			: () => {}}
+		{@attach o.stop?.poiId && onhold
+			? longPress(() => onhold(o.stop!.poiId!))
+			: o.anchor && onholdanchor
+				? longPress(() => onholdanchor(o.anchor!, o.day ?? 0))
+				: () => {}}
 		style="top:{o.top}px;height:{o.height}px;background:{o.fill};
 		border-left-color:{o.accent};
 		{o.stop?.poiId && drag.state.id === o.stop.poiId ? 'opacity:0.35;' : ''}

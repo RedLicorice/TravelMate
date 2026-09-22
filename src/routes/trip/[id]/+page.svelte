@@ -35,7 +35,7 @@
 		toMealPlan,
 		type MealSlotRow
 	} from '$lib/trip/meals';
-	import { tripDays, type Day } from '$lib/trip/days';
+	import { tripDays, zonedInstant, type Day } from '$lib/trip/days';
 	import {
 		replan,
 		schedule,
@@ -121,10 +121,35 @@
 		null
 	);
 
+	/** Meals this day has no container for: skipped, or never offered. */
+	const missingMeals = $derived.by(() => {
+		if (!slot || !row) return [] as MealName[];
+		const day = (fresh ?? toPlannedDays(stored, days))[slot.day];
+		const present = new Set(
+			(day?.stops ?? [])
+				.filter((st) => st.anchorKind === 'meal')
+				.map((st) => mealFor(st))
+				.filter(Boolean)
+		);
+		return MEAL_NAMES.filter((m) => !present.has(m));
+	});
+
+	/** A meal container dragged to a new time on the board. */
+	async function moveMeal(stop: PlannedStop, dayIdx: number, minutes: number) {
+		const meal = mealFor(stop);
+		if (!meal || !row) return;
+		const at = zonedInstant(
+			days[dayIdx].date,
+			`${String(Math.floor(minutes / 60) % 24).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`,
+			row.timezone
+		);
+		await sayMeal(dayIdx, meal, { at: at.toISOString() });
+	}
+
 	async function sayMeal(
 		dayIdx: number,
 		meal: MealName,
-		change: { poiId?: string | null; skipped?: boolean } | 'reset'
+		change: { poiId?: string | null; skipped?: boolean; at?: string | null } | 'reset'
 	) {
 		mealed = null;
 		slot = null;
@@ -1409,6 +1434,9 @@
 						onpick={(id) => (carded = pois.find((p) => p.id === id) ?? null)}
 						onhold={(id) => (carded = pois.find((p) => p.id === id) ?? null)}
 						onpin={(id) => togglePin(id)}
+						onholdanchor={(stop, dayIdx) =>
+							stop.anchorKind === 'meal' ? holdMeal(stop, dayIdx) : holdAllowance(stop, dayIdx)}
+						onmovemeal={(stop, dayIdx, minutes) => moveMeal(stop, dayIdx, minutes)}
 						onadd={(dayIdx, beforeId) => (slot = { day: dayIdx, before: beforeId })}
 					/>
 				{/if}
@@ -1821,6 +1849,28 @@
 						where you put it.
 					</span>
 				</div>
+
+				{#if missingMeals.length}
+					<p class="tm-hint mt-4 mb-2">Or a meal this day has not got</p>
+					<div class="flex flex-wrap gap-2">
+						{#each missingMeals as meal}
+							<button
+								class="tm-chip"
+								style="background: var(--tm-blush-soft); color: var(--tm-blush-ink)"
+								disabled={busy}
+								onclick={() =>
+									sayMeal(target.day, meal, {
+										skipped: false,
+										// Where they tapped. Without a time a meal whose window
+										// the day never reached simply would not appear again.
+										at: (slotFrom?.depart ?? days[target.day].start).toISOString()
+									})}
+							>
+								{MEAL_LABEL[meal]}
+							</button>
+						{/each}
+					</div>
+				{/if}
 
 				<a
 					class="tm-btn tm-btn--primary tm-btn--block mt-4"
