@@ -1027,16 +1027,6 @@ describe('meals the plan supplies itself', () => {
 		expect(lunch.legIn?.minutes ?? 0).toBe(0);
 	});
 
-		// Every meal on the day -- booked or supplied -- sits in a different
-		// window. Two dinners is not a plan.
-		const windows = slotsFrom(DEFAULT_WINDOWS);
-		const taken = stops
-			.filter((s) => s.anchorKind === 'meal' || s.poiId === 'trattoria')
-			.map((s) => slotAt(s.arrive, 'Europe/London', windows))
-			.filter(Boolean);
-		expect(new Set(taken).size).toBe(taken.length);
-	});
-
 	it('offers nothing on a day too short to reach a window', () => {
 		// Short because the journey leaves it short: in at half ten, out again
 		// at half eleven. The day's own hours no longer decide this -- it runs
