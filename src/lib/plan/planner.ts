@@ -1223,7 +1223,13 @@ function retime(input: PlanInput, spill: boolean): PlanResult {
 	}
 
 	const days = input.days.map((day, i) => {
-		const { route, diners } = split(byDay.get(i)!, chosen);
+		// Nothing on this day is a candidate for anything. The traveller put
+		// each of these somewhere, and a re-time walks them where they are --
+		// pulling an unpinned restaurant out to be re-seated by its window is
+		// what sent one dragged into a free hour back to the wishlist.
+		const route = byDay.get(i)!;
+		const diners: PlanPoi[] = [];
+		void chosen;
 
 		// Slots the traveller filled with a place that is not on this day --
 		// chosen before it had one, or left over from a day that moved. A place

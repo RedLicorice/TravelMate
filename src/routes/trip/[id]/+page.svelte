@@ -1229,16 +1229,11 @@
 		fresh = next.days;
 		planAt = await savePlan(tripId, next, stored);
 
-		// A visit the day could not reach goes back to the wishlist rather than
-		// belonging to neither place: absent from the plan because it did not
-		// fit, and absent from the wishlist because it still claimed a day.
-		const stranded = next.unplaced
-			.filter((u) => !u.poi.pinned)
-			.filter((u) => placements.some((pl) => pl.id === u.poi.id));
-		if (stranded.length) {
-			for (const u of stranded) await dropPlacement(u.poi.id);
-			placements = await listPlacements(tripId);
-		}
+		// Nothing is taken off the plan here. A visit the walk could not seat
+		// was still put on that day by the traveller, and deleting it because
+		// the planner had an opinion is how a restaurant dragged into a free
+		// hour went back to the wishlist with nothing said. Re-timing writes
+		// times; it does not decide what is on the trip.
 		stored = await loadPlan(tripId);
 		// The plan is the traveller's; how long its journeys take is the
 		// server's to find out. Not awaited: the answers come back through the

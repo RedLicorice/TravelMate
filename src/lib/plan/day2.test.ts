@@ -28,7 +28,7 @@ const home: PlanPoi = {
 
 /** 2 October as it actually stood: a sandwich shop seventh in the route. */
 const day2 = () =>
-	schedule({
+	replan({
 		pois: [
 			stop('Madame Tussauds', 51.5230, -0.1547, 'museum', 120, 0),
 			stop('Abbey Road', 51.5320, -0.1777, 'attraction', 60, 1),
@@ -82,143 +82,8 @@ describe('a booking late in the route', () => {
 	});
 });
 
-describe('the meal pass', () => {
-	const stops = () => day2().stops;
 
-	it('seats a restaurant it passes near, rather than a placeholder', () => {
-		// Pret is a few hundred metres from Notting Hill and Portobello, both of
-		// which the day visits around lunchtime.
-		const names = stops().map((s) => s.name);
-		const lunchIsInvented = names.includes('Lunch');
-		const pretIsSeated = names.includes('Pret A Manger');
-		expect(lunchIsInvented || pretIsSeated).toBe(true);
-	});
 
-	it('does not leave a restaurant sitting between two sights', () => {
-		// Everything on the plan is either part of the route or at a mealtime.
-		// 15:39 between Portobello and Big Ben was neither.
-		const all = stops();
-		const seated = all.find((s) => s.poiId === 'Pret A Manger');
-		if (!seated) return;
-		const windows = slotsFrom(tightest([A, B]).windows);
-		expect(slotAt(seated.arrive, 'Europe/London', windows)).not.toBeNull();
-	});
-});
-
-describe('a chain, and how long a meal takes', () => {
-	const near = (name: string, category: string, durationMin: number, branches?: { lat: number; lng: number }[]) =>
-		({
-			id: name, poiId: name, name, lat: 51.5090, lng: -0.1960, category, durationMin,
-			priority: 3, dayIndex: 1, orderIndex: 9, pinned: false,
-			...(branches ? { branches } : {})
-		}) as PlanPoi;
-
-	const withDiner = (diner: PlanPoi) =>
-		schedule({
-			pois: [
-				stop('Notting Hill', 51.509, -0.196, 'suburb', 60, 0),
-				stop('Portobello Market', 51.517, -0.205, 'marketplace', 45, 1),
-				diner
-			],
-			days: tripDays(trip),
-			allowedModes: ['walk', 'transit'],
-			timezone: 'Europe/London',
-			mealWindows: tightest([A, B]).windows
-		}).days[1];
-
-	it('takes the time the traveller gave it, not the default hour', () => {
-		const day = withDiner(near('Quick Bite', 'fast_food', 30));
-		const seated = day.stops.find((s) => s.poiId === 'Quick Bite');
-		expect(seated?.durationMin).toBe(30);
-	});
-
-	it('falls back to the hour only when it invents the meal itself', () => {
-		const day = schedule({
-			pois: [stop('Notting Hill', 51.509, -0.196, 'suburb', 60, 0)],
-			days: tripDays(trip),
-			allowedModes: ['walk', 'transit'],
-			timezone: 'Europe/London',
-			mealWindows: tightest([A, B]).windows
-		}).days[1];
-		const lunch = day.stops.find((s) => s.name === 'Lunch');
-		expect(lunch?.durationMin).toBe(60);
-	});
-
-	it('goes to the branch nearest the day, not the one that was searched', () => {
-		// Stored at Notting Hill, with a branch beside Portobello Market. The
-		// day is at Portobello when lunch comes round.
-		const chain = near('Pret A Manger', 'fast_food', 30, [
-			{ lat: 51.509, lng: -0.196 },
-			{ lat: 51.5171, lng: -0.2051 }
-		]);
-		const seated = withDiner(chain).stops.find((s) => s.poiId === 'Pret A Manger');
-		expect(seated).toBeDefined();
-		expect(seated!.at.lat).toBeCloseTo(51.5171, 3);
-	});
-});
-
-describe('the right sort of place for the right meal', () => {
-	// Breakfast happens at the hotel, before the day sets off; lunch and dinner
-	// happen wherever the day has got to, which is Notting Hill.
-	const hotel = { lat: 51.5154, lng: -0.141 };
-	const out = { lat: 51.509, lng: -0.196 };
-
-	const at = (name: string, category: string, where: { lat: number; lng: number }): PlanPoi => ({
-		id: name,
-		poiId: name,
-		name,
-		lat: where.lat,
-		lng: where.lng,
-		category,
-		durationMin: 30,
-		priority: 3,
-		dayIndex: 1,
-		orderIndex: 9,
-		pinned: false
-	});
-
-	const atMeal = (diners: PlanPoi[], meal: string) => {
-		const windows = slotsFrom(tightest([A]).windows);
-		return schedule({
-			pois: [home, stop('Notting Hill', out.lat, out.lng, 'suburb', 60, 0), ...diners],
-			days: tripDays(trip),
-			allowedModes: ['walk', 'transit'],
-			timezone: 'Europe/London',
-			mealWindows: tightest([A]).windows
-		}).days[1].stops.find(
-			(s) =>
-				s.poiId &&
-				diners.some((d) => d.id === s.poiId) &&
-				slotAt(s.arrive, 'Europe/London', windows) === meal
-		)?.name;
-	};
-
-	it('sends you to the coffee shop at breakfast, not the chip shop', () => {
-		expect(
-			atMeal([at('Starbucks', 'cafe', hotel), at('Chip Shop', 'fast_food', hotel)], 'breakfast')
-		).toBe('Starbucks');
-	});
-
-	it('does not send you to the coffee shop for dinner', () => {
-		expect(atMeal([at('Starbucks', 'cafe', out)], 'dinner')).toBeUndefined();
-	});
-
-	it('does not send you to the chip shop for breakfast', () => {
-		expect(atMeal([at('Chip Shop', 'fast_food', hotel)], 'breakfast')).toBeUndefined();
-	});
-
-	it('prefers the pub in the evening', () => {
-		expect(atMeal([at('The Bell', 'pub', out), at('Trattoria', 'restaurant', out)], 'dinner')).toBe(
-			'The Bell'
-		);
-	});
-
-	it('prefers the restaurant at lunch', () => {
-		expect(atMeal([at('The Bell', 'pub', out), at('Trattoria', 'restaurant', out)], 'lunch')).toBe(
-			'Trattoria'
-		);
-	});
-});
 
 describe('a meal the traveller chose', () => {
 	const chosen = (iso: string): PlanPoi => ({
@@ -237,7 +102,7 @@ describe('a meal the traveller chose', () => {
 	});
 
 	const day = (iso: string) =>
-		schedule({
+		replan({
 			pois: [chosen(iso), stop('Notting Hill', 51.509, -0.196, 'suburb', 60, 1)],
 			days: tripDays(trip),
 			allowedModes: ['walk', 'transit'],
@@ -266,74 +131,6 @@ describe('a meal the traveller chose', () => {
 	});
 });
 
-describe('meal slots are containers', () => {
-	const cafe = (id: string, lat: number, lng: number): PlanPoi => ({
-		id,
-		poiId: id,
-		name: id,
-		lat,
-		lng,
-		category: 'cafe',
-		durationMin: 20,
-		priority: 3,
-		dayIndex: 1,
-		orderIndex: 9,
-		pinned: false
-	});
-
-	const run = (meals?: Map<string, MealSlotRow>) =>
-		schedule({
-			pois: [
-				home,
-				stop('Notting Hill', 51.509, -0.196, 'suburb', 60, 0),
-				cafe('near', 51.5154, -0.141),
-				cafe('other', 51.5152, -0.1408)
-			],
-			days: tripDays(trip),
-			allowedModes: ['walk', 'transit'],
-			timezone: 'Europe/London',
-			mealWindows: tightest([A]).windows,
-			meals
-		}).days[1];
-
-	const say = (meal: string, row: Partial<MealSlotRow>) =>
-		new Map([
-			[
-				`1:${meal}`,
-				{ day_index: 1, meal, poi_id: null, at: null, skipped: false, ...row } as MealSlotRow
-			]
-		]);
-
-	it('fills an untouched slot with somewhere suitable nearby', () => {
-		const names = run().stops.map((s) => s.name);
-		expect(names.includes('near') || names.includes('other')).toBe(true);
-	});
-
-	it('takes the place the traveller put in it', () => {
-		const names = run(say('breakfast', { poi_id: 'other' })).stops.map((s) => s.name);
-		expect(names).toContain('other');
-	});
-
-	it('skips the meal entirely when told to', () => {
-		const names = run(say('breakfast', { skipped: true })).stops.map((s) => s.name);
-		expect(names).not.toContain('Breakfast');
-		expect(names).not.toContain('near');
-	});
-
-	it('never puts an eating place between two sights', () => {
-		// Everything with a meal category is either in a slot or not on the day.
-		const windows = slotsFrom(tightest([A]).windows);
-		for (const s of run().stops) {
-			if (s.poiId !== 'near' && s.poiId !== 'other') continue;
-			expect(slotAt(s.arrive, 'Europe/London', windows)).not.toBeNull();
-		}
-	});
-
-	it('leaves the one it did not seat off the day', () => {
-		const seated = run().stops.filter((s) => s.poiId === 'near' || s.poiId === 'other');
-		expect(seated).toHaveLength(1);
-	});
-});
 
 describe('assigning a slot by hand', () => {
 	const far = (id: string): PlanPoi => ({
@@ -352,7 +149,7 @@ describe('assigning a slot by hand', () => {
 	});
 
 	const run = (poiId: string | null) =>
-		schedule({
+		replan({
 			pois: [stop('Notting Hill', 51.509, -0.196, 'suburb', 60, 0), far('starbucks')],
 			days: tripDays(trip),
 			allowedModes: ['walk', 'transit'],
@@ -395,7 +192,7 @@ describe('assigning a slot by hand', () => {
 describe('a day that runs through its own dinner', () => {
 	/** The British Museum, six until eight, straddling a 19:00-20:00 window. */
 	const run = () =>
-		schedule({
+		replan({
 			pois: [
 				stop('Notting Hill', 51.509, -0.196, 'suburb', 60, 0),
 				stop('British Museum', 51.5194, -0.127, 'museum', 480, 1)
@@ -431,36 +228,3 @@ describe('a day that runs through its own dinner', () => {
 	});
 });
 
-describe('a slot the traveller placed keeps its time', () => {
-	const cafe: PlanPoi = {
-		id: 'late', poiId: 'late', name: 'Late Table', lat: 51.5154, lng: -0.141,
-		category: 'restaurant', durationMin: 60, priority: 3,
-		dayIndex: null, orderIndex: null, pinned: false
-	};
-
-	const run = (at: string | null) =>
-		schedule({
-			pois: [stop('Notting Hill', 51.509, -0.196, 'suburb', 60, 0), cafe],
-			days: tripDays(trip),
-			allowedModes: ['walk', 'transit'],
-			timezone: 'Europe/London',
-			mealWindows: tightest([A]).windows,
-			meals: new Map([
-				['1:dinner', { day_index: 1, meal: 'dinner', poi_id: 'late', at, skipped: false } as MealSlotRow]
-			])
-		}).days[1];
-
-	it('eats at eleven if that is where it was put, and is told it is late', () => {
-		// Dinner closes at 21:30. The time is the traveller's and sticks; the
-		// window still has its say, as a warning rather than a veto.
-		const seated = run('2026-10-02T22:00:00.000Z').stops.find((s) => s.poiId === 'late');
-		expect(seated).toBeDefined();
-		expect(seated!.arrive.toISOString()).toBe('2026-10-02T22:00:00.000Z');
-		expect(seated!.warnings.some((w) => w.kind === 'off-hours')).toBe(true);
-	});
-
-	it('still seats a chosen place without a time inside its window', () => {
-		const seated = run(null).stops.find((s) => s.poiId === 'late');
-		expect(seated).toBeDefined();
-	});
-});

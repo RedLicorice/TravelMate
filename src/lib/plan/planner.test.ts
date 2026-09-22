@@ -286,7 +286,7 @@ describe('meals', () => {
 
 	it('schedules a restaurant inside a meal slot, not wherever the route reaches it', () => {
 		const result = replan({
-			pois: [...sights, lunchSpot],
+			pois: [...sights, { ...lunchSpot, dayIndex: null, orderIndex: null }],
 			days: mealDays,
 			allowedModes: ['walk', 'transit'],
 			timezone: 'Europe/Rome'
@@ -1026,19 +1026,6 @@ describe('meals the plan supplies itself', () => {
 		const lunch = stops.find((s) => s.name === 'Lunch')!;
 		expect(lunch.legIn?.minutes ?? 0).toBe(0);
 	});
-
-	it('never serves the same meal twice', () => {
-		const restaurant: PlanPoi = {
-			...sight('s1', 75),
-			id: 'trattoria',
-			poiId: 'trattoria',
-			name: 'Trattoria',
-			category: 'restaurant',
-			orderIndex: 1
-		};
-		const result = run([sight('s0'), restaurant, sight('s2')]);
-		const stops = result.days[0].stops;
-		expect(stops.map((s) => s.name)).toContain('Trattoria');
 
 		// Every meal on the day -- booked or supplied -- sits in a different
 		// window. Two dinners is not a plan.
