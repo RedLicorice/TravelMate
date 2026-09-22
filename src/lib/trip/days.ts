@@ -271,38 +271,6 @@ export function tripDays(trip: Trip): Day[] {
 				? sameDayEnd
 				: new Date(sameDayEnd.getTime() + DAY);
 
-		// Getting out of the airport and checking in are real time spent in a
-		// real place, so they are dwell on the terminal cards rather than a
-		// clamp nobody can see.
-		//
-		// The first day begins when the traveller lands, not when their usual
-		// day begins. Taking the later of the two left a hole between the
-		// journey ending and the day starting -- an hour of nothing, after a
-		// morning flight, that the plan would not fill and the traveller could
-		// not use. Whoever gets in at six is in the city at six.
-		const landing = trip.arrivalPoint
-			? arrival.getTime()
-			: arrival.getTime() + trip.arrivalBufferMin * MIN;
-		const start = i === 0 ? new Date(landing) : windowStart;
-
-		// The last day is over when the way out begins. Checking in is the first
-		// card of the journey out, so the day ends where that card starts: the
-		// allowance before the flight belongs to the terminal, and a stop
-		// scheduled inside it is a stop the traveller cannot make.
-		//
-		// This used to stretch the window by the allowance and clamp at the
-		// departure itself, which let the plan put a museum at half past five
-		// for a flight at twenty past six -- drawn before the check-in card and
-		// timed straight through it.
-		const lastMoment = Math.min(
-			windowEnd.getTime(),
-			departure.getTime() - trip.departureBufferMin * MIN
-		);
-		const rawEnd = i === lastIndex ? new Date(lastMoment) : windowEnd;
-		// A 07:00 flight leaves a day of negative length. Clamp to empty: the
-		// planner should schedule nothing, not schedule backwards.
-		const end = new Date(Math.max(start.getTime(), rawEnd.getTime()));
-
 		const fixedStart: Waypoint[] = [];
 		if (i === 0 && trip.arrivalPoint) {
 			// The journey already ends at the terminal the traveller landed at,
@@ -340,12 +308,62 @@ export function tripDays(trip: Trip): Day[] {
 					if (leaving.timeLabel && trip.departureBufferMin > 0) {
 						leaving.timeLabel = `${shift(leaving.timeLabel, -trip.departureBufferMin)}–${leaving.timeLabel}`;
 					}
+					// Its clock is when the traveller has to be there, not when
+					// the plane goes: that is the minute the city stops and the
+					// airport starts, and the card covers the wait from there.
+					if (leaving.startsAt && trip.departureBufferMin > 0) {
+						leaving.startsAt = new Date(
+							leaving.startsAt.getTime() - trip.departureBufferMin * MIN
+						);
+					}
 				}
 				fixedEnd.push(...journey);
 			} else {
 				fixedEnd.push(placeStop(trip.departurePoint, trip.departureBufferMin));
 			}
 		}
+
+		// The day is what is left between the two journeys.
+		//
+		// The city starts when the way in has finished -- off the plane, through
+		// the passport queue, out of the terminal -- and it is over the moment
+		// the way out begins, which is when the traveller has to be at the
+		// airport, not when the plane goes. The hours outside that are not empty
+		// time to be filled: they are time that does not belong to this city,
+		// and nothing can be put in them.
+		//
+		// Read off the journey cards themselves, because those are what say when
+		// the journeys happen: each carries the instant from its ticket, and the
+		// allowance for getting out or checking in is dwell on the terminal
+		// card. Measuring it any other way -- a buffer added to the arrival
+		// instant, a clamp before the departure -- is a second answer to a
+		// question the tickets have already answered, and the two drifted.
+		const journeyEnds = fixedStart.reduce(
+			(latest, w) =>
+				w.startsAt ? Math.max(latest, w.startsAt.getTime() + w.dwellMin * MIN) : latest,
+			-Infinity
+		);
+		const journeyBegins = fixedEnd.reduce(
+			(earliest, w) => (w.startsAt ? Math.min(earliest, w.startsAt.getTime()) : earliest),
+			Infinity
+		);
+
+		// Whoever gets in at six is in the city at six: the first day begins
+		// when they are out of the terminal, not when their usual day starts.
+		const landed =
+			journeyEnds > -Infinity
+				? journeyEnds
+				: arrival.getTime() + (trip.arrivalPoint ? 0 : trip.arrivalBufferMin * MIN);
+		const start = i === 0 ? new Date(landed) : windowStart;
+
+		const leaves =
+			journeyBegins < Infinity
+				? journeyBegins
+				: departure.getTime() - trip.departureBufferMin * MIN;
+		const rawEnd = i === lastIndex ? new Date(Math.min(windowEnd.getTime(), leaves)) : windowEnd;
+		// A 07:00 flight leaves a day of negative length. Clamp to empty: the
+		// planner should schedule nothing, not schedule backwards.
+		const end = new Date(Math.max(start.getTime(), rawEnd.getTime()));
 
 		return {
 			date,

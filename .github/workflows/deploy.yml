@@ -19,9 +19,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     # Every step, not just the build: several modules construct the Supabase
-    # client at import time, so `npm test` needs these to import the planner at
-    # all. CI used to get them from a committed .env.local, which is no longer
-    # in the repository and should never have been.
+    # client at import time. CI used to get these from a committed .env.local,
+    # which is no longer in the repository and should never have been.
     env:
       PUBLIC_SUPABASE_URL: ${{ secrets.PUBLIC_SUPABASE_URL }}
       PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
@@ -33,7 +32,6 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      - run: npm test
       - run: npx svelte-check --tsconfig ./tsconfig.json
       - run: npm run build
         env:

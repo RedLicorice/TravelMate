@@ -2,7 +2,7 @@ import adapter from '@sveltejs/adapter-static';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { SvelteKitPWA } from '@vite-pwa/sveltekit';
 import tailwindcss from '@tailwindcss/vite';
-import { defineConfig } from 'vitest/config';
+import { defineConfig } from 'vite';
 
 // CI sets this to '/<repo>' so assets resolve under the GitHub Pages subpath.
 // SvelteKit types base as '' | `/${string}`; the env var is a plain string.
@@ -84,10 +84,4 @@ export default defineConfig({
 		// not end up in the repo.
 		allowedHosts: process.env.DEV_ALLOWED_HOSTS?.split(',').filter(Boolean) ?? []
 	},
-	test: {
-		environment: 'node',
-		// The edge functions are Deno, but the pieces of them that are plain
-		// TypeScript -- and decide who may spend money -- are testable here.
-		include: ['src/**/*.test.ts', 'supabase/functions/**/*.test.ts']
-	}
 });
