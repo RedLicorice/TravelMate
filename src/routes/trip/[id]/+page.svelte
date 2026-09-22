@@ -244,14 +244,10 @@
 			});
 			pois = pois.map((p) => (p.id === held.id ? updated : p));
 			carded = updated;
-			// A note changes nothing the plan is built from, so it does not earn
-			// a re-time: the day would redraw underneath a traveller who had
-			// only written down a booking reference.
-			const shapesTheDay =
-				patch.duration_min !== undefined ||
-				patch.priority !== undefined ||
-				patch.pinned !== undefined;
-			if (shapesTheDay) await restore();
+			// Nothing else. An edit changes the thing edited; Replan is what
+			// takes a new rating or a new length and rebuilds the day from it.
+			// Re-timing here moves the plan under someone who asked for none of
+			// it.
 		} catch (e) {
 			error = (e as Error).message;
 		} finally {
