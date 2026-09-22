@@ -18,7 +18,7 @@ const trip: Trip = {
 };
 
 const stop = (name: string, lat: number, lng: number, category: string, durationMin: number, orderIndex: number): PlanPoi =>
-	({ id: name, name, lat, lng, category, durationMin, priority: 3, dayIndex: 1, orderIndex, pinned: false });
+	({ id: name, poiId: name, name, lat, lng, category, durationMin, priority: 3, dayIndex: 1, orderIndex, pinned: false });
 
 /** 2 October as it actually stood: a sandwich shop seventh in the route. */
 const day2 = () =>
@@ -102,7 +102,7 @@ describe('the meal pass', () => {
 describe('a chain, and how long a meal takes', () => {
 	const near = (name: string, category: string, durationMin: number, branches?: { lat: number; lng: number }[]) =>
 		({
-			id: name, name, lat: 51.5090, lng: -0.1960, category, durationMin,
+			id: name, poiId: name, name, lat: 51.5090, lng: -0.1960, category, durationMin,
 			priority: 3, dayIndex: 1, orderIndex: 9, pinned: false,
 			...(branches ? { branches } : {})
 		}) as PlanPoi;
@@ -159,6 +159,7 @@ describe('the right sort of place for the right meal', () => {
 
 	const at = (name: string, category: string, where: { lat: number; lng: number }): PlanPoi => ({
 		id: name,
+		poiId: name,
 		name,
 		lat: where.lat,
 		lng: where.lng,
@@ -216,6 +217,7 @@ describe('the right sort of place for the right meal', () => {
 describe('a meal the traveller chose', () => {
 	const chosen = (iso: string): PlanPoi => ({
 		id: 'cafe',
+		poiId: 'cafe',
 		name: 'Starbucks',
 		lat: 51.5154,
 		lng: -0.141,
@@ -261,6 +263,7 @@ describe('a meal the traveller chose', () => {
 describe('meal slots are containers', () => {
 	const cafe = (id: string, lat: number, lng: number): PlanPoi => ({
 		id,
+		poiId: id,
 		name: id,
 		lat,
 		lng,
@@ -328,6 +331,7 @@ describe('meal slots are containers', () => {
 describe('assigning a slot by hand', () => {
 	const far = (id: string): PlanPoi => ({
 		id,
+		poiId: id,
 		name: id,
 		// Miles away, and on no day: neither should matter.
 		lat: 51.6,
@@ -422,7 +426,7 @@ describe('a day that runs through its own dinner', () => {
 
 describe('a slot the traveller placed keeps its time', () => {
 	const cafe: PlanPoi = {
-		id: 'late', name: 'Late Table', lat: 51.5154, lng: -0.141,
+		id: 'late', poiId: 'late', name: 'Late Table', lat: 51.5154, lng: -0.141,
 		category: 'restaurant', durationMin: 60, priority: 3,
 		dayIndex: null, orderIndex: null, pinned: false
 	};

@@ -14,6 +14,12 @@ import { pointKey, type TravelTable } from '$lib/plan/travel';
 export type PlanStopRow = {
 	/** The stop's own identity, kept across saves. */
 	id: string;
+	/**
+	 * Which visit this card is: the placement it was drawn from. Null for an
+	 * anchor, which is nobody's visit, and for plans stored before a place
+	 * could be visited twice.
+	 */
+	placement_id: string | null;
 	day_index: number;
 	order_index: number;
 	poi_id: string | null;
@@ -41,20 +47,26 @@ export type PlanStopRow = {
 /**
  * What makes a stop the same stop between one save and the next.
  *
- * A real stop is its wishlist place, wherever it is moved to. An anchor has no
- * wishlist row, so it is the day it belongs to, what kind of anchor it is, what
- * it is called -- and which time it says that, because a day starts and ends at
- * the hotel. Without the count both of those are "0:hotel:Hotel Artemide", the
- * same stored row is claimed twice, and the whole save is refused.
+ * A real stop is the visit it draws: the placement, not the place. Two coffees
+ * at the same cafe on one day are two cards and two rows, and keying them by
+ * what they are of would have them claim each other's.
+ *
+ * An anchor is nobody's visit, so it is the day it belongs to, what kind of
+ * anchor it is, what it is called -- and which time it says that, because a
+ * day starts and ends at the hotel. Without the count both of those are
+ * "0:hotel:Hotel Artemide", the same stored row is claimed twice, and the
+ * whole save is refused.
  */
 const identity = (
 	dayIndex: number,
-	s: { poiId: string | null; anchorKind?: string | null; name: string },
+	s: { placementId?: string | null; poiId: string | null; anchorKind?: string | null; name: string },
 	nth = 0
-) => s.poiId ?? `${dayIndex}:${s.anchorKind ?? ''}:${s.name}:${nth}`;
+) => s.placementId ?? s.poiId ?? `${dayIndex}:${s.anchorKind ?? ''}:${s.name}:${nth}`;
 
 /** Identity, counting repeats of the same anchor within its day. */
-function identities<T extends { poiId: string | null; anchorKind?: string | null; name: string }>(
+function identities<
+	T extends { placementId?: string | null; poiId: string | null; anchorKind?: string | null; name: string }
+>(
 	dayIndex: number,
 	stops: T[]
 ): string[] {
@@ -63,7 +75,7 @@ function identities<T extends { poiId: string | null; anchorKind?: string | null
 		const base = identity(dayIndex, s);
 		const nth = seen.get(base) ?? 0;
 		seen.set(base, nth + 1);
-		return s.poiId ?? identity(dayIndex, s, nth);
+		return s.placementId ?? s.poiId ?? identity(dayIndex, s, nth);
 	});
 }
 
@@ -79,6 +91,7 @@ const toRow = (
 	day_index: dayIndex,
 	order_index: orderIndex,
 	poi_id: s.poiId,
+	placement_id: s.placementId ?? null,
 	name: s.name,
 	lat: s.at.lat,
 	lng: s.at.lng,
@@ -130,7 +143,12 @@ export async function savePlan(
 		const ordered = [...rows].sort((a, b) => a.order_index - b.order_index);
 		const keys = identities(
 			day,
-			ordered.map((r) => ({ poiId: r.poi_id, anchorKind: r.anchor_kind, name: r.name }))
+			ordered.map((r) => ({
+				placementId: r.placement_id,
+				poiId: r.poi_id,
+				anchorKind: r.anchor_kind,
+				name: r.name
+			}))
 		);
 		keys.forEach((key, i) => ids.set(key, ordered[i].id));
 	}
@@ -169,7 +187,7 @@ export async function loadPlan(tripId: string): Promise<PlanStopRow[]> {
 	const { data, error } = await supabase
 		.from('plan_stops')
 		.select(
-			'id,day_index,order_index,poi_id,name,lat,lng,anchor,anchor_kind,time_label,starts_at,ends_at,duration_min,pinned,leg_mode,leg_minutes,leg_km,leg_source,warnings,busyness,exit_lat,exit_lng'
+			'id,placement_id,day_index,order_index,poi_id,name,lat,lng,anchor,anchor_kind,time_label,starts_at,ends_at,duration_min,pinned,leg_mode,leg_minutes,leg_km,leg_source,warnings,busyness,exit_lat,exit_lng'
 		)
 		.eq('trip_id', tripId)
 		.order('day_index', { ascending: true })
@@ -234,6 +252,7 @@ export function toPlannedDays(rows: PlanStopRow[], days: Day[]): PlannedDay[] {
 	)) {
 		planned[row.day_index]?.stops.push({
 			id: row.id,
+			placementId: row.placement_id,
 			poiId: row.poi_id,
 			name: row.name,
 			at: { lat: row.lat, lng: row.lng },

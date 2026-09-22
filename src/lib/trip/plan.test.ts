@@ -15,6 +15,7 @@ const aDay = (date: string, anchors: Waypoint[] = []): Day => ({
 const row = (p: Partial<PlanStopRow> & { day_index: number; order_index: number }): PlanStopRow => ({
 	id: `row-${p.day_index}-${p.order_index}`,
 	leg_source: null,
+	placement_id: null,
 	poi_id: null,
 	name: 'Stop',
 	lat: 51.5,

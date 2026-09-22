@@ -2,6 +2,7 @@ import { supabase } from '$lib/supabase';
 import { pool } from '$lib/pool';
 import type { Poi } from '$lib/poi';
 import type { PlanPoi } from '$lib/plan/planner';
+import type { PlacementRow } from '$lib/trip/placements';
 
 export type PoiRow = {
 	id: string;
@@ -17,9 +18,13 @@ export type PoiRow = {
 	website: string | null;
 	phone: string | null;
 	notes: string | null;
+	/**
+	 * Dead. Where a place is on the plan, and whether it is held there, lives
+	 * on its placements now (0040); these three are still selected only until
+	 * the follow-up migration drops them. Nothing may read them.
+	 */
 	day_index: number | null;
 	order_index: number | null;
-	/** Held where the traveller put it; Replan plans around it. */
 	pinned: boolean;
 	/** The exact start a pin holds. Null on a pin made before times were held. */
 	pinned_at: string | null;
@@ -36,7 +41,11 @@ export type PoiRow = {
 };
 
 /**
- * A wishlist row as the planner wants it told.
+ * One visit to a wishlist row, as the planner wants it told.
+ *
+ * The place says what it is; the placement says where on the plan it is and
+ * whether it is held there. The planner works in visits, so the id it gets is
+ * the placement's, and the same place on two days is two of these.
  *
  * `heldAt` is the moment the stop already happens at, taken from the card on
  * the plan -- because that is where a stop's time lives. A pin carries no time
@@ -44,18 +53,23 @@ export type PoiRow = {
  * is. Passing nothing means the planner decides, which is what it does for
  * anything unpinned and for a stop that has just been dragged somewhere new.
  */
-export const toPlanPoi = (row: PoiRow, heldAt: string | null = null): PlanPoi => ({
-	id: row.id,
+export const toPlanPoi = (
+	row: PoiRow,
+	placement: PlacementRow,
+	heldAt: string | null = null
+): PlanPoi => ({
+	id: placement.id,
+	poiId: row.id,
 	name: row.name,
 	lat: row.lat,
 	lng: row.lng,
 	category: row.category,
 	durationMin: row.duration_min,
 	priority: row.priority ?? 3,
-	dayIndex: row.day_index,
-	orderIndex: row.order_index,
-	pinned: row.pinned ?? false,
-	pinnedAt: row.pinned ? heldAt : null,
+	dayIndex: placement.day_index,
+	orderIndex: placement.order_index,
+	pinned: placement.pinned,
+	pinnedAt: placement.pinned ? heldAt : null,
 	branches: row.any_branch ? (row.branches ?? []) : null,
 	exitAt: row.exit_lat !== null && row.exit_lng !== null ? { lat: row.exit_lat, lng: row.exit_lng } : null
 });
@@ -70,7 +84,7 @@ export async function listPois(tripId: string): Promise<PoiRow[]> {
 	return data ?? [];
 }
 
-/** Captured stops land in the wishlist: day_index stays null until planning. */
+/** Captured stops land in the wishlist; putting one on a day is a placement. */
 export async function addPoi(tripId: string, poi: Poi): Promise<PoiRow> {
 	const { data, error } = await supabase
 		.from('pois')
@@ -141,9 +155,13 @@ export async function removePoi(id: string): Promise<void> {
 }
 
 /**
- * Persist a plan's day/order assignment. One upsert per changed row rather
- * than a wholesale delete-and-insert, so a failure halfway leaves a coherent
- * trip instead of an empty one.
+ * @deprecated Writes the dead day_index/order_index columns. A place's position
+ * on the plan is a placement now (0040): use `place`, `unplace` and
+ * `savePlacements` from `$lib/trip/placements`. Kept only until the last
+ * caller has moved over; the columns are dropped in a follow-up migration.
+ *
+ * One upsert per changed row rather than a wholesale delete-and-insert, so a
+ * failure halfway leaves a coherent trip instead of an empty one.
  */
 export async function saveAssignments(
 	rows: { id: string; dayIndex: number | null; orderIndex: number | null }[]

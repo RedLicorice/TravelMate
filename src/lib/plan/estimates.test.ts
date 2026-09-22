@@ -24,6 +24,7 @@ const row = (p: Partial<PlanStopRow> & { order_index: number }): PlanStopRow => 
 	leg_minutes: null,
 	leg_km: null,
 	leg_source: null,
+	placement_id: null,
 	warnings: [],
 	busyness: null,
 	exit_lat: null,

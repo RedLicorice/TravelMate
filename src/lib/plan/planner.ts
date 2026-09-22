@@ -23,7 +23,15 @@ import {
 } from './meals';
 
 export type PlanPoi = {
+	/**
+	 * The placement: this visit, on this day, in this position. Two visits to
+	 * the same cafe are two of these, and everything that orders, pins, drags
+	 * or drops a stop works in these -- because "the cafe" cannot say which of
+	 * Tuesday and Thursday is being moved.
+	 */
 	id: string;
+	/** The place itself, on the wishlist. Shared by every visit to it. */
+	poiId: string;
 	name: string;
 	lat: number;
 	lng: number;
@@ -86,7 +94,15 @@ export type PlannedStop = {
 	 * just invented, which is what saving gives an id to.
 	 */
 	id?: string | null;
-	poiId: string | null; // null for an anchor
+	/** The place on the wishlist. Null for an anchor. */
+	poiId: string | null;
+	/**
+	 * The visit: which placement this card is. What a drag moves and a delete
+	 * removes, since two cards for the same cafe share a poiId and only this
+	 * tells them apart. Null for an anchor, and for a meal the traveller put in
+	 * a slot by hand -- that one lives in the slot, not in a placement.
+	 */
+	placementId: string | null;
 	name: string;
 	at: LatLng;
 	arrive: Date;
@@ -141,6 +157,13 @@ export type PlanInput = {
 };
 
 const at = (p: { lat: number; lng: number }): LatLng => ({ lat: p.lat, lng: p.lng });
+
+/**
+ * The visits as places, for the crowd table. Busyness belongs to the venue:
+ * two visits to the same museum share one curve, and the table the page
+ * resolves ahead of time is keyed by the wishlist row, not by the placement.
+ */
+const places = (pois: PlanPoi[]) => pois.map((p) => ({ id: p.poiId, category: p.category }));
 
 /**
  * Minutes a traveller would trade to avoid a packed venue rather than an empty
@@ -619,7 +642,10 @@ function walkClock(
 	// A slot the traveller filled with a place that is on this day: that place
 	// is the meal, wherever the day reaches it. Without this the day would walk
 	// their choice and then offer an empty container for the same meal.
-	const onTheDay = new Set(pois.map((p) => p.id));
+	//
+	// By place, because that is what the slot names: however many visits to
+	// the cafe the day has, one of them is breakfast.
+	const onTheDay = new Set(pois.map((p) => p.poiId));
 	for (const name of MEAL_NAMES) {
 		const id = says.get(mealKey(dayIndex, name))?.poi_id;
 		if (id && onTheDay.has(id)) served.add(name);
@@ -631,6 +657,7 @@ function walkClock(
 		durationMin: number,
 		anchor: boolean,
 		poiId: string | null,
+		placementId: string | null,
 		category: string | null,
 		terminal: boolean,
 		exitAt: LatLng | null = null,
@@ -716,6 +743,7 @@ function walkClock(
 
 		stops.push({
 			poiId,
+			placementId,
 			name,
 			pinned: heldAt !== null,
 			at: point,
@@ -736,7 +764,7 @@ function walkClock(
 	};
 
 	for (const w of day.fixedStart) {
-		push(w.name, w.at, w.dwellMin, true, null, null, w.kind === 'terminal', null, w.kind, w.timeLabel ?? null);
+		push(w.name, w.at, w.dwellMin, true, null, null, null, w.kind === 'terminal', null, w.kind, w.timeLabel ?? null);
 	}
 
 	/**
@@ -854,8 +882,14 @@ function walkClock(
 
 			if (chosen) {
 				const i = unseated.indexOf(chosen);
+				// A diner is a visit on this day, and the card is that visit. A
+				// place the traveller put in the slot is not: the slot holds it,
+				// and whatever visit the wishlist lent to describe it belongs to
+				// some other day or to none. Carrying that id would let a drag
+				// of Tuesday's breakfast move Thursday's.
+				const placementId = i >= 0 ? chosen.id : null;
 				if (i >= 0) unseated.splice(i, 1);
-				push(chosen.name, chosenAt, minutes, false, chosen.id, chosen.category, false, null, 'meal');
+				push(chosen.name, chosenAt, minutes, false, chosen.poiId, placementId, chosen.category, false, null, 'meal');
 			} else {
 				// An empty container. It keeps its place and its time, because
 				// a meal nobody has chosen yet is still a meal that will happen.
@@ -869,7 +903,7 @@ function walkClock(
 				const miss = mealMiss(new Date(start), timezone, [slot]);
 				const note: Warning | null =
 					miss > 0.5 ? { kind: 'off-hours', message: 'Not really a mealtime' } : null;
-				push(MEAL_LABEL[slot.name], here, minutes, true, null, slot.name, false, null, 'meal', null, false, null, note);
+				push(MEAL_LABEL[slot.name], here, minutes, true, null, null, slot.name, false, null, 'meal', null, false, null, note);
 			}
 		}
 	};
@@ -942,6 +976,7 @@ function walkClock(
 			where,
 			p.durationMin,
 			false,
+			p.poiId,
 			p.id,
 			p.category,
 			false,
@@ -957,7 +992,7 @@ function walkClock(
 	offerMeals(dayEndMs, true);
 
 	for (const w of day.fixedEnd) {
-		push(w.name, w.at, w.dwellMin, true, null, null, w.kind === 'terminal', null, w.kind, w.timeLabel ?? null);
+		push(w.name, w.at, w.dwellMin, true, null, null, null, w.kind === 'terminal', null, w.kind, w.timeLabel ?? null);
 	}
 
 	return { stops, overflowed, travelMin, crowdSum, mealMissHours, waitedMin };
@@ -974,7 +1009,7 @@ function split(list: PlanPoi[], chosen: Set<string> = new Set()): { route: PlanP
 	// A place the traveller put in a slot stays in the route, like a pinned
 	// one: they said what it is and where it goes, and the meal pass has
 	// nothing left to decide about it.
-	const diners = list.filter((p) => isMeal(p.category) && !p.pinned && !chosen.has(p.id));
+	const diners = list.filter((p) => isMeal(p.category) && !p.pinned && !chosen.has(p.poiId));
 	return { route: list.filter((p) => !diners.includes(p)), diners };
 }
 
@@ -982,7 +1017,7 @@ function split(list: PlanPoi[], chosen: Set<string> = new Set()): { route: PlanP
 
 /** Steps 3-5. Respects the day/order the traveller already chose. */
 export function schedule(input: PlanInput): PlanResult {
-	const curves = input.curves ?? categoryCurves(input.pois, input.days, input.timezone);
+	const curves = input.curves ?? categoryCurves(places(input.pois), input.days, input.timezone);
 	const slots = slotsFrom(input.mealWindows ?? DEFAULT_WINDOWS);
 	const travel = input.travel ?? noTravel;
 	const byDay = new Map<number, PlanPoi[]>();
@@ -1005,7 +1040,7 @@ export function schedule(input: PlanInput): PlanResult {
 		if (p.dayIndex === null || !byDay.has(p.dayIndex)) {
 			// Chosen for a meal before it had a day of its own: the slot is where
 			// it goes, so it is not waiting for a plan.
-			if (chosen.has(p.id)) continue;
+			if (chosen.has(p.poiId)) continue;
 			// Never been through the planner, or points at a day that no longer
 			// exists because the dates moved.
 			unplaced.push({ poi: p, reason: 'not-planned-yet' });
@@ -1024,12 +1059,15 @@ export function schedule(input: PlanInput): PlanResult {
 		// chosen before it had one, or left over from a day that moved. A place
 		// already on the day is walked where it sits; seating it again would put
 		// it on the day twice.
-		const here = new Set(byDay.get(i)!.map((p) => p.id));
+		//
+		// All by place. The slot names one, and any visit to it will do to say
+		// where it is and how long it takes, which is all the meal pass asks.
+		const here = new Set(byDay.get(i)!.map((p) => p.poiId));
 		const picked = new Map<string, PlanPoi>();
 		for (const meal of MEAL_NAMES) {
 			const id = says.get(mealKey(i, meal))?.poi_id;
 			if (!id || here.has(id)) continue;
-			const poi = input.pois.find((p) => p.id === id);
+			const poi = input.pois.find((p) => p.poiId === id);
 			if (poi) picked.set(meal, poi);
 		}
 		const result = walkClock(
@@ -1046,9 +1084,10 @@ export function schedule(input: PlanInput): PlanResult {
 			picked
 		);
 		unplaced.push(...result.overflowed.map((poi) => ({ poi, reason: 'day-full' as const })));
-		// A restaurant no mealtime came near enough to reach.
-		const seated = new Set(result.stops.map((st) => st.poiId));
-		picked.forEach((p) => seated.add(p.id));
+		// A restaurant no mealtime came near enough to reach. By visit: two
+		// visits to the same cafe are two candidates, and seating one for
+		// breakfast says nothing about whether the other found a lunch.
+		const seated = new Set(result.stops.map((st) => st.placementId));
 		unplaced.push(
 			...diners
 				.filter((d) => !seated.has(d.id))
@@ -1062,7 +1101,7 @@ export function schedule(input: PlanInput): PlanResult {
 
 /** Steps 1-5. A full reshuffle -- what the Replan control runs. */
 export function replan(input: PlanInput): PlanResult {
-	const curves = input.curves ?? categoryCurves(input.pois, input.days, input.timezone);
+	const curves = input.curves ?? categoryCurves(places(input.pois), input.days, input.timezone);
 	const slots = slotsFrom(input.mealWindows ?? DEFAULT_WINDOWS);
 	const travel = input.travel ?? noTravel;
 
@@ -1127,7 +1166,7 @@ export function replan(input: PlanInput): PlanResult {
 		const picked = new Map<string, PlanPoi>();
 		for (const meal of MEAL_NAMES) {
 			const id = says.get(mealKey(dayIndex, meal))?.poi_id;
-			const chosen = id ? input.pois.find((p) => p.id === id) : undefined;
+			const chosen = id ? input.pois.find((p) => p.poiId === id) : undefined;
 			if (chosen) picked.set(meal, chosen);
 		}
 
@@ -1178,6 +1217,8 @@ export function replan(input: PlanInput): PlanResult {
 				.sort((a, b) => roomOn(b) - roomOn(a))[0];
 			if (target === undefined || roomOn(target) < poi.durationMin * 60_000) continue;
 
+			// This visit alone. Matching on the place would carry every other
+			// visit to it along, days it was never dropped from included.
 			placed = placed.map((p) =>
 				p.id === poi.id ? { ...p, dayIndex: target, orderIndex: 999 } : p
 			);

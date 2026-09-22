@@ -29,6 +29,7 @@ describe('the last day must reach check-in', () => {
 		const pois: PlanPoi[] = [
 			{
 				id: 'tower',
+				poiId: 'tower',
 				name: 'Tower',
 				lat: 51.5081,
 				lng: -0.0759,

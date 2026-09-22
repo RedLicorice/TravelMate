@@ -11,32 +11,37 @@
 
 	type Props = {
 		poi: PoiRow;
+		/**
+		 * The visit this card is showing, or null for a place opened from the
+		 * wishlist, which is on no day and so has nothing to come off. A place
+		 * can be on the plan more than once, and "take it off" has to say which.
+		 */
+		placementId: string | null;
+		/** Whether that visit is held where the traveller put it. The place itself has no say. */
+		pinned?: boolean;
 		tripId: string;
 		hotel: { lat: number; lng: number; name: string } | null;
 		people: Profile[];
 		busy?: boolean;
 		/** Quick edits, applied where the traveller is rather than a screen away. */
-		onedit: (patch: {
-			duration_min?: number;
-			priority?: number;
-			pinned?: boolean;
-			notes?: string | null;
-		}) => void;
-		/** Take it off the plan. It stays on the wishlist, where it came from. */
-		onunplace: () => void;
-		/** Whether it is on the plan at all: a wishlist row has nowhere to come off. */
-		placed?: boolean;
+		onedit: (patch: { duration_min?: number; priority?: number; notes?: string | null }) => void;
+		/** Let Replan move this visit again. */
+		onrelease: (placementId: string) => void;
+		/** Take this visit off the plan. The place stays on the wishlist, where it came from. */
+		onunplace: (placementId: string) => void;
 		onclose: () => void;
 	};
 
 	let {
 		poi,
+		placementId,
+		pinned = false,
 		tripId,
 		hotel,
 		people,
 		busy = false,
-		placed = true,
 		onedit,
+		onrelease,
 		onunplace,
 		onclose
 	}: Props = $props();
@@ -142,11 +147,11 @@
 			></textarea>
 		</div>
 
-		{#if poi.pinned}
+		{#if pinned && placementId}
 			<button
 				class="tm-btn tm-btn--secondary tm-btn--block mt-4"
 				disabled={busy}
-				onclick={() => onedit({ pinned: false })}
+				onclick={() => onrelease(placementId)}
 			>
 				Let the plan move it
 			</button>
@@ -176,11 +181,11 @@
 		     wishlist as well. Deleting it for good lives on its own page,
 		     behind a confirmation, which is where something irreversible
 		     belongs. -->
-		{#if placed}
+		{#if placementId}
 			<button
 				class="tm-btn tm-btn--secondary tm-btn--block mt-2"
 				disabled={busy}
-				onclick={onunplace}
+				onclick={() => onunplace(placementId)}
 			>
 				Take it off the plan
 			</button>

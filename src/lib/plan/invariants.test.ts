@@ -29,6 +29,7 @@ const trip: Trip = {
 
 const poi = (id: string, lat: number, lng: number, extra: Partial<PlanPoi> = {}): PlanPoi => ({
 	id,
+	poiId: id,
 	name: id,
 	lat,
 	lng,

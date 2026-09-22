@@ -13,6 +13,7 @@ const stop = (
 	legIn: { mode: 'walk' | 'transit'; minutes: number; km: number; source?: 'estimate' | 'routed' } | null
 ) => ({
 	poiId: null,
+	placementId: null,
 	name,
 	at,
 	arrive: new Date('2026-10-02T14:00:00Z'),

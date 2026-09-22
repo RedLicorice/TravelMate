@@ -3,14 +3,14 @@
 	import { page } from '$app/state';
 	import { base } from '$app/paths';
 	import { cityBBox, getTrip, updateCityBBox, type TripRow } from '$lib/trip/repo';
-	import { addPoi, DuplicatePoiError, listPois, saveAssignments, type PoiRow } from '$lib/trip/pois';
+	import { addPoi, DuplicatePoiError, listPois, type PoiRow } from '$lib/trip/pois';
+	import { listPlacements, place, savePlacements, type PlacementRow } from '$lib/trip/placements';
 	import { insertInto } from '$lib/dnd.svelte';
 	import { goto } from '$app/navigation';
 	import { poi as provider, type City, type Poi } from '$lib/poi';
 	import { durationFor } from '$lib/poi/photon';
 	import { isShortMapLink, parseLatLng } from '$lib/poi/manual';
 	import { branchesOf } from '$lib/poi/branches';
-	import { isMeal } from '$lib/plan/meals';
 	import Autocomplete from '$lib/Autocomplete.svelte';
 	import { haversineKm } from '$lib/plan/geo';
 	import TripMap from '$lib/GoogleMap.svelte';
@@ -19,8 +19,8 @@
 
 	/**
 	 * Reached from a slot in the plan rather than from the Add places button.
-	 * `day` is the day to land on; `before` is the stop to land above, absent
-	 * meaning the end of that day.
+	 * `day` is the day to land on; `before` is the placement to land above,
+	 * absent meaning the end of that day.
 	 *
 	 * A slot is a single choice, so this adds one place and goes straight back
 	 * -- the multi-add flow is for filling a wishlist, which is a different job.
@@ -33,6 +33,7 @@
 
 	let trip = $state<TripRow | null>(null);
 	let saved = $state<PoiRow[]>([]);
+	let placements = $state<PlacementRow[]>([]);
 	let results = $state<Poi[]>([]);
 	let query = $state('');
 	let view = $state<'list' | 'map' | 'custom'>('list');
@@ -48,7 +49,11 @@
 
 	onMount(async () => {
 		try {
-			[trip, saved] = await Promise.all([getTrip(tripId), listPois(tripId)]);
+			[trip, saved, placements] = await Promise.all([
+				getTrip(tripId),
+				listPois(tripId),
+				listPlacements(tripId)
+			]);
 			if (!trip) return;
 			bbox = cityBBox(trip);
 			if (!bbox) {
@@ -93,23 +98,29 @@
 	);
 
 	/**
-	 * Already on the trip? Matched on OSM id when both have one, since the same
-	 * place can come back with slightly different coordinates from a different
-	 * query. Coordinates are the fallback for hand-added stops.
+	 * Already on the wishlist? Matched on OSM id when both have one, since the
+	 * same place can come back with slightly different coordinates from a
+	 * different query. Coordinates are the fallback for hand-added stops.
 	 */
 	const matches = (p: Poi) => (s: PoiRow) =>
 		s.osm_id && p.osmId
 			? s.osm_id === p.osmId
 			: Math.abs(s.lat - p.lat) < 1e-6 && Math.abs(s.lng - p.lng) < 1e-6;
 
-	/** How many times this place is already on the trip. */
-	const timesAdded = (p: Poi) => saved.filter(matches(p)).length;
+	const onWishlist = (p: Poi) => saved.find(matches(p)) ?? null;
+
+	/** How many days this place is already on. */
+	const timesPlanned = (p: Poi) => {
+		const row = onWishlist(p);
+		return row ? placements.filter((x) => x.poi_id === row.id).length : 0;
+	};
 
 	/**
-	 * Somewhere you eat may be added again -- the same cafe on Tuesday and
-	 * Thursday is a plan, not a double tap. Everything else is added once.
+	 * A wishlist has each place once, so from the Add places button a place
+	 * already on it has nothing left to do. From a slot there is always more to
+	 * do: the same cafe on Tuesday and Thursday is two visits, not a double tap.
 	 */
-	const isSaved = (p: Poi) => !isMeal(p.category) && timesAdded(p) > 0;
+	const canAdd = (p: Poi) => slot !== null || !onWishlist(p);
 
 	const kmFromHotel = (p: { lat: number; lng: number }) =>
 		trip ? haversineKm({ lat: trip.hotel_lat, lng: trip.hotel_lng }, p).toFixed(1) : '?';
@@ -229,7 +240,7 @@
 	let chain = $state<{ pick: Poi; branches: { lat: number; lng: number }[] } | null>(null);
 
 	function offer(p: Poi) {
-		if (isSaved(p)) return;
+		if (!canAdd(p)) return;
 		const branches = branchesOf(p, results);
 		if (branches.length > 1) chain = { pick: p, branches };
 		else void add(p);
@@ -247,26 +258,57 @@
 		void add(everyBranch ? { ...chosen.pick, branches: chosen.branches } : chosen.pick);
 	}
 
-	async function add(p: Poi) {
-		if (isSaved(p)) return;
+	/**
+	 * The wishlist row for this place, made if it is not there yet. The index
+	 * catches what the UI check missed -- two taps in quick succession, or a
+	 * teammate adding the same place a moment ago -- and that is not an error
+	 * here, it is the row we wanted: refresh and use it.
+	 */
+	async function wishlistRow(p: Poi): Promise<PoiRow> {
+		const existing = onWishlist(p);
+		if (existing) return existing;
 		try {
 			const row = await addPoi(tripId, p);
 			saved = [...saved, row];
+			return row;
+		} catch (e) {
+			if (!(e instanceof DuplicatePoiError)) throw e;
+			saved = await listPois(tripId);
+			const row = onWishlist(p);
+			if (!row) throw e;
+			return row;
+		}
+	}
+
+	async function add(p: Poi) {
+		if (!canAdd(p)) return;
+		try {
+			const row = await wishlistRow(p);
 
 			if (slot) {
 				// Put it in the slot it was asked for, then hand the trip page
-				// back the day it landed on so it opens there.
-				await saveAssignments(
-					insertInto(
-						[...saved, row].map((x) => ({
-							id: x.id,
-							dayIndex: x.id === row.id ? null : x.day_index,
-							orderIndex: x.id === row.id ? null : x.order_index
-						})),
-						row.id,
-						slot.day,
-						slot.before
-					)
+				// back the day it landed on so it opens there. The new visit is
+				// slotted among the day's existing ones with the same arithmetic
+				// a drop uses, so the two cannot disagree about where "above"
+				// is; `before` still names a place on the trip page for now, so
+				// a placement of that place is accepted too.
+				const NEW = 'new';
+				const before =
+					placements.find((x) => x.id === slot.before || x.poi_id === slot.before)?.id ?? null;
+				const rows = insertInto(
+					[
+						...placements.map((x) => ({ id: x.id, dayIndex: x.day_index, orderIndex: x.order_index })),
+						{ id: NEW, dayIndex: null, orderIndex: null }
+					],
+					NEW,
+					slot.day,
+					before
+				);
+				const poiOf = new Map(placements.map((x) => [x.id, x.poi_id]));
+				await place(tripId, row.id, slot.day, rows.find((r) => r.id === NEW)!.orderIndex);
+				await savePlacements(
+					tripId,
+					rows.filter((r) => r.id !== NEW).map((r) => ({ ...r, poiId: poiOf.get(r.id)! }))
 				);
 				await goto(`${base}/trip/${tripId}?day=${slot.day}`, { replaceState: true });
 				return;
@@ -278,14 +320,7 @@
 			// old query up invites adding its neighbours by accident.
 			clearSearch();
 		} catch (e) {
-			if (e instanceof DuplicatePoiError) {
-				// The index caught what the UI check missed: refresh so the row
-				// shows as added rather than leaving a button that does nothing.
-				saved = await listPois(tripId);
-				error = e.message;
-			} else {
-				error = (e as Error).message;
-			}
+			error = (e as Error).message;
 		}
 	}
 
@@ -301,7 +336,7 @@
 			glyph: '✓'
 		})),
 		...results
-			.filter((r) => !isSaved(r))
+			.filter(canAdd)
 			.map((r, i) => ({
 				id: `result:${i}`,
 				lat: r.lat,
@@ -313,7 +348,7 @@
 	]);
 
 	const selected = $derived(
-		selectedId?.startsWith('result:') ? results.filter((r) => !isSaved(r))[Number(selectedId.split(':')[1])] : null
+		selectedId?.startsWith('result:') ? results.filter(canAdd)[Number(selectedId.split(':')[1])] : null
 	);
 </script>
 
@@ -364,7 +399,7 @@
 			{/if}
 
 			{#each results as r (r.name + r.lat + r.lng)}
-				{@const times = timesAdded(r)}
+				{@const times = timesPlanned(r)}
 				<div class="tm-result">
 					<div>
 						<p class="tm-result__name">
@@ -372,19 +407,19 @@
 						</p>
 						<p class="tm-result__meta">
 							{r.category ?? 'place'} · {kmFromHotel(r)} km · {r.durationMin} min
-							{#if times === 1} · on this trip{/if}
+							{#if onWishlist(r)} · on the wishlist{/if}
 						</p>
 					</div>
-					{#if isSaved(r)}
+					{#if !canAdd(r)}
 						<!-- Shown rather than hidden: a place vanishing from results reads
 						     as a search bug, not as "you already have this". -->
-						<button class="tm-add" aria-pressed="true" aria-label="Already on this trip" disabled>
+						<button class="tm-add" aria-pressed="true" aria-label="Already on the wishlist" disabled>
 							✓
 						</button>
 					{:else}
 						<button
 							class="tm-add"
-							aria-label={times ? `Add ${r.name} again` : `Add ${r.name}`}
+							aria-label={slot ? `Add ${r.name} to this day${times ? ' again' : ''}` : `Add ${r.name}`}
 							onclick={() => offer(r)}>+</button
 						>
 					{/if}
@@ -412,8 +447,8 @@
 						<span class="tm-chip tm-chip--peach">{selected.durationMin} min</span>
 						{#if selected.openingHours}<span class="tm-chip">{selected.openingHours}</span>{/if}
 					</div>
-					{#if isSaved(selected)}
-						<button class="tm-btn tm-btn--secondary tm-btn--block" disabled>Already on this trip</button>
+					{#if !canAdd(selected)}
+						<button class="tm-btn tm-btn--secondary tm-btn--block" disabled>Already on the wishlist</button>
 					{:else}
 						<button
 							class="tm-btn tm-btn--primary tm-btn--block"
@@ -422,7 +457,7 @@
 								selectedId = null;
 							}}
 						>
-							Add to trip
+							{slot ? (timesPlanned(selected) ? 'Add to this day again' : 'Add to this day') : 'Add to wishlist'}
 						</button>
 					{/if}
 				</div>
@@ -505,7 +540,7 @@
 				disabled={!customPoint || !customName.trim()}
 				onclick={addCustom}
 			>
-				Add to wishlist
+				{slot ? 'Add to this day' : 'Add to wishlist'}
 			</button>
 		</div>
 	{/if}

@@ -34,6 +34,7 @@ const trip: Trip = {
 
 const poi = (id: string, lat: number, lng: number, extra: Partial<PlanPoi> = {}): PlanPoi => ({
 	id,
+	poiId: id,
 	name: id,
 	lat,
 	lng,
@@ -566,6 +567,7 @@ describe('arrival day capacity', () => {
 	};
 	const poi = (id: string, lat: number, lng: number): PlanPoi => ({
 		id,
+		poiId: id,
 		name: id,
 		lat,
 		lng,
@@ -623,6 +625,7 @@ describe('pinned stops', () => {
 	};
 	const place = (id: string, lat: number, lng: number, extra: Partial<PlanPoi> = {}): PlanPoi => ({
 		id,
+		poiId: id,
 		name: id,
 		lat,
 		lng,
@@ -714,6 +717,7 @@ describe('a pin is the traveller\'s, not the planner\'s', () => {
 	};
 	const stubborn: PlanPoi = {
 		id: 'long',
+		poiId: 'long',
 		name: 'long',
 		lat: 51.5081,
 		lng: -0.0759,
@@ -761,6 +765,7 @@ describe('a pin is the traveller\'s, not the planner\'s', () => {
 		const at = (id: string, iso: string): PlanPoi => ({
 			...stubborn,
 			id,
+			poiId: id,
 			name: id,
 			durationMin: 30,
 			pinnedAt: iso,
@@ -805,6 +810,7 @@ describe('a stop you leave from somewhere else', () => {
 
 	const cableCar = (exitAt: { lat: number; lng: number } | null): PlanPoi => ({
 		id: 'cable',
+		poiId: 'cable',
 		name: 'Cable car',
 		lat: south.lat,
 		lng: south.lng,
@@ -817,6 +823,7 @@ describe('a stop you leave from somewhere else', () => {
 	});
 	const afterwards: PlanPoi = {
 		id: 'docks',
+		poiId: 'docks',
 		name: 'Royal Docks',
 		lat: 51.5095,
 		lng: 0.0215,
@@ -910,6 +917,7 @@ describe('rating does not buy detours', () => {
 	/** Five places along one road, west to east, so the short route is obvious. */
 	const along = (i: number, priority: number): PlanPoi => ({
 		id: `s${i}`,
+		poiId: `s${i}`,
 		name: `s${i}`,
 		lat: 51.5145,
 		lng: -0.19 + i * 0.02,
@@ -965,6 +973,7 @@ describe('meals the plan supplies itself', () => {
 
 	const sight = (id: string, durationMin = 60): PlanPoi => ({
 		id,
+		poiId: id,
 		name: id,
 		lat: 51.5081,
 		lng: -0.0759,
@@ -1012,6 +1021,7 @@ describe('meals the plan supplies itself', () => {
 		const restaurant: PlanPoi = {
 			...sight('s1', 75),
 			id: 'trattoria',
+			poiId: 'trattoria',
 			name: 'Trattoria',
 			category: 'restaurant',
 			orderIndex: 1
@@ -1070,6 +1080,7 @@ describe('a block of time the traveller added', () => {
 
 	const far: PlanPoi = {
 		id: 'far',
+		poiId: 'far',
 		name: 'Tower',
 		lat: 51.5081,
 		lng: -0.0759,
@@ -1084,6 +1095,7 @@ describe('a block of time the traveller added', () => {
 	const rest: PlanPoi = {
 		...far,
 		id: 'rest',
+		poiId: 'rest',
 		name: 'Rest',
 		category: BLOCK_CATEGORY,
 		lat: 51.5145,

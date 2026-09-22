@@ -20,7 +20,6 @@
 	import {
 		addPoi,
 		listPois,
-		saveAssignments,
 		toPlanPoi,
 		updatePoi,
 		type PoiRow
@@ -34,6 +33,14 @@
 		toMealPlan,
 		type MealSlotRow
 	} from '$lib/trip/meals';
+	import {
+		holdPlacement,
+		listPlacements,
+		place,
+		savePlacements,
+		unplace as dropPlacement,
+		type PlacementRow
+	} from '$lib/trip/placements';
 	import { tripDays, zonedInstant, type Day } from '$lib/trip/days';
 	import {
 		replan,
@@ -43,6 +50,7 @@
 		type PlannedDay,
 		type PlannedStop,
 		PLANNER_VERSION,
+		type PlanPoi,
 		type Unplaced,
 		type UnplacedReason
 	} from '$lib/plan/planner';
@@ -108,7 +116,53 @@
 	/** Sharing, editing and the picture are the owner's; the policies say so
 	    too, and a control the server will refuse is a control that lies. */
 	const isOwner = $derived(!!row && row.user_id === session.user?.id);
+	/** The wishlist: places wanted, each once. */
 	let pois = $state<PoiRow[]>([]);
+	/**
+	 * Which visit the open card is showing, when it was opened from the plan.
+	 * Null when it was opened from the wishlist, where a place has no one
+	 * visit to speak for.
+	 */
+	let cardedVisit = $state<string | null>(null);
+	/**
+	 * The visits: this place, on this day, in this position. A place may have
+	 * as many as the traveller likes, and a place with none is simply on the
+	 * wishlist and not yet on the plan.
+	 */
+	let placements = $state<PlacementRow[]>([]);
+	const poiById = $derived(new Map(pois.map((p) => [p.id, p])));
+	/**
+	 * A place on the wishlist that has no visit yet, in the shape the planner
+	 * is told about.
+	 *
+	 * Its id says so: Replan is what turns these into real visits, and until
+	 * it has, there is no row to name. Anything that comes back carrying one
+	 * of these ids is a visit that needs creating rather than moving.
+	 */
+	const NEW = 'new:';
+	const draftVisit = (p: PoiRow): PlanPoi => ({
+		id: `${NEW}${p.id}`,
+		poiId: p.id,
+		name: p.name,
+		lat: p.lat,
+		lng: p.lng,
+		category: p.category,
+		durationMin: p.duration_min,
+		priority: p.priority ?? 3,
+		dayIndex: null,
+		orderIndex: null,
+		pinned: false,
+		pinnedAt: null,
+		branches: p.any_branch ? (p.branches ?? []) : null,
+		exitAt:
+			p.exit_lat !== null && p.exit_lng !== null ? { lat: p.exit_lat, lng: p.exit_lng } : null
+	});
+
+	/** Every visit, in the shape the planner is told about. */
+	const visitOf = (pl: PlacementRow, heldAt: string | null) => {
+		const poi = poiById.get(pl.poi_id);
+		return poi ? toPlanPoi(poi, pl, heldAt) : null;
+	};
 	let loading = $state(true);
 	let error = $state<string | null>(null);
 	let busy = $state(false);
@@ -172,12 +226,13 @@
 			if (change === 'reset') await resetMeal(tripId, dayIdx, meal);
 			else await saveMeal(tripId, { dayIndex: dayIdx, meal, ...change });
 
-			// The slot holds it; it needs no day of its own. Unpinned, because a
-			// pinned meal is one placed outside a slot and this one is in one.
-			if (change !== 'reset' && change.poiId) {
-				await saveAssignments([{ id: change.poiId, dayIndex: null, orderIndex: null }]);
-				await updatePoi(change.poiId, { pinned: false, pinned_at: null });
-				pois = await listPois(tripId);
+			// The place keeps its day. A meal is a stop like any other, and the
+			// slot only says which meal it is -- taking its day away is what
+			// used to lift it out of the route and re-seat it by window,
+			// which is how dropping a card before it did nothing at all.
+			if (change !== 'reset' && change.poiId && !placements.some((pl) => pl.poi_id === change.poiId)) {
+				const last = placements.filter((pl) => pl.day_index === dayIdx).length;
+				placements = [...placements, await place(tripId, change.poiId, dayIdx, last)];
 			}
 
 			mealRows = await loadMeals(tripId);
@@ -277,10 +332,7 @@
 		if (!held) return;
 		busy = true;
 		try {
-			const updated = await updatePoi(held.id, {
-				...patch,
-				...(patch.pinned === false ? { pinned_at: null } : {})
-			});
+			const updated = await updatePoi(held.id, patch);
 			pois = pois.map((p) => (p.id === held.id ? updated : p));
 			carded = updated;
 			// Nothing else. An edit changes the thing edited; Replan is what
@@ -303,19 +355,16 @@
 	 * said. Deleting for good is on the place's own page, behind a
 	 * confirmation.
 	 */
-	async function unplace(poiId: string) {
+	async function unplace(placementId: string) {
 		carded = null;
 		busy = true;
 		try {
-			await saveAssignments([{ id: poiId, dayIndex: null, orderIndex: null }]);
-			await updatePoi(poiId, { pinned: false });
-			pois = pois.map((p) =>
-				p.id === poiId ? { ...p, day_index: null, order_index: null, pinned: false } : p
-			);
+			await dropPlacement(placementId);
+			placements = placements.filter((pl) => pl.id !== placementId);
 			await restore();
 		} catch (e) {
 			error = (e as Error).message;
-			pois = await listPois(tripId);
+			placements = await listPlacements(tripId);
 		} finally {
 			busy = false;
 		}
@@ -496,9 +545,10 @@
 
 	onMount(async () => {
 		try {
-			[row, pois, people, stored, mealRows] = await Promise.all([
+			[row, pois, placements, people, stored, mealRows] = await Promise.all([
 				getTrip(tripId),
 				listPois(tripId),
+				listPlacements(tripId),
 				loadTripProfiles(tripId),
 				loadPlan(tripId),
 				loadMeals(tripId)
@@ -583,8 +633,10 @@
 
 		const perDay = days.map((day, i) => {
 			const anchors = [...day.fixedStart, ...day.fixedEnd].map((w) => w.at);
-			const stops = pois
-				.filter((p) => p.day_index === i)
+			const stops = placements
+				.filter((pl) => pl.day_index === i)
+				.map((pl) => poiById.get(pl.poi_id))
+				.filter((p): p is PoiRow => !!p)
 				.flatMap((p) =>
 					// Both ends of a stop you leave from somewhere else: the matrix
 					// is asked about legs out of the exit as well as in to the entrance.
@@ -617,7 +669,13 @@
 
 		// Stops not yet on a day have no departure time to ask about, so they
 		// resolve without one and fall back to the estimate where that fails.
-		const loose = pois.filter((p) => p.day_index === null).map((p) => ({ lat: p.lat, lng: p.lng }));
+		// Places with no visit yet: they have no departure time to ask about, so
+		// they resolve without one and fall back to the estimate where that
+		// fails.
+		const onTheTrip = new Set(placements.map((pl) => pl.poi_id));
+		const loose = pois
+			.filter((p) => !onTheTrip.has(p.id))
+			.map((p) => ({ lat: p.lat, lng: p.lng }));
 		if (loose.length && days[0]) {
 			const anchor = days[0].fixedStart[0]?.at;
 			const points = anchor ? [anchor, ...loose] : loose;
@@ -682,7 +740,7 @@
 	const unplaced = $derived<Unplaced[]>(
 		pois
 			.filter((p) => !planned.has(p.id))
-			.map((p) => ({ poi: toPlanPoi(p, cardAt.get(p.id) ?? null), reason: reasonFor(p) }))
+			.map((p) => ({ poi: draftVisit(p), reason: reasonFor(p) }))
 	);
 
 	/**
@@ -758,7 +816,7 @@
 		const seen = new Map<string, { day: number; rank: number }>();
 		(result?.days ?? []).forEach((d, day) => {
 			let rank = 0;
-			for (const st of d.stops) if (st.poiId) seen.set(st.poiId, { day, rank: rank++ });
+			for (const st of d.stops) if (st.placementId) seen.set(st.placementId, { day, rank: rank++ });
 		});
 
 		// A slot is a position among the cards on screen, and most of those are
@@ -769,14 +827,14 @@
 			target?.kind === 'slot'
 				? (result?.days[target.day]?.stops ?? [])
 						.slice(0, target.index)
-						.filter((st) => st.poiId && st.poiId !== draggedId).length
+						.filter((st) => st.placementId && st.placementId !== draggedId).length
 				: undefined;
 
 		const rows = reorder(
-			pois.map((p) => ({
-				id: p.id,
-				dayIndex: seen.get(p.id)?.day ?? p.day_index,
-				orderIndex: seen.get(p.id)?.rank ?? p.order_index
+			placements.map((pl) => ({
+				id: pl.id,
+				dayIndex: seen.get(pl.id)?.day ?? pl.day_index,
+				orderIndex: seen.get(pl.id)?.rank ?? pl.order_index
 			})),
 			draggedId,
 			target,
@@ -809,12 +867,15 @@
 		if (landedOn !== null && landedOn !== undefined) dayIndex = landedOn;
 
 		const byId = new Map(rows.map((r) => [r.id, r]));
-		pois = pois.map((p) => ({
-			...p,
-			...(byId.has(p.id)
-				? { day_index: byId.get(p.id)!.dayIndex, order_index: byId.get(p.id)!.orderIndex }
+		placements = placements.map((pl) => ({
+			...pl,
+			...(byId.has(pl.id)
+				? {
+						day_index: byId.get(pl.id)!.dayIndex ?? pl.day_index,
+						order_index: byId.get(pl.id)!.orderIndex
+					}
 				: {}),
-			...(p.id === draggedId ? held : {})
+			...(pl.id === draggedId ? held : {})
 		}));
 
 		// Show the move now, from what is already known. The same scheduler the
@@ -825,8 +886,18 @@
 		if (input) fresh = schedule({ ...input, travel: known() }).days;
 
 		try {
-			await saveAssignments(rows);
-			await updatePoi(draggedId, held);
+			await savePlacements(
+				tripId,
+				rows
+					.filter((r) => r.dayIndex !== null)
+					.map((r) => ({
+						id: r.id,
+						poiId: placements.find((pl) => pl.id === r.id)?.poi_id ?? '',
+						dayIndex: r.dayIndex as number,
+						orderIndex: r.orderIndex
+					}))
+			);
+			await holdPlacement(draggedId, true);
 			// Refine in the background: real road times may shift the day by a
 			// few minutes, and that is not worth a frozen screen.
 			await restore();
@@ -920,7 +991,10 @@
 	const cardAt = $derived.by(() => {
 		const at = new Map<string, string>();
 		for (const day of fresh ?? toPlannedDays(stored, days)) {
-			for (const st of day.stops) if (st.poiId) at.set(st.poiId, st.arrive.toISOString());
+			// Keyed by the visit, not the place: two coffees at the same cafe
+			// are two cards with two times, and keying by what they are of
+			// would hold both to whichever was written last.
+			for (const st of day.stops) if (st.placementId) at.set(st.placementId, st.arrive.toISOString());
 		}
 		return at;
 	});
@@ -935,7 +1009,9 @@
 	function planInput() {
 		if (!row || !days.length) return null;
 		return {
-			pois: pois.map((p) => toPlanPoi(p, p.id === justMoved ? null : (cardAt.get(p.id) ?? null))),
+			pois: placements
+				.map((pl) => visitOf(pl, pl.id === justMoved ? null : (cardAt.get(pl.id) ?? null)))
+				.filter((v): v is NonNullable<typeof v> => !!v),
 			days,
 			allowedModes: row.allowed_modes as Mode[],
 			timezone: row.timezone,
@@ -972,13 +1048,15 @@
 			}
 		}
 
+		// A visit the day could not reach goes back to the wishlist rather than
+		// belonging to neither place: absent from the plan because it did not
+		// fit, and absent from the wishlist because it still claimed a day.
 		const stranded = next.unplaced
 			.filter((u) => !u.poi.pinned)
-			.filter((u) => pois.find((p) => p.id === u.poi.id)?.day_index !== null)
-			.map((u) => ({ id: u.poi.id, dayIndex: null, orderIndex: null }));
+			.filter((u) => placements.some((pl) => pl.id === u.poi.id));
 		if (stranded.length) {
-			await saveAssignments(stranded);
-			pois = await listPois(tripId);
+			for (const u of stranded) await dropPlacement(u.poi.id);
+			placements = await listPlacements(tripId);
 		}
 		stored = await loadPlan(tripId);
 		// The plan is the traveller's; how long its journeys take is the
@@ -1020,24 +1098,41 @@
 		// because the app changed underneath them is the app's problem.
 		const stale = (row.plan_version ?? 0) < PLANNER_VERSION;
 
-		const inPlan = new Set(stored.map((r) => r.poi_id).filter(Boolean));
-		const placedButUnplanned = pois.some((p) => p.day_index !== null && !inPlan.has(p.id));
+		const inPlan = new Set(stored.map((r) => r.placement_id).filter(Boolean));
+		const placedButUnplanned = placements.some((pl) => !inPlan.has(pl.id));
 
 		if (!stale && !placedButUnplanned) return;
 		retimed = true;
 		restore().catch((e) => (error = (e as Error).message));
 	});
 
-	async function togglePin(poiId: string) {
-		const current = pois.find((p) => p.id === poiId);
+	/**
+	 * Open the card for a visit, or for a place off the wishlist.
+	 *
+	 * Takes either id: a card on the plan is a visit, a row in the wishlist is
+	 * a place, and both open the same card. What differs is whether there is a
+	 * visit to take off the plan.
+	 */
+	function openCard(id: string) {
+		const visit = placements.find((pl) => pl.id === id);
+		cardedVisit = visit?.id ?? null;
+		const poiId = visit?.poi_id ?? id;
+		carded = pois.find((p) => p.id === poiId) ?? null;
+	}
+
+	/** Hold this visit where it is, or let Replan have it back. */
+	async function togglePin(placementId: string) {
+		const current = placements.find((pl) => pl.id === placementId);
 		if (!current) return;
 		const next = !current.pinned;
-		pois = pois.map((p) => (p.id === poiId ? { ...p, pinned: next } : p));
+		placements = placements.map((pl) => (pl.id === placementId ? { ...pl, pinned: next } : pl));
 		try {
-			await updatePoi(poiId, { pinned: next });
+			await holdPlacement(placementId, next);
 		} catch (e) {
 			error = (e as Error).message;
-			pois = pois.map((p) => (p.id === poiId ? { ...p, pinned: !next } : p));
+			placements = placements.map((pl) =>
+				pl.id === placementId ? { ...pl, pinned: !next } : pl
+			);
 		}
 	}
 
@@ -1063,7 +1158,8 @@
 		}
 	}
 
-	const pinnedIds = $derived(new Set(pois.filter((p) => p.pinned).map((p) => p.id)));
+	/** Visits being held where they are, by placement. */
+	const pinnedIds = $derived(new Set(placements.filter((pl) => pl.pinned).map((pl) => pl.id)));
 
 	/** Where an Add tapped below `stop` should land: above whatever follows it. */
 	const slotHref = (dayIdx: number, beforeId: string | null) =>
@@ -1233,13 +1329,26 @@
 		target: { day: number; before: string | null; at?: string }
 	) {
 		try {
-			const rows = insertInto(
-				pois.map((p) => ({ id: p.id, dayIndex: p.day_index, orderIndex: p.order_index })),
-				poiId,
-				target.day,
-				target.before
-			);
-			await saveAssignments(rows);
+			// Where it goes among the day's visits: above the one it was put
+			// before, or at the end when it was put after everything.
+			const onDay = placements
+				.filter((pl) => pl.day_index === target.day)
+				.sort((a, b) => a.order_index - b.order_index);
+			const slot = target.before
+				? onDay.findIndex((pl) => pl.poi_id === target.before)
+				: onDay.length;
+			const at = slot < 0 ? onDay.length : slot;
+			const made = await place(tripId, poiId, target.day, at);
+			await savePlacements(tripId, [
+				{ id: made.id, poiId, dayIndex: target.day, orderIndex: at },
+				...onDay.slice(at).map((pl, i) => ({
+					id: pl.id,
+					poiId: pl.poi_id,
+					dayIndex: target.day,
+					orderIndex: at + i + 1
+				}))
+			]);
+			placements = await listPlacements(tripId);
 			// Pinned before the plan is worked out, not after: the scheduler has
 			// to already know this one is the traveller's, or it drops it for not
 			// fitting and the reconciliation then takes its day away -- which is
@@ -1250,10 +1359,8 @@
 			// merely a position in the order.
 			// Same rule as a drag: whatever moment it used to be held at is not
 			// the moment it is being put at now.
-			await updatePoi(poiId, { pinned: true, pinned_at: target.at ?? null });
-			pois = await listPois(tripId);
 			dayIndex = target.day;
-			await restore({ hold: poiId });
+			await restore();
 		} catch (e) {
 			error = (e as Error).message;
 		} finally {
@@ -1266,18 +1373,32 @@
 	 * second pass re-times that same plan rather than reshuffling it.
 	 */
 	function assignedFrom(planned: PlanResult) {
+		// Keyed by the visit: the same place can be on the plan twice, and
+		// which of the two is being re-timed is the whole question.
 		const placed = new Map(
 			planned.days.flatMap((d) =>
 				d.stops
-					.filter((s) => s.poiId)
-					.map((s, i) => [s.poiId!, { dayIndex: d.index, orderIndex: i }] as const)
+					.filter((st) => st.placementId)
+					.map((st, i) => [st.placementId!, { dayIndex: d.index, orderIndex: i }] as const)
 			)
 		);
-		return pois.map((p) => ({
-			...toPlanPoi(p),
-			dayIndex: placed.get(p.id)?.dayIndex ?? null,
-			orderIndex: placed.get(p.id)?.orderIndex ?? null
+		return everyVisit().map((v) => ({
+			...v,
+			dayIndex: placed.get(v.id)?.dayIndex ?? null,
+			orderIndex: placed.get(v.id)?.orderIndex ?? null
 		}));
+	}
+
+	/**
+	 * Everything Replan is allowed to arrange: the visits already decided, and
+	 * every wishlist place that has none yet.
+	 */
+	function everyVisit(): PlanPoi[] {
+		const visits = placements
+			.map((pl) => visitOf(pl, cardAt.get(pl.id) ?? null))
+			.filter((v): v is PlanPoi => !!v);
+		const placedPois = new Set(placements.map((pl) => pl.poi_id));
+		return [...visits, ...pois.filter((p) => !placedPois.has(p.id)).map(draftVisit)];
 	}
 
 	async function doReplan() {
@@ -1289,7 +1410,7 @@
 			// and the moment its card says, and everything else is arranged to
 			// fit before and after it.
 			const input = {
-				pois: pois.map((p) => toPlanPoi(p, cardAt.get(p.id) ?? null)),
+				pois: everyVisit(),
 				days,
 				allowedModes: row.allowed_modes as Mode[],
 				timezone: row.timezone,
@@ -1312,19 +1433,43 @@
 				travel: known()
 			});
 
-			const assignments = next.days.flatMap((d) =>
-				d.stops.filter((s) => s.poiId).map((s, i) => ({ id: s.poiId!, dayIndex: d.index, orderIndex: i }))
+			// What Replan decided, written back as visits. A stop carrying a
+			// draft id is a place off the wishlist that has just been given a
+			// day for the first time, so it needs a row of its own; the rest
+			// already have one and only move.
+			const decided = next.days.flatMap((d) =>
+				d.stops
+					.filter((st) => st.placementId && st.poiId)
+					.map((st, i) => ({
+						id: st.placementId!,
+						poiId: st.poiId!,
+						dayIndex: d.index,
+						orderIndex: i
+					}))
 			);
-			// A pin the clock could not reach keeps its day anyway. Clearing it
-			// would quietly undo the pin, and the traveller would find the stop
-			// back in the wishlist with no idea why.
-			const cleared = next.unplaced
-				.filter((u) => !u.poi.pinned)
-				.map((u) => ({ id: u.poi.id, dayIndex: null, orderIndex: null }));
-			await saveAssignments([...assignments, ...cleared]);
-			planAt = await savePlan(tripId, next, stored);
-			fresh = next.days;
-			pois = await listPois(tripId);
+			for (const made of decided.filter((r) => r.id.startsWith(NEW))) {
+				await place(tripId, made.poiId, made.dayIndex, made.orderIndex);
+			}
+			await savePlacements(
+				tripId,
+				decided.filter((r) => !r.id.startsWith(NEW))
+			);
+			// A visit the day could not reach goes back to the wishlist. A
+			// pinned one keeps its day whatever happened, or the traveller
+			// would find it gone with no idea why.
+			for (const u of next.unplaced.filter((x) => !x.poi.pinned && !x.poi.id.startsWith(NEW))) {
+				await dropPlacement(u.poi.id);
+			}
+			placements = await listPlacements(tripId);
+
+			// Walked again, now that every stop is a visit with a row of its
+			// own. The first walk was told about places off the wishlist that
+			// had never been anywhere, and a card drawn from one of those has
+			// no visit to name -- which is not something the stored plan can
+			// hold, and not something a later drag could move.
+			const settled = schedule({ ...input, pois: everyVisit(), travel: known() });
+			planAt = await savePlan(tripId, settled, stored);
+			fresh = settled.days;
 			// Without this the stored rows stay a plan behind, and the effect
 			// that re-times a newly placed stop fires on a phantom difference.
 			stored = await loadPlan(tripId);
@@ -1812,8 +1957,8 @@
 						{dayColor}
 						{drag}
 						pinned={pinnedIds}
-						onpick={(id) => (carded = pois.find((p) => p.id === id) ?? null)}
-						onhold={(id) => (carded = pois.find((p) => p.id === id) ?? null)}
+						onpick={(id) => openCard(id)}
+						onhold={(id) => openCard(id)}
 						onpin={(id) => togglePin(id)}
 						onholdanchor={(stop, dayIdx) =>
 							stop.anchorKind === 'meal' ? holdMeal(stop, dayIdx) : holdAllowance(stop, dayIdx)}
@@ -1945,11 +2090,14 @@
 					{#each current.stops as stop, i (stop.name + i)}
 						<!-- A meal container drags as itself: it owns no row in the
 						     wishlist, so its name while held is its day and its meal. -->
+						<!-- A card is dragged as the visit it is, not as the place it
+						     is of: the same cafe can be on the day twice, and "the
+						     cafe" cannot say which of them is being moved. -->
 						{@const grabId = !canEdit
 							? null
-							: stop.anchorKind === 'meal'
+							: stop.anchorKind === 'meal' && !stop.placementId
 								? `${SLOT_DRAG}${dayIndex}:${mealFor(stop) ?? ''}`
-								: stop.poiId}
+								: stop.placementId}
 						{@const t = cardTimes(
 							stop.timeLabel,
 							hhmm(stop.arrive, row.timezone),
@@ -1976,9 +2124,9 @@
 							class:tm-stop--service={stop.anchorKind === 'service'}
 							class:tm-stop--chore={stop.anchorKind === 'chore'}
 							class:tm-stop--meal={stop.anchorKind === 'meal'}
-							data-drop-stop={stop.poiId ?? undefined}
+							data-drop-stop={stop.placementId ?? undefined}
 							{@attach stop.poiId
-								? longPress(() => (carded = pois.find((p) => p.id === stop.poiId) ?? null))
+								? longPress(() => openCard(stop.placementId ?? stop.poiId!))
 								: stop.anchorKind === 'meal'
 									? longPress(() => holdMeal(stop, dayIndex))
 									: allowanceOf(stop, dayIndex)
@@ -2007,7 +2155,7 @@
 									{#if stop.poiId}
 										<button
 											class="tm-stop__open"
-											onclick={() => (carded = pois.find((p) => p.id === stop.poiId) ?? null)}
+											onclick={() => openCard(stop.placementId ?? stop.poiId!)}
 										>{stop.name}</button>
 									{:else if stop.anchorKind === 'meal'}
 										{@const after = current.stops.slice(i + 1).find((x) => x.poiId)}
@@ -2041,14 +2189,14 @@
 											ends elsewhere
 										</span>
 									{/if}
-									{#if stop.poiId}
-										{@const held = pinnedIds.has(stop.poiId)}
+									{#if stop.placementId}
+										{@const held = pinnedIds.has(stop.placementId)}
 										<button
 											class="tm-pin"
 											class:tm-pin--on={held}
 											aria-pressed={held}
 											title={held ? 'Replan may not move this' : 'Hold this where it is'}
-											onclick={() => togglePin(stop.poiId!)}
+											onclick={() => togglePin(stop.placementId!)}
 										>
 											<svg width="11" height="11" viewBox="0 0 24 24" fill={held ? 'currentColor' : 'none'}
 												stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -2200,9 +2348,11 @@
 				{people}
 				{busy}
 				onedit={(patch) => editCarded(patch)}
-				placed={dayOf.has(carded!.id)}
-				onunplace={() => unplace(carded!.id)}
-				onclose={() => (carded = null)}
+				placementId={cardedVisit}
+				pinned={!!cardedVisit && pinnedIds.has(cardedVisit)}
+				onunplace={(id) => unplace(id)}
+				onrelease={(id) => togglePin(id)}
+				onclose={() => ((carded = null), (cardedVisit = null))}
 			/>
 		{/if}
 

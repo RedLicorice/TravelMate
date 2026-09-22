@@ -4,16 +4,10 @@
 	import { base } from '$app/paths';
 	import { goto } from '$app/navigation';
 	import { getTrip, hotelMissing, toTrip, type TripRow } from '$lib/trip/repo';
-	import {
-		getPoi,
-		listPois,
-		removePoi,
-		saveAssignments,
-		updatePoi,
-		type PoiRow
-	} from '$lib/trip/pois';
+	import { getPoi, removePoi, updatePoi, type PoiRow } from '$lib/trip/pois';
+	import { listPlacements, place, unplace, type PlacementRow } from '$lib/trip/placements';
 	import { tripDays } from '$lib/trip/days';
-	import { REASON_TEXT, type PlannedStop, type UnplacedReason } from '$lib/plan/planner';
+	import { REASON_TEXT, type UnplacedReason } from '$lib/plan/planner';
 	import { loadPlan, toPlannedDays, type PlanStopRow } from '$lib/trip/plan';
 	import { busyWindows, categoryBusyness, hourLabel } from '$lib/plan/crowd';
 	import { effectiveDayStart, isMeal, latestReady } from '$lib/plan/meals';
@@ -31,7 +25,8 @@
 
 	let trip = $state<TripRow | null>(null);
 	let poi = $state<PoiRow | null>(null);
-	let all = $state<PoiRow[]>([]);
+	/** Every visit to this place, in plan order. */
+	let placements = $state<PlacementRow[]>([]);
 	let ready = $state<string | null>(null);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
@@ -46,15 +41,15 @@
 
 	onMount(async () => {
 		try {
-			const [t, p, list, party] = await Promise.all([
+			const [t, p, visits, party] = await Promise.all([
 				getTrip(tripId),
 				getPoi(poiId),
-				listPois(tripId),
+				listPlacements(tripId),
 				loadTripProfiles(tripId)
 			]);
 			trip = t;
 			poi = p;
-			all = list;
+			placements = visits.filter((v) => v.poi_id === poiId);
 			people = party;
 			ready = latestReady(party.map((x) => ({ wakeAt: x.wakeAt, prepMin: x.prepMin })));
 			if (p) {
@@ -87,18 +82,34 @@
 		trip && days.length ? toPlannedDays(stored, days) : null
 	);
 
-	/** Where this stop landed, if it landed. */
-	const placed = $derived(
-		plan
-			? (plan
-					.flatMap((d) => d.stops.map((s) => ({ stop: s, dayIndex: d.index })))
-					.find((x) => x.stop.poiId === poiId) ?? null)
-			: null
+	/**
+	 * Each visit, with the stored stop that is it -- when the plan has one; a
+	 * visit put on a day since the last Replan has a day but no time yet.
+	 *
+	 * A plan saved before 0041 has no placement id on its stops, so those fall
+	 * back to the match the migration made: same place, same day, the nth of
+	 * each matched to the nth of the other.
+	 */
+	const visits = $derived(
+		placements.map((pl) => {
+			const stops = plan?.find((d) => d.index === pl.day_index)?.stops ?? [];
+			const rank = placements.filter(
+				(o) => o.day_index === pl.day_index && o.order_index < pl.order_index
+			).length;
+			const stop =
+				stops.find((s) => s.placementId === pl.id) ??
+				stops.filter((s) => s.poiId === poiId && !s.placementId)[rank] ??
+				null;
+			return { placement: pl, stop };
+		})
 	);
+
+	/** The first visit the plan has timed, for the busyness figure. */
+	const placed = $derived(visits.find((v) => v.stop) ?? null);
 
 	/** Why it is not on the plan. Same rule as the wishlist uses. */
 	const reason = $derived<UnplacedReason | null>(
-		!poi || placed
+		!poi || placements.length
 			? null
 			: trip && hotelMissing(trip)
 				? 'hotel-unknown'
@@ -119,9 +130,7 @@
 	 * actual arrival; otherwise it is the category's general shape, which is all
 	 * that can honestly be said before a time exists.
 	 */
-	const busyNow = $derived(
-		placed && trip ? (placed.stop as PlannedStop).busyness : null
-	);
+	const busyNow = $derived(placed && trip ? placed.stop!.busyness : null);
 	const windowsForCategory = $derived(busyWindows(poi?.category ?? null));
 
 	const quiet = $derived.by(() => {
@@ -157,7 +166,6 @@
 		error = null;
 		try {
 			poi = await updatePoi(poiId, patch);
-			all = await listPois(tripId);
 		} catch (e) {
 			error = (e as Error).message;
 		} finally {
@@ -177,19 +185,31 @@
 	const STEPS = [15, 30, 45, 60, 90, 120, 180, 240];
 
 	/**
-	 * The keyboard-reachable way to move a stop between days. Dragging is faster
-	 * with a thumb, and impossible without one.
+	 * The keyboard-reachable way to put a place on a day. Dragging is faster
+	 * with a thumb, and impossible without one. Lands at the end of the day:
+	 * the trip's other visits are not loaded here, so "the end" is read from
+	 * the plan as it stands, which is right until someone else adds to that
+	 * day in the same minute -- and Replan renumbers anyway.
 	 */
-	async function moveToDay(index: number | null) {
+	async function addToDay(index: number) {
 		saving = true;
 		error = null;
 		try {
-			const sameDay = all.filter((p) => p.day_index === index && p.id !== poiId);
-			await saveAssignments([
-				{ id: poiId, dayIndex: index, orderIndex: index === null ? null : sameDay.length }
-			]);
-			all = await listPois(tripId);
-			poi = all.find((p) => p.id === poiId) ?? poi;
+			const end = plan?.find((d) => d.index === index)?.stops.filter((s) => !s.anchor).length ?? 0;
+			placements = [...placements, await place(tripId, poiId, index, end)];
+		} catch (e) {
+			error = (e as Error).message;
+		} finally {
+			saving = false;
+		}
+	}
+
+	async function removeVisit(id: string) {
+		saving = true;
+		error = null;
+		try {
+			await unplace(id);
+			placements = placements.filter((p) => p.id !== id);
 		} catch (e) {
 			error = (e as Error).message;
 		} finally {
@@ -223,54 +243,60 @@
 			{poi.category ?? 'place'}{#if kmFromHotel} · {kmFromHotel} km from {trip.hotel_name}{/if}
 		</p>
 
-		<!-- Where it sits in the plan -->
-		<div class="tm-card mt-4" style="background: var(--tm-surface-2)">
-			{#if placed}
+		<!-- Every time it is on the plan. One card per visit, each with its own
+		     remove: the same cafe on Tuesday and Thursday is two visits, and
+		     taking one off says nothing about the other. -->
+		{#each visits as { placement, stop } (placement.id)}
+			{@const day = days[placement.day_index]}
+			<div class="tm-card mt-4" style="background: var(--tm-surface-2)">
 				<div class="flex items-center gap-2">
 					<span
-						style="width:11px;height:11px;border-radius:50%;background:var(--tm-day-{Math.min(placed.dayIndex + 1, 8)})"
+						style="width:11px;height:11px;border-radius:50%;background:var(--tm-day-{Math.min(placement.day_index + 1, 8)})"
 					></span>
-					<p class="tm-card__title">{dayLabel(days[placed.dayIndex].date, trip.timezone)}</p>
+					<p class="tm-card__title">
+						{day ? dayLabel(day.date, trip.timezone) : `Day ${placement.day_index + 1}`}
+					</p>
 				</div>
 				<p class="tm-card__meta">
-					{hhmm(placed.stop.arrive, trip.timezone)} – {hhmm(placed.stop.depart, trip.timezone)}
+					{#if stop}
+						{hhmm(stop.arrive, trip.timezone)} – {hhmm(stop.depart, trip.timezone)}
+					{:else}
+						No time yet. Tap Replan on the trip to fit it in.
+					{/if}
 				</p>
-				{#each placed.stop.warnings as w (w.kind)}
+				{#each stop?.warnings ?? [] as w (w.kind)}
 					<span class="tm-chip tm-chip--warn mt-2">{w.message}</span>
 				{/each}
-			{:else}
+				<button
+					class="tm-btn tm-btn--secondary tm-btn--block mt-3"
+					disabled={saving}
+					onclick={() => removeVisit(placement.id)}
+				>
+					Take it off this day
+				</button>
+			</div>
+		{:else}
+			<div class="tm-card mt-4" style="background: var(--tm-surface-2)">
 				<p class="tm-card__title">Not scheduled</p>
 				<p class="tm-card__meta">{REASON_TEXT[reason ?? 'not-planned-yet']}</p>
-			{/if}
-		</div>
+			</div>
+		{/each}
 
-		<h2 class="tm-label mt-6 mb-2">Which day</h2>
+		<h2 class="tm-label mt-6 mb-2">{placements.length ? 'Add it to another day' : 'Put it on a day'}</h2>
 		<div class="flex flex-wrap gap-2">
 			{#each days as day, i (day.date)}
 				<button
 					class="tm-chip"
-					aria-pressed={placed?.dayIndex === i}
-					style={placed?.dayIndex === i
-						? `background:var(--tm-day-${Math.min(i + 1, 8)});color:#fff`
-						: 'opacity:0.6'}
+					style="opacity:0.6"
 					disabled={saving}
-					onclick={() => moveToDay(i)}
+					onclick={() => addToDay(i)}
 				>
 					{dayLabel(day.date, trip.timezone)}
 				</button>
 			{/each}
-			<button
-				class="tm-chip"
-				aria-pressed={!placed}
-				style={!placed ? 'background:var(--tm-day-none);color:#fff' : 'opacity:0.6'}
-				disabled={saving}
-				onclick={() => moveToDay(null)}
-			>
-				Unscheduled
-			</button>
 		</div>
 		<p class="tm-hint mt-2">
-			Moving it here puts it at the end of that day. Drag it on the plan to place it precisely.
+			Lands at the end of that day. Drag it on the plan to place it precisely.
 		</p>
 
 		<h2 class="tm-label mt-6 mb-2">How much you want this</h2>
@@ -331,7 +357,7 @@
 			{#if busyNow !== null}
 				<p style="font: 600 var(--tm-text-base)/1.3 var(--tm-font)">
 					{busyNow >= 0.8 ? 'Usually packed' : busyNow >= 0.5 ? 'Fairly busy' : 'Usually quiet'}
-					at {hhmm(placed!.stop.arrive, trip.timezone)}
+					at {hhmm(placed!.stop!.arrive, trip.timezone)}
 				</p>
 			{:else}
 				<p style="font: 600 var(--tm-text-base)/1.3 var(--tm-font)">
@@ -514,7 +540,10 @@
 
 		<div class="mt-10" style="border-top: 1px solid var(--tm-border); padding-top: 1rem">
 			{#if confirmRemove}
-				<p class="tm-hint mb-2">Remove {poi.name} from this trip?</p>
+				<p class="tm-hint mb-2">
+					Remove {poi.name} from this trip? It comes off the wishlist and off every day it is
+					on{#if placements.length} — {placements.length === 1 ? 'one visit' : `${placements.length} visits`}{/if}.
+				</p>
 				<div class="flex gap-2">
 					<button class="tm-btn tm-btn--secondary flex-1" onclick={() => (confirmRemove = false)}>
 						Keep it
