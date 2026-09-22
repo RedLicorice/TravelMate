@@ -12,13 +12,17 @@
 		 * 'here' is the day on screen: the cards sit on top of it, so the rail
 		 * shows through only where nothing is planned. A neighbour is a preview
 		 * -- its own cards drawn small, since they are not on screen to sit on
-		 * it.
+		 * it. A stub stands where there is no day at all: the far side of the
+		 * first morning or the last evening, drawn so the row of rails keeps
+		 * its shape rather than jumping about at the ends of the trip.
 		 */
-		kind: 'here' | 'neighbour';
+		kind: 'here' | 'neighbour' | 'stub';
 		label?: string | null;
 		lit?: boolean;
-		/** Minutes past the day's midnight, while a card is being placed. */
-		marker?: number | null;
+		/** When the held card would land, while one is being placed. A moment
+		    rather than a position, so the rail does the timezone arithmetic
+		    once, here, where the day's midnight is already known. */
+		marker?: Date | null;
 	};
 
 	let {
@@ -85,7 +89,12 @@
 		`${String(Math.floor(m / 60) % 24).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 </script>
 
-<div class="tm-rail" class:tm-rail--near={kind === 'neighbour'} class:tm-rail--lit={lit}>
+<div
+	class="tm-rail"
+	class:tm-rail--near={kind === 'neighbour'}
+	class:tm-rail--stub={kind === 'stub'}
+	class:tm-rail--lit={lit}
+>
 	{#if label}<span class="tm-rail__label">{label}</span>{/if}
 
 	{#if win}
@@ -100,9 +109,9 @@
 			></div>
 		{/each}
 
-		{#if marker !== null}
-			<div class="tm-rail__mark" style="top:{pc(marker)}%">
-				<span>{hhmm(marker % 1440)}</span>
+		{#if marker}
+			<div class="tm-rail__mark" style="top:{pc(at(marker))}%">
+				<span>{hhmm(at(marker) % 1440)}</span>
 			</div>
 		{/if}
 	{/if}
@@ -126,6 +135,14 @@
 	.tm-rail--near {
 		width: 6px;
 		opacity: 0.4;
+	}
+
+	/* Nothing on the other side of it: the trip starts here, or ends here. */
+	.tm-rail--stub {
+		width: 6px;
+		opacity: 0.18;
+		background: transparent;
+		border-style: dashed;
 	}
 
 	.tm-rail--lit {

@@ -14,8 +14,13 @@ export type ProfileRow = {
 	updated_at: string;
 };
 
+/** Owner and editor may write the trip; a viewer holds a link, and reads. */
+export type TripRole = 'owner' | 'editor' | 'viewer';
+
 export type Profile = {
 	userId: string;
+	/** What they may do here. Absent outside a trip. */
+	role?: TripRole;
 	name: string;
 	avatarSeed: string;
 	avatarUrl: string | null;
@@ -90,7 +95,7 @@ export async function saveMyProfile(patch: {
 export async function loadTripProfiles(tripId: string): Promise<Profile[]> {
 	const { data: members, error } = await supabase
 		.from('trip_members')
-		.select('user_id')
+		.select('user_id,role')
 		.eq('trip_id', tripId);
 	if (error) throw new Error(error.message);
 	const ids = (members ?? []).map((m) => m.user_id);
@@ -101,7 +106,44 @@ export async function loadTripProfiles(tripId: string): Promise<Profile[]> {
 		.select('*')
 		.in('user_id', ids);
 	if (profileError) throw new Error(profileError.message);
-	return (data ?? []).map((r) => toProfile(r as ProfileRow));
+	const roles = new Map((members ?? []).map((m) => [m.user_id, m.role as TripRole]));
+	return (data ?? []).map((r) => ({
+		...toProfile(r as ProfileRow),
+		role: roles.get((r as ProfileRow).user_id)
+	}));
+}
+
+/**
+ * Hand someone the pen, or take it back.
+ *
+ * Only the owner may: the policy says so, and a write it refuses answers with
+ * no rows rather than an error, so the row is asked for back.
+ */
+export async function setMemberRole(
+	tripId: string,
+	userId: string,
+	role: 'editor' | 'viewer'
+): Promise<void> {
+	const { data, error } = await supabase
+		.from('trip_members')
+		.update({ role })
+		.eq('trip_id', tripId)
+		.eq('user_id', userId)
+		.select('user_id');
+	if (error) throw new Error(error.message);
+	if (!data?.length) throw new Error('Only the traveller who made the trip can change who edits it.');
+}
+
+/** Put someone off the trip. Revoking the link never did this. */
+export async function removeMember(tripId: string, userId: string): Promise<void> {
+	const { data, error } = await supabase
+		.from('trip_members')
+		.delete()
+		.eq('trip_id', tripId)
+		.eq('user_id', userId)
+		.select('user_id');
+	if (error) throw new Error(error.message);
+	if (!data?.length) throw new Error('Only the traveller who made the trip can remove a traveller.');
 }
 
 /** Display name, falling back to the local part of the email. */

@@ -71,7 +71,9 @@
 	import {
 		displayName,
 		loadTripProfiles,
+		removeMember,
 		saveMyProfile,
+		setMemberRole,
 		type Profile
 	} from '$lib/profile.svelte';
 	import type { Mode } from '$lib/plan/modes';
@@ -365,6 +367,13 @@
 	let copied = $state(false);
 	let bbox = $state<ReturnType<typeof cityBBox>>(null);
 	let people = $state<Profile[]>([]);
+	/** A share link is a look at the trip. Editing is given by the owner, and
+	    the policies enforce it -- so a control that writes is shown to whoever
+	    may write and to nobody else. */
+	const canEdit = $derived(
+		isOwner || people.find((p) => p.userId === session.user?.id)?.role === 'editor'
+	);
+
 	let curves = $state<CrowdCurves | undefined>(undefined);
 	let travel = $state<TravelTable | undefined>(undefined);
 
@@ -579,6 +588,18 @@
 	const stale = $derived(planAt ? staleCount(pois, planAt) : 0);
 
 	const current = $derived(result?.days[dayIndex] ?? null);
+
+	/**
+	 * When the held card would land, while it is being held over a stop.
+	 *
+	 * The stop it is dropped onto is the moment it takes: that is what the
+	 * mark on the line says, before anything is written.
+	 */
+	const dropAt = $derived.by(() => {
+		const target = drag.state.target;
+		if (!target || target.kind !== 'stop' || !current) return null;
+		return current.stops.find((st) => st.poiId === target.id)?.arrive ?? null;
+	});
 
 	/** poi id -> the day it sits on, for colouring the wishlist and the map. */
 	const dayOf = $derived(
@@ -1108,6 +1129,36 @@
 		}
 	}
 
+	/** Which traveller's role is mid-flight, so their two chips go quiet. */
+	let roleBusy = $state<string | null>(null);
+
+	async function setRole(person: Profile) {
+		if (person.role === 'owner') return;
+		roleBusy = person.userId;
+		try {
+			const next = person.role === 'editor' ? 'viewer' : 'editor';
+			await setMemberRole(tripId, person.userId, next);
+			people = people.map((p) => (p.userId === person.userId ? { ...p, role: next } : p));
+		} catch (e) {
+			error = (e as Error).message;
+		} finally {
+			roleBusy = null;
+		}
+	}
+
+	async function dropMember(person: Profile) {
+		if (person.role === 'owner') return;
+		roleBusy = person.userId;
+		try {
+			await removeMember(tripId, person.userId);
+			people = people.filter((p) => p.userId !== person.userId);
+		} catch (e) {
+			error = (e as Error).message;
+		} finally {
+			roleBusy = null;
+		}
+	}
+
 	async function revoke() {
 		try {
 			await setShareToken(tripId, null);
@@ -1288,14 +1339,16 @@
 					</button>
 				</div>
 				<div class="flex gap-2">
-					<button
-						class="tm-btn tm-btn--secondary"
-						style="min-height:36px"
-						onclick={doReplan}
-						disabled={busy || !pois.length || hotelMissing(row)}
-					>
-						{busy ? (step ?? 'Planning…') : 'Replan'}
-					</button>
+					{#if canEdit}
+						<button
+							class="tm-btn tm-btn--secondary"
+							style="min-height:36px"
+							onclick={doReplan}
+							disabled={busy || !pois.length || hotelMissing(row)}
+						>
+							{busy ? (step ?? 'Planning…') : 'Replan'}
+						</button>
+					{/if}
 					{#if isOwner}
 						<button class="tm-btn tm-btn--primary" style="min-height:36px" onclick={share}>
 							{copied ? 'Copied' : shareUrl ? 'Copy link' : 'Share'}
@@ -1359,7 +1412,7 @@
 						<p class="tm-label mb-2">
 							{people.length > 1 ? `${people.length} travellers` : 'Just you'}
 						</p>
-						<div class="flex flex-wrap items-center gap-2">
+						<div class="flex flex-col gap-1.5">
 							{#each people as person (person.userId)}
 								<span class="flex items-center gap-1.5">
 									<img
@@ -1372,6 +1425,31 @@
 									<span style="font: 500 var(--tm-text-sm)/1 var(--tm-font)">
 										{displayName(person)}
 									</span>
+									<!-- Whoever holds the link can read the trip. Writing it is
+									     the owner's to hand over, and to take back. -->
+									{#if person.role === 'owner'}
+										<span class="tm-chip" style="opacity:0.6">owner</span>
+									{:else if isOwner}
+										<button
+											class="tm-chip"
+											onclick={() => setRole(person)}
+											disabled={roleBusy === person.userId}
+										>
+											{person.role === 'editor' ? 'can edit' : 'view only'}
+										</button>
+										<button
+											class="tm-chip tm-chip--warn"
+											onclick={() => dropMember(person)}
+											disabled={roleBusy === person.userId}
+											aria-label="Remove {displayName(person)} from the trip"
+										>
+											×
+										</button>
+									{:else}
+										<span class="tm-chip" style="opacity:0.6">
+											{person.role === 'editor' ? 'can edit' : 'view only'}
+										</span>
+									{/if}
 								</span>
 							{/each}
 						</div>
@@ -1581,20 +1659,42 @@
 					</div>
 				{/if}
 
-				<div class="tm-rails" class:tm-rails--on={expanded}>
-					{#if expanded && current}
-						<!-- Behind the cards, not beside them: where a card covers
-						     the line there is something planned, and where it shows
-						     through there is not. -->
-						<div class="tm-rails__here">
-							<DayLine
-								day={current}
-								window={days[dayIndex]}
-								timezone={row.timezone}
-								dayColor={dayColor(dayIndex)}
-								kind="here"
-							/>
-						</div>
+				<div
+					class="tm-rails"
+					class:tm-rails--on={expanded || !!drag.state.id}
+					class:tm-rails--drag={!!drag.state.id}
+				>
+					{#if (expanded || drag.state.id) && current}
+						<!-- Three days standing side by side: the one before, the one
+						     on screen, the one after. The middle line is behind the
+						     cards, so where a card covers it there is something
+						     planned and where it shows through there is not. The
+						     neighbours are drop targets -- leaning a card onto one
+						     moves it to that day without leaving the day you are
+						     reading. -->
+						{#each [-1, 0, 1] as offset}
+							{@const i = dayIndex + offset}
+							{@const within = i >= 0 && i < days.length}
+							<div
+								class="tm-rails__rail tm-rails__rail--{offset === -1
+									? 'prev'
+									: offset === 0
+										? 'here'
+										: 'next'}"
+								data-drop-day={within ? i : undefined}
+							>
+								<DayLine
+									day={within ? (result?.days[i] ?? null) : null}
+									window={within ? days[i] : null}
+									timezone={row.timezone}
+									dayColor={dayColor(within ? i : dayIndex)}
+									kind={offset === 0 ? 'here' : within ? 'neighbour' : 'stub'}
+									label={offset === 0 || !within ? null : dayLabel(days[i].date, row.timezone)}
+									lit={drag.state.target?.kind === 'day' && drag.state.target.index === i}
+									marker={offset === 0 ? dropAt : null}
+								/>
+							</div>
+						{/each}
 					{/if}
 
 				{#if !pois.length}
@@ -1606,8 +1706,9 @@
 					{#each current.stops as stop, i (stop.name + i)}
 						<!-- A meal container drags as itself: it owns no row in the
 						     wishlist, so its name while held is its day and its meal. -->
-						{@const grabId =
-							stop.anchorKind === 'meal'
+						{@const grabId = !canEdit
+							? null
+							: stop.anchorKind === 'meal'
 								? `${SLOT_DRAG}${dayIndex}:${mealFor(stop) ?? ''}`
 								: stop.poiId}
 						{@const t = cardTimes(
@@ -2042,9 +2143,15 @@
 			{:else}
 				<span class="tm-chip tm-chip--mint">{pois.length} stops</span>
 			{/if}
-			<a href="{base}/trip/{tripId}/add" class="tm-btn tm-btn--primary" style="min-height:38px;text-decoration:none">
-				Add places
-			</a>
+			{#if canEdit}
+				<a
+					href="{base}/trip/{tripId}/add"
+					class="tm-btn tm-btn--primary"
+					style="min-height:38px;text-decoration:none"
+				>
+					Add places
+				</a>
+			{/if}
 		</div>
 	{/if}
 </main>
