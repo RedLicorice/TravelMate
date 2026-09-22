@@ -50,3 +50,40 @@ textarea,
 .tm-safe-bottom {
 	padding-bottom: max(var(--tm-space-4), env(safe-area-inset-bottom));
 }
+
+/* One screen giving way to the next: the outgoing page fades and settles back
+   a little, the incoming one rises into its place. Short enough to read as
+   the same screen moving rather than a slideshow. */
+@keyframes tm-page-in {
+	from {
+		opacity: 0;
+		transform: translateY(6px);
+	}
+}
+@keyframes tm-page-out {
+	to {
+		opacity: 0;
+		transform: translateY(-4px);
+	}
+}
+::view-transition-old(root) {
+	animation: tm-page-out 140ms ease-in both;
+}
+::view-transition-new(root) {
+	animation: tm-page-in 180ms ease-out both;
+}
+
+/* Somebody who has asked their device for less movement gets none of it --
+   here, and in the day coming apart. */
+@media (prefers-reduced-motion: reduce) {
+	::view-transition-old(root),
+	::view-transition-new(root) {
+		animation: none;
+	}
+	*,
+	*::before,
+	*::after {
+		transition-duration: 0.01ms !important;
+		animation-duration: 0.01ms !important;
+	}
+}

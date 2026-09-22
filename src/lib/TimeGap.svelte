@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { slide } from 'svelte/transition';
 	/**
 	 * The time between two stops, as a space you can open.
 	 *
@@ -92,6 +93,7 @@
 {#if open}
 	<div
 		class="tm-gap tm-gap--open"
+		transition:slide={{ duration: forced ? 0 : 160 }}
 		style="height:{height}px"
 		class:tm-gap--landing={landing}
 		data-drop-gap={fillable ? (before ?? '') : undefined}
