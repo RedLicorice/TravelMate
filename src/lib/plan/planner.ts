@@ -805,7 +805,11 @@ function walkClock(
 		// day and be one the day never reaches, and saying so twice told the
 		// traveller nothing they did not know -- while the screen, which draws
 		// warnings keyed by kind, refused to render the trip at all.
-		if (runsLate && !dayIsOver) {
+		// Not on the furniture. The hotel at the end of a day cannot run past
+		// the end of the day -- it is where the day ends, and the traveller is
+		// asleep in it. Getting back late is something the stops did; the
+		// cards that say so are the stops.
+		if (runsLate && !dayIsOver && !anchor) {
 			warnings.push({ kind: 'overflow', message: 'Runs past the end of the day' });
 		}
 		if (note) warnings.push(note);
