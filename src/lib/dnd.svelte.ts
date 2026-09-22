@@ -12,6 +12,12 @@
 export type DropTarget =
 	| { kind: 'stop'; id: string }
 	| { kind: 'day'; index: number }
+	/**
+	 * The open space between two stops. Where in it the card was let go is the
+	 * time it was let go at -- the gap is drawn to scale, so this is the one
+	 * target that carries a moment as well as a place in the order.
+	 */
+	| { kind: 'gap'; day: number; before: string | null; at: string }
 	| null;
 
 /** Hold before a drag begins, so a scroll is still a scroll. */
@@ -34,6 +40,19 @@ export function createDrag(onDrop: (draggedId: string, target: DropTarget) => vo
 	function targetAt(x: number, y: number): DropTarget {
 		// The dragged clone sits under the finger; hide it so it is not found.
 		const el = document.elementFromPoint(x, y);
+		const gap = el?.closest<HTMLElement>('[data-drop-gap]');
+		if (gap && gap.dataset.gapStart && gap.dataset.gapEnd) {
+			const box = gap.getBoundingClientRect();
+			const fraction = Math.min(1, Math.max(0, (y - box.top) / box.height));
+			const from = Date.parse(gap.dataset.gapStart);
+			const to = Date.parse(gap.dataset.gapEnd);
+			return {
+				kind: 'gap',
+				day: Number(gap.dataset.gapDay),
+				before: gap.dataset.dropGap || null,
+				at: new Date(from + fraction * (to - from)).toISOString()
+			};
+		}
 		const stop = el?.closest<HTMLElement>('[data-drop-stop]');
 		if (stop?.dataset.dropStop) return { kind: 'stop', id: stop.dataset.dropStop };
 		const day = el?.closest<HTMLElement>('[data-drop-day]');
@@ -134,7 +153,9 @@ export function reorder<T extends { id: string; dayIndex: number | null; orderIn
 	const toDay =
 		target.kind === 'day'
 			? target.index
-			: (all.find((p) => p.id === target.id)?.dayIndex ?? dragged.dayIndex);
+			: target.kind === 'gap'
+				? target.day
+				: (all.find((p) => p.id === target.id)?.dayIndex ?? dragged.dayIndex);
 	if (toDay === null || toDay === undefined) return [];
 	// Dropping a stop onto itself is a no-op, not an error.
 	if (target.kind === 'stop' && target.id === draggedId) return [];
@@ -147,6 +168,12 @@ export function reorder<T extends { id: string; dayIndex: number | null; orderIn
 	const destination = ordered(toDay);
 
 	let insertAt = destination.length; // dropped on a day chip: append
+	if (target.kind === 'gap') {
+		// Dropped in the space above a stop: it goes above that stop. Null is
+		// the space after everything, which is where append already lands.
+		const slot = target.before ? destination.findIndex((p) => p.id === target.before) : -1;
+		if (slot >= 0) insertAt = slot;
+	}
 	if (target.kind === 'stop') {
 		const slot = destination.findIndex((p) => p.id === target.id);
 		// Dropping onto a stop means taking its place. Moving down the same day,

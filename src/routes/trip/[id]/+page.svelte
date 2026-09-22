@@ -95,6 +95,7 @@
 	import PlanBoard from '$lib/PlanBoard.svelte';
 	import StopCard from '$lib/StopCard.svelte';
 	import DayLine from '$lib/DayLine.svelte';
+	import TimeGap from '$lib/TimeGap.svelte';
 	import TripAvatar from '$lib/TripAvatar.svelte';
 	import { supabase } from '$lib/supabase';
 	import { session } from '$lib/session.svelte';
@@ -377,6 +378,22 @@
 
 	/** What the traveller has typed to find a place in a long wishlist. */
 	let hunt = $state('');
+
+	/**
+	 * Gaps the traveller has opened, by the stop each one follows.
+	 *
+	 * Holding a card opens every one of them: the whole point of picking a card
+	 * up is to put it somewhere else, and a day that stays shut gives it
+	 * nowhere to land.
+	 */
+	let opened = $state(new Set<string>());
+	const gapOpen = (key: string) => !!drag.state.id || opened.has(key);
+
+	function toggleGap(key: string) {
+		const next = new Set(opened);
+		if (!next.delete(key)) next.add(key);
+		opened = next;
+	}
 
 	/**
 	 * The wishlist, narrowed to what was typed.
@@ -740,11 +757,16 @@
 		);
 		if (!rows.length) return;
 
-		// Held, but not to a time. A drag states an order: this stop before that
-		// one. Minting a pinned_at from where the card happened to land states a
-		// moment as well, and the first refinement that lengthens a leg can no
-		// longer slide the stop -- it warns instead, about a time nobody chose.
-		const held = { pinned: true };
+		// Held by the drag. Dropped onto a card that states an order and nothing
+		// more: minting a time from where the card happened to land would stop
+		// the next refinement sliding the stop when a leg turns out longer, and
+		// it would warn about a time nobody chose.
+		//
+		// Dropped into an opened gap it is different: the gap is drawn to scale,
+		// so letting go two thirds of the way down a free afternoon is the
+		// traveller saying when, and the plan should hold it there.
+		const held =
+			target?.kind === 'gap' ? { pinned: true, pinned_at: target.at } : { pinned: true };
 
 		// Follow the stop to its new day. Without this it simply vanishes from
 		// the day on screen and the move looks like a deletion.
@@ -968,7 +990,13 @@
 	 * the time the place is already on the wishlist waiting for a day, so
 	 * searching for it again is the wrong first offer.
 	 */
-	let slot = $state<{ day: number; before: string | null; meal?: string } | null>(null);
+	/**
+	 * Where something is being added: which day, above which stop, and -- when
+	 * it came from an opened gap -- at what time.
+	 */
+	let slot = $state<{ day: number; before: string | null; meal?: string; at?: string } | null>(
+		null
+	);
 	/** Narrows the wishlist inside the slot sheet. */
 	let slotQuery = $state('');
 
@@ -1116,7 +1144,10 @@
 		}
 	}
 
-	async function placeInto(poiId: string, target: { day: number; before: string | null }) {
+	async function placeInto(
+		poiId: string,
+		target: { day: number; before: string | null; at?: string }
+	) {
 		try {
 			const rows = insertInto(
 				pois.map((p) => ({ id: p.id, dayIndex: p.day_index, orderIndex: p.order_index })),
@@ -1129,7 +1160,11 @@
 			// to already know this one is the traveller's, or it drops it for not
 			// fitting and the reconciliation then takes its day away -- which is
 			// how a restaurant placed into a full evening vanished again.
-			await updatePoi(poiId, { pinned: true });
+			//
+			// Dropped into an opened gap, it is pinned to the moment that was
+			// touched: the gap is drawn to scale, so the tap said a time and not
+			// merely a position in the order.
+			await updatePoi(poiId, target.at ? { pinned: true, pinned_at: target.at } : { pinned: true });
 			pois = await listPois(tripId);
 			dayIndex = target.day;
 			await restore({ hold: poiId });
@@ -1941,21 +1976,35 @@
 								{/each}
 							</div>
 						</div>
-						<!-- The slot under this stop. Whatever is added here lands
-						     above the next real stop, or at the end of the day when
-						     nothing but the walk home follows.
+						<!-- The gap under this stop: the time between it and whatever
+						     comes next, drawn to scale once it is opened. Whatever is
+						     added here lands above the next real stop, at the moment
+						     the traveller touched.
 
 						     Not offered inside the journey: a museum between two
 						     airports is not a thing, and the journey's own steps
 						     are added on the trip's edit screen. -->
-						{#if stop.anchorKind !== 'terminal' && stop.anchorKind !== 'service'}
+						{#if stop.anchorKind !== 'terminal' && stop.anchorKind !== 'service' && i < current.stops.length - 1}
 							{@const following = current.stops.slice(i + 1).find((x) => x.poiId)}
-							<button
-								class="tm-slot"
-								onclick={() => (slot = { day: dayIndex, before: following?.poiId ?? null })}
-							>
-								<span aria-hidden="true">+</span> Add a stop here
-							</button>
+							{@const next = current.stops[i + 1]}
+							{@const key = `${dayIndex}:${i}`}
+							<TimeGap
+								start={stop.depart}
+								end={new Date(+next.arrive - (next.legIn?.minutes ?? 0) * 60_000)}
+								timezone={row.timezone}
+								day={dayIndex}
+								before={following?.poiId ?? null}
+								open={gapOpen(key)}
+								forced={!!drag.state.id}
+								fillable={canEdit}
+								ontoggle={() => toggleGap(key)}
+								onpick={(at) =>
+									(slot = {
+										day: dayIndex,
+										before: following?.poiId ?? null,
+										at: at.toISOString()
+									})}
+							/>
 						{/if}
 					{/each}
 				{/if}
