@@ -4,5 +4,14 @@ import { PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_PUBLISHABLE_KEY } from '$env/stati
 // The publishable key is public by design: it names the project, it authorises
 // nothing. RLS is the boundary.
 export const supabase = createClient(PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_PUBLISHABLE_KEY, {
-	auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
+	// pkce, not the implicit default: implicit hands back the access and
+	// refresh tokens in the URL fragment, where an extension, the history and
+	// performance.getEntries() can all read them until auth-js clears it. PKCE
+	// returns a single-use code instead.
+	auth: {
+		persistSession: true,
+		autoRefreshToken: true,
+		detectSessionInUrl: true,
+		flowType: 'pkce'
+	}
 });

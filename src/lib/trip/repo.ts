@@ -278,14 +278,33 @@ export async function updateHotel(
 }
 
 /**
+ * A write that must have changed something.
+ *
+ * Row-level security answers a write it does not allow with zero rows, not
+ * with an error: a member who taps Share gets "Copied" for a link that was
+ * never minted. Asking for the row back turns a silent refusal into one the
+ * screen can say out loud.
+ */
+async function must<T>(
+	query: PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
+	refused: string
+): Promise<void> {
+	const { data, error } = await query;
+	if (error) throw new Error(error.message);
+	if (!data?.length) throw new Error(refused);
+}
+
+/**
  * Set the trip's picture, or clear it back to the country flag.
  *
  * The object is keyed by trip id, which is exactly what the storage policy
  * checks, so a collaborator can change it and a stranger cannot.
  */
 export async function setTripImage(id: string, url: string | null): Promise<void> {
-	const { error } = await supabase.from('trips').update({ image_url: url }).eq('id', id);
-	if (error) throw new Error(error.message);
+	await must(
+		supabase.from('trips').update({ image_url: url }).eq('id', id).select('id'),
+		'Only the traveller who made the trip can change its picture.'
+	);
 }
 
 /** Trips saved before the country was captured. Filled in once, on sight. */
@@ -341,36 +360,43 @@ export type TripEdit = {
 };
 
 export async function updateTrip(id: string, edit: TripEdit): Promise<void> {
-	const { error } = await supabase
-		.from('trips')
-		.update({
-			name: edit.city,
-			city: edit.city,
-			timezone: edit.timezone,
-			hotel_name: edit.hotelName,
-			hotel_lat: edit.hotelLat,
-			hotel_lng: edit.hotelLng,
-			arrival_at: edit.arrivalAt,
-			departure_at: edit.departureAt,
-			allowed_modes: edit.allowedModes,
-			day_start: edit.dayStart,
-			day_end: edit.dayEnd,
-			...terminalColumns(edit.terminals, edit.timezone)
-		})
-		.eq('id', id);
-	if (error) throw new Error(error.message);
+	await must(
+		supabase
+			.from('trips')
+			.update({
+				name: edit.city,
+				city: edit.city,
+				timezone: edit.timezone,
+				hotel_name: edit.hotelName,
+				hotel_lat: edit.hotelLat,
+				hotel_lng: edit.hotelLng,
+				arrival_at: edit.arrivalAt,
+				departure_at: edit.departureAt,
+				allowed_modes: edit.allowedModes,
+				day_start: edit.dayStart,
+				day_end: edit.dayEnd,
+				...terminalColumns(edit.terminals, edit.timezone)
+			})
+			.eq('id', id)
+			.select('id'),
+		'Only the traveller who made the trip can edit it.'
+	);
 }
 
 export async function deleteTrip(id: string): Promise<void> {
 	// pois cascade via the foreign key, so this is one statement, not two.
-	const { error } = await supabase.from('trips').delete().eq('id', id);
-	if (error) throw new Error(error.message);
+	await must(
+		supabase.from('trips').delete().eq('id', id).select('id'),
+		'Only the traveller who made the trip can delete it.'
+	);
 }
 
 /** A share token, minted on demand. Null revokes the link. */
 export async function setShareToken(id: string, token: string | null): Promise<void> {
-	const { error } = await supabase.from('trips').update({ share_token: token }).eq('id', id);
-	if (error) throw new Error(error.message);
+	await must(
+		supabase.from('trips').update({ share_token: token }).eq('id', id).select('id'),
+		'Only the traveller who made the trip can share it.'
+	);
 }
 
 /**

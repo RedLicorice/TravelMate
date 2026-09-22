@@ -4,7 +4,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { base } from '$app/paths';
-	import { session, watchSession } from '$lib/session.svelte';
+	import { session, takeNext, watchSession } from '$lib/session.svelte';
 	import { redirectTarget, safeNext } from '$lib/guard';
 	import { registerSW } from 'virtual:pwa-register';
 
@@ -21,7 +21,14 @@
 	$effect(() => {
 		if (!session.ready) return;
 		const target = redirectTarget(page.url.pathname, !!session.user, base);
-		if (!target) return;
+		if (!target) {
+			// Back from a provider or a confirmation link, which come back to the
+			// front door: the page they were heading for was kept on the device
+			// rather than sent round the internet in ?next=.
+			const kept = session.user ? takeNext() : null;
+			if (kept && base + kept !== page.url.pathname) goto(base + kept, { replaceState: true });
+			return;
+		}
 		// Someone already signed in who lands on /login?next=... wanted the page
 		// in `next`, not the trip list.
 		const intended = target === '/' ? (safeNext(page.url.searchParams.get('next')) ?? '/') : target;

@@ -30,36 +30,84 @@ async function forgetCachedTrips(): Promise<void> {
 	} catch {
 		// A browser with storage blocked has nothing cached to hand over.
 	}
+	try {
+		// Workbox keeps its own index of what it cached, and the entries name
+		// the rows: trip_id=eq.<uuid>, user_id=in.(...). Deleting the cache
+		// leaves that index behind, so the previous account's trips are still
+		// written down after their contents are gone.
+		indexedDB.deleteDatabase('workbox-expiration');
+	} catch {
+		// Same as above: nothing kept, nothing to forget.
+	}
 }
 
 /** Whose the cache on this device is. */
 const CACHE_OWNER = 'tm:cached-for';
 
-function ownedBy(id: string | null): void {
+async function ownedBy(id: string | null): Promise<void> {
 	try {
 		if (localStorage.getItem(CACHE_OWNER) === id) return;
 		// Someone else's rows, or nobody's. Either way, not this account's.
-		void forgetCachedTrips();
+		await forgetCachedTrips();
 		if (id) localStorage.setItem(CACHE_OWNER, id);
 		else localStorage.removeItem(CACHE_OWNER);
 	} catch {
 		// No localStorage to remember an owner with: clear rather than guess.
-		void forgetCachedTrips();
+		await forgetCachedTrips();
+	}
+}
+
+/**
+ * Where the traveller was heading before they were asked to sign in.
+ *
+ * Kept on the device rather than carried in ?next=, because that parameter
+ * ends up inside the URL handed to Google or Apple and inside a confirmation
+ * e-mail -- and the page they were heading for is often /shared/<token>, where
+ * the token is the capability to join the trip.
+ */
+const INTENDED = 'tm:next';
+
+function rememberNext(next?: string | null): void {
+	try {
+		const safe = safeNext(next);
+		if (safe) sessionStorage.setItem(INTENDED, safe);
+		else sessionStorage.removeItem(INTENDED);
+	} catch {
+		// Without sessionStorage they land on the trip list. A lost redirect is
+		// not worth leaking the token to avoid.
+	}
+}
+
+/** Read once: a destination already gone to is not a destination. */
+export function takeNext(): string | null {
+	try {
+		const kept = sessionStorage.getItem(INTENDED);
+		sessionStorage.removeItem(INTENDED);
+		return safeNext(kept);
+	} catch {
+		return null;
 	}
 }
 
 export function watchSession(): () => void {
-	supabase.auth.getSession().then(({ data }) => {
-		session.user = data.session?.user ?? null;
+	// The cache is cleared before anything is declared ready, not alongside it:
+	// the layout reads the moment it is ready, and a read that beats the
+	// eviction is served the previous account's trips out of the cache.
+	supabase.auth.getSession().then(async ({ data }) => {
+		const user = data.session?.user ?? null;
+		await ownedBy(user?.id ?? null);
+		session.user = user;
 		session.ready = true;
-		ownedBy(session.user?.id ?? null);
 	});
 	const { data } = supabase.auth.onAuthStateChange((_event, s) => {
-		session.user = s?.user ?? null;
-		session.ready = true;
-		// Not awaited: this callback holds the auth lock, and clearing a cache
-		// has nothing to say back to it.
-		ownedBy(session.user?.id ?? null);
+		const user = s?.user ?? null;
+		// Not awaited here: this callback holds the auth lock. Clearing a cache
+		// has nothing to say back to it, so readiness waits on the eviction
+		// rather than the lock doing.
+		void ownedBy(user?.id ?? null).then(() => {
+			session.user = user;
+			session.ready = true;
+		});
 	});
 	return () => data.subscription.unsubscribe();
 }
@@ -69,7 +117,7 @@ export async function signOut(): Promise<void> {
 	// After, not before: a read still in flight would otherwise refill the
 	// cache on its way out. Signed out, those reads are refused, and a refusal
 	// is not cached.
-	ownedBy(null);
+	await ownedBy(null);
 	await forgetCachedTrips();
 }
 
@@ -80,7 +128,14 @@ export async function signOut(): Promise<void> {
  * is a magic link used to set a password rather than to stand in for one.
  */
 
-const dest = (next?: string | null) => window.location.origin + base + (safeNext(next) ?? '/');
+/**
+ * Where a provider or an e-mailed link comes back to.
+ *
+ * Always the app's own front door. Where the traveller was actually heading is
+ * remembered on the device by rememberNext, so it is never written into a URL
+ * that leaves us.
+ */
+const dest = () => window.location.origin + base + '/';
 
 export async function signInWithPassword(
 	email: string,
@@ -95,10 +150,11 @@ export async function signUpWithPassword(
 	password: string,
 	next?: string | null
 ): Promise<{ error: string | null; needsConfirmation: boolean }> {
+	rememberNext(next);
 	const { data, error } = await supabase.auth.signUp({
 		email,
 		password,
-		options: { emailRedirectTo: dest(next) }
+		options: { emailRedirectTo: dest() }
 	});
 	if (error) return { error: error.message, needsConfirmation: false };
 	// With confirmations on, Supabase returns a user but no session until the
@@ -126,9 +182,10 @@ export async function signInWithProvider(
 	provider: OAuthProvider,
 	next?: string | null
 ): Promise<{ error: string | null }> {
+	rememberNext(next);
 	const { error } = await supabase.auth.signInWithOAuth({
 		provider,
-		options: { redirectTo: dest(next) }
+		options: { redirectTo: dest() }
 	});
 	return { error: error?.message ?? null };
 }

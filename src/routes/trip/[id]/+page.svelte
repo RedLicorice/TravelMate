@@ -88,6 +88,7 @@
 	import DayLine from '$lib/DayLine.svelte';
 	import TripAvatar from '$lib/TripAvatar.svelte';
 	import { supabase } from '$lib/supabase';
+	import { session } from '$lib/session.svelte';
 	import { zoneAt } from '$lib/trip/timezone';
 	import TripMap from '$lib/GoogleMap.svelte';
 	import { poi as provider, type City } from '$lib/poi';
@@ -95,6 +96,9 @@
 	const tripId = page.params.id!;
 
 	let row = $state<TripRow | null>(null);
+	/** Sharing, editing and the picture are the owner's; the policies say so
+	    too, and a control the server will refuse is a control that lies. */
+	const isOwner = $derived(!!row && row.user_id === session.user?.id);
 	let pois = $state<PoiRow[]>([]);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
@@ -1255,9 +1259,11 @@
 					>
 						{busy ? (step ?? 'Planning…') : 'Replan'}
 					</button>
-					<button class="tm-btn tm-btn--primary" style="min-height:36px" onclick={share}>
-						{copied ? 'Copied' : shareUrl ? 'Copy link' : 'Share'}
-					</button>
+					{#if isOwner}
+						<button class="tm-btn tm-btn--primary" style="min-height:36px" onclick={share}>
+							{copied ? 'Copied' : shareUrl ? 'Copy link' : 'Share'}
+						</button>
+					{/if}
 				</div>
 			</div>
 
@@ -1287,27 +1293,29 @@
 							city={row.city}
 							size={48}
 						/>
-						<div class="flex flex-wrap items-center gap-2">
-							<label class="tm-btn tm-btn--secondary" style="min-height:34px;cursor:pointer">
-								{picking ? 'Uploading…' : row.image_url ? 'Change picture' : 'Add a picture'}
-								<input
-									type="file"
-									accept="image/png,image/jpeg,image/webp,image/gif"
-									onchange={uploadImage}
-									disabled={picking}
-									style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none"
-								/>
-							</label>
-							{#if row.image_url}
-								<button
-									class="tm-btn tm-btn--ghost"
-									style="min-height:34px"
-									onclick={clearImage}
-								>
-									Use the flag
-								</button>
-							{/if}
-						</div>
+						{#if isOwner}
+							<div class="flex flex-wrap items-center gap-2">
+								<label class="tm-btn tm-btn--secondary" style="min-height:34px;cursor:pointer">
+									{picking ? 'Uploading…' : row.image_url ? 'Change picture' : 'Add a picture'}
+									<input
+										type="file"
+										accept="image/png,image/jpeg,image/webp,image/gif"
+										onchange={uploadImage}
+										disabled={picking}
+										style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none"
+									/>
+								</label>
+								{#if row.image_url}
+									<button
+										class="tm-btn tm-btn--ghost"
+										style="min-height:34px"
+										onclick={clearImage}
+									>
+										Use the flag
+									</button>
+								{/if}
+							</div>
+						{/if}
 					</div>
 
 					<div class="mt-3" style="border-top: 1px solid var(--tm-border); padding-top: 0.75rem">
@@ -1344,20 +1352,26 @@
 						{/if}
 					</div>
 
-					<div class="mt-3 flex gap-2">
-						<a
-							href="{base}/trip/{tripId}/edit"
-							class="tm-btn tm-btn--secondary flex-1"
-							style="min-height:38px;text-decoration:none"
-						>
-							Edit trip
-						</a>
-						{#if shareUrl}
-							<button class="tm-btn tm-btn--secondary flex-1" style="min-height:38px" onclick={revoke}>
-								Stop sharing
-							</button>
-						{/if}
-					</div>
+					{#if isOwner}
+						<div class="mt-3 flex gap-2">
+							<a
+								href="{base}/trip/{tripId}/edit"
+								class="tm-btn tm-btn--secondary flex-1"
+								style="min-height:38px;text-decoration:none"
+							>
+								Edit trip
+							</a>
+							{#if shareUrl}
+								<button
+									class="tm-btn tm-btn--secondary flex-1"
+									style="min-height:38px"
+									onclick={revoke}
+								>
+									Stop sharing
+								</button>
+							{/if}
+						</div>
+					{/if}
 					{#if shareUrl}
 						<p class="tm-attrib mt-2" style="word-break: break-all">{shareUrl}</p>
 					{/if}

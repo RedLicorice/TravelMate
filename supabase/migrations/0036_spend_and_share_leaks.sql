@@ -153,6 +153,10 @@ $$;
 create trigger pois_added_by before insert on pois
   for each row execute function pois_added_by_caller();
 
+-- An update could still rewrite it, or move a place onto another trip, since
+-- pois_member_write is `for all` with nothing to say about columns.
+revoke update (added_by, trip_id) on pois from authenticated;
+
 -- 8. Two plans written at once still interleaved.
 --
 -- 0035 made the write one statement pair, which stops a caller seeing half a
