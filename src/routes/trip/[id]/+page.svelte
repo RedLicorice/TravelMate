@@ -440,10 +440,12 @@
 			const updated = await updatePoi(held.id, patch);
 			pois = pois.map((p) => (p.id === held.id ? updated : p));
 			carded = updated;
-			// Nothing else. An edit changes the thing edited; Replan is what
-			// takes a new rating or a new length and rebuilds the day from it.
-			// Re-timing here moves the plan under someone who asked for none of
-			// it.
+			// Written into the plan as well, so a longer visit is a longer card
+			// the next time the trip is opened rather than only until the page
+			// is closed. Nothing moves: every card holds its own clock, and a
+			// re-time writes times without rearranging anything. What it takes
+			// to fit the new length is Replan's question.
+			await restore();
 		} catch (e) {
 			error = (e as Error).message;
 			pois = was;
@@ -1589,30 +1591,6 @@
 	}
 
 	/**
-	 * The day and the clock replan settled, written back onto the visits so
-	 * the second pass re-times that same plan rather than reshuffling it.
-	 */
-	function assignedFrom(planned: PlanResult) {
-		// Keyed by the visit: the same place can be on the plan twice, and
-		// which of the two is being re-timed is the whole question.
-		const placed = new Map(
-			planned.days.flatMap((d) =>
-				d.stops
-					.filter((st) => st.placementId)
-					.map(
-						(st) =>
-							[st.placementId!, { dayIndex: d.index, at: st.arrive.toISOString() }] as const
-					)
-			)
-		);
-		return everyVisit().map((v) => ({
-			...v,
-			dayIndex: placed.get(v.id)?.dayIndex ?? null,
-			at: placed.get(v.id)?.at ?? v.at
-		}));
-	}
-
-	/**
 	 * Everything Replan is allowed to arrange: the visits already decided, and
 	 * every wishlist place that has none yet.
 	 */
@@ -1651,23 +1629,18 @@
 			const ordered = replan({ ...input, travel });
 
 			step = 'Saving…';
-			const next = schedule({
-				...input,
-				pois: assignedFrom(ordered),
-				travel: known()
-			});
-
-			// What Replan decided, written back as visits. A stop carrying a
-			// draft id is a place off the wishlist that has just been given a
-			// day for the first time, so it needs a row of its own; the rest
-			// already have one and only move.
-			// Everything the day holds, anchors included: they are placements
-			// too, and leaving them out left them at whatever index they were
-			// first given while the stops renumbered from zero -- two cards
-			// claiming the same position, which is how the hotel ended up in
-			// the middle of the afternoon.
+			// Written back from Replan itself, not from a re-walk of it. The
+			// walk is told about stored visits only, so putting one between
+			// Replan and the write threw away every card Replan had just
+			// invented -- the sittings a day needed, the hotel it ends at --
+			// and the day came back with no lunch in it.
+			//
+			// A stop carrying a draft id is a place off the wishlist that has
+			// just been given a day for the first time, so it needs a row of
+			// its own; the rest already have one and only move. Anchors
+			// included: they are placements too.
 			const byId = new Map(placements.map((pl) => [pl.id, pl]));
-			const decided = next.days.flatMap((d) =>
+			const decided = ordered.days.flatMap((d) =>
 				d.stops
 					.filter((st) => st.placementId)
 					.map((st, i) => {
@@ -1696,7 +1669,7 @@
 			// decided the day needed, and the hotel a day ends at when the
 			// traveller has not put one there. They become placements like
 			// everything else -- they hold a clock, they drag, they come off.
-			const invented = next.days.flatMap((d) =>
+			const invented = ordered.days.flatMap((d) =>
 				d.stops
 					.filter((st) => !st.placementId && (st.anchorKind === 'meal' || st.anchorKind === 'hotel'))
 					.map((st) => ({
@@ -1712,7 +1685,7 @@
 			// A visit the day could not reach goes back to the wishlist. A
 			// pinned one keeps its day whatever happened, or the traveller
 			// would find it gone with no idea why.
-			for (const u of next.unplaced.filter((x) => !x.poi.pinned && !x.poi.id.startsWith(NEW))) {
+			for (const u of ordered.unplaced.filter((x) => !x.poi.pinned && !x.poi.id.startsWith(NEW))) {
 				await dropPlacement(u.poi.id);
 			}
 			placements = await listPlacements(tripId);
