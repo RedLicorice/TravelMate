@@ -34,6 +34,9 @@ export type PhotonFeature = {
  * edit it, and a visible wrong default beats a prompt that blocks capture.
  */
 const DURATION_MIN: Record<string, number> = {
+	// An activity is however long the traveller says; two hours is the length
+	// of an afternoon's worth of one, which is what people ask for.
+	activity: 120,
 	museum: 120,
 	gallery: 90,
 	artwork: 15,
@@ -61,6 +64,13 @@ const DURATION_MIN: Record<string, number> = {
 	beach: 120,
 	hotel: 0
 };
+
+/**
+ * Something the traveller means to do rather than somewhere to go: two hours
+ * shopping around Oxford Street, an afternoon walking in Hyde Park. It has a
+ * place and a length, and no opening hours to keep.
+ */
+export const ACTIVITY_CATEGORY = 'activity';
 
 export function durationFor(value: string | null): number {
 	return DURATION_MIN[value ?? ''] ?? 60;

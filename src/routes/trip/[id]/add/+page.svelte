@@ -140,6 +140,7 @@
 
 	// ---- adding a place the provider has never heard of ----
 	const CATEGORIES = [
+		['activity', 'Activity'],
 		['attraction', 'Attraction'],
 		['museum', 'Museum'],
 		['gallery', 'Gallery'],
@@ -328,7 +329,7 @@
 		<div class="tm-seg" role="tablist" aria-label="View">
 			<button role="tab" aria-selected={view === 'list'} onclick={() => (view = 'list')}>Search</button>
 			<button role="tab" aria-selected={view === 'map'} onclick={() => (view = 'map')}>Map</button>
-			<button role="tab" aria-selected={view === 'custom'} onclick={() => (view = 'custom')}>Add your own</button>
+			<button role="tab" aria-selected={view === 'custom'} onclick={() => (view = 'custom')}>Custom</button>
 		</div>
 
 		<div class="tm-search">
