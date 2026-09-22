@@ -36,8 +36,10 @@
 	});
 </script>
 
-{#if session.ready}
-	{@render children()}
-{:else}
-	<div class="grid min-h-dvh place-items-center" style="color: var(--tm-text-faint)">Loading…</div>
-{/if}
+<!-- The app is drawn straight away, signed in or not.
+     It used to wait behind a "Loading..." card until the session came back,
+     which on a phone that has the app installed is a blank screen in front of
+     a trip the device already has -- and, when anything threw while the
+     session was resolving, a blank screen for good. Each page says what it is
+     waiting for; the shell does not wait on their behalf. -->
+{@render children()}

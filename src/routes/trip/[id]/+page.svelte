@@ -2395,7 +2395,10 @@
 										</button>
 									{/if}
 								</p>
-								{#each stop.warnings as w (w.kind)}
+								<!-- Keyed by what it says, not by what sort it is: two
+								     warnings of one sort on a card used to take the whole
+								     screen down rather than draw one of them. -->
+								{#each stop.warnings as w (w.kind + w.message)}
 									<div class="mt-2"><span class="tm-chip tm-chip--warn">{w.message}</span></div>
 								{/each}
 							</div>

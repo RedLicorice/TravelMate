@@ -678,7 +678,15 @@ function walkClock(
 	 * as given: an assignment is not a candidate to be weighed against the
 	 * ones nearby, it is the answer.
 	 */
-	picked: Map<string, PlanPoi> = new Map()
+	picked: Map<string, PlanPoi> = new Map(),
+	/**
+	 * Whether the day's limits apply. They do when the plan is arranging the
+	 * day itself: what does not fit is spilled, and Replan finds it another
+	 * day. They do not when the traveller has arranged it: every placement
+	 * they made is walked where they put it, and a day that runs past its end
+	 * says so on the cards rather than quietly losing the last of them.
+	 */
+	spill = true
 ): ClockResult {
 	const stops: PlannedStop[] = [];
 	const overflowed: PlanPoi[] = [];
@@ -788,11 +796,15 @@ function walkClock(
 		if (busyness !== null) crowdSum += busyness;
 
 		const warnings: Warning[] = [];
-		if (runsLate) {
-			warnings.push({ kind: 'overflow', message: 'Runs past the end of the day' });
-		}
-		if (late) {
-			warnings.push({ kind: 'overflow', message: 'The day does not reach this in time' });
+		// One overflow warning, not two. A card can both run past the end of the
+		// day and be one the day never reaches, and saying so twice told the
+		// traveller nothing they did not know -- while the screen, which draws
+		// warnings keyed by kind, refused to render the trip at all.
+		if (runsLate || late) {
+			warnings.push({
+				kind: 'overflow',
+				message: runsLate ? 'Runs past the end of the day' : 'The day does not reach this in time'
+			});
 		}
 		if (note) warnings.push(note);
 		if (busyness !== null && busyness >= 0.8) {
@@ -942,11 +954,21 @@ function walkClock(
 			const minutes = chosen?.durationMin ?? MEAL_MINUTES[slot.name];
 			const hop = chosen ? leg(here, to, allowedModes, cursorTerminal, travel).minutes : 0;
 			const start = Math.max(clock + hop * 60_000, opens);
-			// Only when it actually fits, the way home included.
-			// A slot the traveller placed goes in even if the day runs long for
-			// it: that is their call, the same as a pinned stop.
+			// Would this meal, the way home included, run past the end of the
+			// day? When the plan is arranging the day, that is the end of it:
+			// only a slot the traveller placed goes in regardless, the same as
+			// a pinned stop. When the traveller has arranged the day it is
+			// seated all the same, and says it runs long like every other card
+			// -- a day that is too full should look too full, not quietly
+			// shorter. The one thing a meal may never do is push the journey
+			// out past the time on its ticket. On a departure day the day ends
+			// exactly where checking in begins, so the same measure answers
+			// that; and it is asked only of a placeholder, because a
+			// restaurant the traveller placed is theirs to miss a flight for.
 			const theirs = !!say && (!!say.at || !!say.poi_id);
-			if (!theirs && start + (minutes + tailCost(to, next)) * 60_000 > dayEndMs) continue;
+			const over = start + (minutes + tailCost(to, next)) * 60_000 > dayEndMs;
+			const dropped = spill ? !theirs : !chosen && day.fixedEnd.length > 0;
+			if (over && dropped) continue;
 
 			// The clock really does move, but a placeholder's wait is not
 			// counted against the route: it eats wherever the traveller happens
@@ -964,7 +986,7 @@ function walkClock(
 				// of Tuesday's breakfast move Thursday's.
 				const placementId = i >= 0 ? chosen.id : null;
 				if (i >= 0) unseated.splice(i, 1);
-				push(chosen.name, chosenAt, minutes, false, chosen.poiId, placementId, chosen.category, false, null, 'meal');
+				push(chosen.name, chosenAt, minutes, false, chosen.poiId, placementId, chosen.category, false, null, 'meal', null, over);
 			} else {
 				// An empty container. It keeps its place and its time, because
 				// a meal nobody has chosen yet is still a meal that will happen.
@@ -978,7 +1000,7 @@ function walkClock(
 				const miss = mealMiss(new Date(start), timezone, [slot]);
 				const note: Warning | null =
 					miss > 0.5 ? { kind: 'off-hours', message: 'Not really a mealtime' } : null;
-				push(MEAL_LABEL[slot.name], here, minutes, true, null, null, slot.name, false, null, 'meal', null, false, null, note);
+				push(MEAL_LABEL[slot.name], here, minutes, true, null, null, slot.name, false, null, 'meal', null, over, null, note);
 			}
 		}
 	};
@@ -1082,7 +1104,7 @@ function walkClock(
 		// length -- not where the route happened to arrive.
 		const ends = held !== null ? Math.max(finish, held + p.durationMin * 60_000) : finish;
 		const runsLate = ends + tailCost(leaves, i + 1) * 60_000 > day.end.getTime();
-		if (runsLate && !stays(p)) {
+		if (runsLate && spill && !stays(p)) {
 			overflowed.push(p);
 			continue;
 		}
@@ -1134,8 +1156,20 @@ function split(list: PlanPoi[], chosen: Set<string> = new Set()): { route: PlanP
 
 // ------------------------------------------------------------------ entrypoints
 
-/** Steps 3-5. Respects the day/order the traveller already chose. */
+/**
+ * Steps 3-5. Respects the day/order the traveller already chose -- and, since
+ * it is the traveller's arrangement, all of it. Every drag, every placement
+ * and every reopen re-times the plan through here, and a day they have
+ * overfilled is walked to its end with its cards saying it runs long. The
+ * day's limits belong to Replan, which arranges the day itself and may spill
+ * what does not fit.
+ */
 export function schedule(input: PlanInput): PlanResult {
+	return retime(input, false);
+}
+
+/** The re-time proper, with the day's limits on or off. */
+function retime(input: PlanInput, spill: boolean): PlanResult {
 	const curves = input.curves ?? categoryCurves(places(input.pois), input.days, input.timezone);
 	const slots = slotsFrom(input.mealWindows ?? DEFAULT_WINDOWS);
 	const travel = input.travel ?? noTravel;
@@ -1204,7 +1238,8 @@ export function schedule(input: PlanInput): PlanResult {
 			diners,
 			says,
 			i,
-			picked
+			picked,
+			spill
 		);
 		unplaced.push(...result.overflowed.map((poi) => ({ poi, reason: 'day-full' as const })));
 		// A restaurant no mealtime came near enough to reach. By visit: two
@@ -1340,7 +1375,7 @@ export function replan(input: PlanInput): PlanResult {
 	});
 
 	let placed = assigned;
-	let result = schedule({ ...input, pois: placed, curves, travel });
+	let result = retime({ ...input, pois: placed, curves, travel }, true);
 
 	// Budgets are an estimate -- minutes of visiting, with a quarter held back
 	// for travel -- and a cluster spread across a city spends more on travel
@@ -1379,7 +1414,7 @@ export function replan(input: PlanInput): PlanResult {
 			moved = true;
 		}
 		if (!moved) break;
-		result = schedule({ ...input, pois: placed, curves, travel });
+		result = retime({ ...input, pois: placed, curves, travel }, true);
 	}
 
 	return {
