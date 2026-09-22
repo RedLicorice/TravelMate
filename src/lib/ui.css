@@ -212,3 +212,16 @@ button.tm-slot { width: 100%; background: none; cursor: pointer; font-family: in
   font: inherit; color: inherit; text-align: left; cursor: pointer;
 }
 .tm-stop__open:hover { text-decoration: underline; }
+
+/* The day's own line, drawn behind its cards. Off by default: a plain list is
+   the usual way to read a day, and the line is for placing things in it. */
+.tm-rails { position: relative; }
+.tm-rails--on { padding-left: 26px; }
+.tm-rails__here {
+  position: absolute; top: 0; bottom: 0; left: 8px; width: 10px;
+}
+
+/* The time doubles as the grab handle. Not the whole card: the card is a tap
+   target and a scroll surface, and taking both makes the list unscrollable. */
+.tm-stop__time--grab { cursor: grab; touch-action: none; user-select: none; }
+.tm-stop__time--grab:active { cursor: grabbing; }

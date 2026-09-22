@@ -85,6 +85,7 @@
 	import { longPress } from '$lib/longpress.svelte';
 	import PlanBoard from '$lib/PlanBoard.svelte';
 	import StopCard from '$lib/StopCard.svelte';
+	import DayLine from '$lib/DayLine.svelte';
 	import TripAvatar from '$lib/TripAvatar.svelte';
 	import { supabase } from '$lib/supabase';
 	import { zoneAt } from '$lib/trip/timezone';
@@ -350,6 +351,8 @@
 	let dayIndex = $state(0);
 	let view = $state<'plan' | 'board' | 'map' | 'wishlist'>('plan');
 	let showDetails = $state(false);
+	/** The day with its own line drawn behind the cards. */
+	let expanded = $state(false);
 	let visible = $state(new Set<number>());
 	/** Unassigned stops are their own layer on the map, not a day. */
 	let showUnassigned = $state(true);
@@ -1490,6 +1493,37 @@
 			</div>
 		{:else}
 			<div class="flex-1 overflow-y-auto p-4" style="--tm-stop-day: {dayColor(dayIndex)}">
+				{#if current && pois.length}
+					<div class="mb-3 flex justify-end">
+						<button
+							class="tm-chip"
+							aria-pressed={expanded}
+							style={expanded
+								? 'background: var(--tm-sky-soft); color: var(--tm-sky-ink)'
+								: 'opacity: 0.6'}
+							onclick={() => (expanded = !expanded)}
+						>
+							{expanded ? 'Hide the day' : 'Show the day'}
+						</button>
+					</div>
+				{/if}
+
+				<div class="tm-rails" class:tm-rails--on={expanded}>
+					{#if expanded && current}
+						<!-- Behind the cards, not beside them: where a card covers
+						     the line there is something planned, and where it shows
+						     through there is not. -->
+						<div class="tm-rails__here">
+							<DayLine
+								day={current}
+								window={days[dayIndex]}
+								timezone={row.timezone}
+								dayColor={dayColor(dayIndex)}
+								kind="here"
+							/>
+						</div>
+					{/if}
+
 				{#if !pois.length}
 					<div class="tm-card" style="background: var(--tm-surface-2)">
 						<p class="tm-card__title">Nothing to plan yet</p>
@@ -1533,20 +1567,21 @@
 									? 'outline:2px solid var(--tm-primary);outline-offset:-1px'
 									: ''}
 						>
-							<span class="tm-stop__time">
+							<!-- The time is the handle. It is the part of a card that is
+							     about when, which is what dragging one changes, and it
+							     saves a glyph nobody could find. -->
+							<span
+								class="tm-stop__time"
+								class:tm-stop__time--grab={!!stop.poiId}
+								{@attach stop.poiId
+									? (node: HTMLElement) => drag.handle(node, stop.poiId!)
+									: () => {}}
+							>
 								{cardTime(stop.timeLabel, hhmm(stop.arrive, row.timezone), stop.durationMin)}
 							</span>
 							<div>
 								<p class="tm-stop__name">
 									{#if stop.poiId}
-										<!-- Grab handle rather than the whole card: the card is a link
-										     target and a scroll surface, and hijacking both to start a
-										     drag makes the list impossible to scroll. -->
-										<span
-											{@attach (node) => drag.handle(node as HTMLElement, stop.poiId!)}
-											aria-hidden="true"
-											style="display:inline-block;cursor:grab;touch-action:none;color:var(--tm-text-faint);margin-right:6px;user-select:none"
-										>⠿</span>
 										<button
 											class="tm-stop__open"
 											onclick={() => (carded = pois.find((p) => p.id === stop.poiId) ?? null)}
@@ -1623,6 +1658,7 @@
 						{/if}
 					{/each}
 				{/if}
+				</div>
 			</div>
 		{/if}
 

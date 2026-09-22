@@ -1,0 +1,184 @@
+<script lang="ts">
+	import type { PlannedDay } from '$lib/plan/planner';
+	import type { Day } from '$lib/trip/days';
+
+	type Props = {
+		/** The day this rail stands for. Absent means there is no such day. */
+		day?: PlannedDay | null;
+		window?: Day | null;
+		timezone: string;
+		dayColor: string;
+		/**
+		 * 'here' is the day on screen: the cards sit on top of it, so the rail
+		 * shows through only where nothing is planned. A neighbour is a preview
+		 * -- its own cards drawn small, since they are not on screen to sit on
+		 * it.
+		 */
+		kind: 'here' | 'neighbour';
+		label?: string | null;
+		lit?: boolean;
+		/** Minutes past the day's midnight, while a card is being placed. */
+		marker?: number | null;
+	};
+
+	let {
+		day = null,
+		window: win = null,
+		timezone,
+		dayColor,
+		kind,
+		label = null,
+		lit = false,
+		marker = null
+	}: Props = $props();
+
+	const midnight = $derived.by(() => {
+		if (!win) return 0;
+		const [h, m] = new Intl.DateTimeFormat('en-GB', {
+			timeZone: timezone,
+			hour: '2-digit',
+			minute: '2-digit',
+			hour12: false
+		})
+			.format(win.start)
+			.split(':')
+			.map(Number);
+		return win.start.getTime() - ((h % 24) * 60 + m) * 60_000;
+	});
+
+	const at = (d: Date) => Math.round((d.getTime() - midnight) / 60_000);
+
+	const span = $derived.by(() => {
+		if (!win) return { from: 0, to: 1440 };
+		const marks = (day?.stops ?? []).flatMap((s) => [at(s.arrive), at(s.depart)]);
+		const from = Math.floor(Math.min(at(win.start), ...marks) / 60) * 60;
+		const to = Math.ceil(Math.max(at(win.end), ...marks) / 60) * 60;
+		return { from, to: Math.max(to, from + 120) };
+	});
+
+	const pc = (minutes: number) => ((minutes - span.from) / (span.to - span.from)) * 100;
+
+	/** Hours the day is not the traveller's: before landing, after leaving. */
+	const dead = $derived(
+		win
+			? [
+					{ top: 0, height: Math.max(0, pc(at(win.start))) },
+					{ top: pc(at(win.end)), height: Math.max(0, 100 - pc(at(win.end))) }
+				].filter((z) => z.height > 0.5)
+			: []
+	);
+
+	/** A neighbour's own cards, drawn on its rail so you can see what you are
+	    dropping between. Never for the day on screen: its cards are already
+	    there, sitting on the rail itself. */
+	const segments = $derived(
+		kind === 'neighbour'
+			? (day?.stops ?? []).map((s, i) => ({
+					key: `${s.name}:${i}`,
+					top: pc(at(s.arrive)),
+					height: Math.max(1, pc(at(s.depart)) - pc(at(s.arrive)))
+				}))
+			: []
+	);
+
+	const hhmm = (m: number) =>
+		`${String(Math.floor(m / 60) % 24).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+</script>
+
+<div class="tm-rail" class:tm-rail--near={kind === 'neighbour'} class:tm-rail--lit={lit}>
+	{#if label}<span class="tm-rail__label">{label}</span>{/if}
+
+	{#if win}
+		{#each dead as zone}
+			<div class="tm-rail__dead" style="top:{zone.top}%;height:{zone.height}%"></div>
+		{/each}
+
+		{#each segments as seg (seg.key)}
+			<div
+				class="tm-rail__seg"
+				style="top:{seg.top}%;height:{seg.height}%;background:{dayColor}"
+			></div>
+		{/each}
+
+		{#if marker !== null}
+			<div class="tm-rail__mark" style="top:{pc(marker)}%">
+				<span>{hhmm(marker % 1440)}</span>
+			</div>
+		{/if}
+	{/if}
+</div>
+
+<style>
+	/* One vertical line standing for a day, drawn behind the cards. Where a
+	   card covers it there is something planned; where it shows through there
+	   is not. */
+	.tm-rail {
+		position: absolute;
+		top: 0;
+		bottom: 0;
+		width: 10px;
+		border-radius: 999px;
+		background: var(--tm-surface-2);
+		border: 1px solid var(--tm-border);
+		pointer-events: none;
+	}
+
+	.tm-rail--near {
+		width: 6px;
+		opacity: 0.4;
+	}
+
+	.tm-rail--lit {
+		opacity: 1;
+		border-color: var(--tm-primary);
+		box-shadow: 0 0 0 2px var(--tm-primary);
+	}
+
+	.tm-rail__label {
+		position: absolute;
+		top: -15px;
+		left: 50%;
+		transform: translateX(-50%);
+		white-space: nowrap;
+		font: 600 10px/1 var(--tm-font);
+		color: var(--tm-text-faint);
+	}
+
+	.tm-rail__dead {
+		position: absolute;
+		left: 0;
+		right: 0;
+		background: repeating-linear-gradient(135deg, var(--tm-border) 0 2px, transparent 2px 5px);
+	}
+
+	.tm-rail__seg {
+		position: absolute;
+		left: 1px;
+		right: 1px;
+		border-radius: 2px;
+		min-height: 2px;
+	}
+
+	/* Where the card would land, and when. */
+	.tm-rail__mark {
+		position: absolute;
+		left: -6px;
+		right: -6px;
+		height: 0;
+		border-top: 2px solid var(--tm-primary);
+		z-index: 2;
+	}
+
+	.tm-rail__mark span {
+		position: absolute;
+		left: 50%;
+		top: -0.8em;
+		transform: translateX(-50%);
+		padding: 1px 5px;
+		border-radius: 999px;
+		background: var(--tm-primary);
+		color: var(--tm-primary-ink);
+		font: 700 10px/1.3 var(--tm-font-num);
+		white-space: nowrap;
+	}
+</style>
