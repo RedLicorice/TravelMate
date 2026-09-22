@@ -39,6 +39,10 @@ export function longPress(fire: () => void, ms = 450) {
 		const down = (e: PointerEvent) => {
 			// Secondary buttons are the desktop's own context menu.
 			if (e.button !== 0) return;
+			// A press that starts on a drag handle belongs to the drag. Holding
+			// the handle still for half a second while working out where to put
+			// something would otherwise open the card over the top of it.
+			if ((e.target as HTMLElement | null)?.closest('[data-grab]')) return;
 			from = { x: e.clientX, y: e.clientY };
 			timer = setTimeout(() => {
 				stop();
