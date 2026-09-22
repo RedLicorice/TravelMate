@@ -275,7 +275,26 @@
 	) {
 		mealed = null;
 		slot = null;
-		busy = true;
+		// Said on screen before it is written down. The plan redraws from what
+		// the traveller just chose; the row follows, and only a failure is
+		// allowed to take it back.
+		const wasMeals = mealRows;
+		if (change !== 'reset') {
+			const key = mealKey(dayIdx, meal);
+			const had = mealRows.find((r) => mealKey(r.day_index, r.meal as MealName) === key);
+			const next = {
+				...(had ?? { trip_id: tripId, day_index: dayIdx, meal, poi_id: null, at: null, skipped: false }),
+				...change
+			} as MealSlotRow;
+			mealRows = [...mealRows.filter((r) => mealKey(r.day_index, r.meal as MealName) !== key), next];
+		} else {
+			mealRows = mealRows.filter(
+				(r) => mealKey(r.day_index, r.meal as MealName) !== mealKey(dayIdx, meal)
+			);
+		}
+		const drawn = planInput();
+		if (drawn) fresh = schedule({ ...drawn, travel: known() }).days;
+
 		try {
 			if (change === 'reset') await resetMeal(tripId, dayIdx, meal);
 			else await saveMeal(tripId, { dayIndex: dayIdx, meal, ...change });
@@ -293,8 +312,8 @@
 			await restore();
 		} catch (e) {
 			error = (e as Error).message;
-		} finally {
-			busy = false;
+			mealRows = wasMeals;
+			mealRows = await loadMeals(tripId);
 		}
 	}
 
@@ -409,7 +428,14 @@
 	}) {
 		const held = carded;
 		if (!held) return;
-		busy = true;
+		// On the card and in the plan before the write: an edit the traveller
+		// can see land is an edit they do not have to wonder about.
+		const was = pois;
+		const guessed = { ...held, ...patch } as PoiRow;
+		pois = pois.map((p) => (p.id === held.id ? guessed : p));
+		carded = guessed;
+		const drawn = planInput();
+		if (drawn) fresh = schedule({ ...drawn, travel: known() }).days;
 		try {
 			const updated = await updatePoi(held.id, patch);
 			pois = pois.map((p) => (p.id === held.id ? updated : p));
@@ -420,8 +446,8 @@
 			// it.
 		} catch (e) {
 			error = (e as Error).message;
-		} finally {
-			busy = false;
+			pois = was;
+			carded = held;
 		}
 	}
 
