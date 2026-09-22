@@ -82,36 +82,8 @@ describe('tripDays', () => {
 		expect(hhmm(tripDays(early)[0].start, base.timezone)).toBe('05:00');
 	});
 
-	it('anchors the first day the airport, then checking in', () => {
-		// Arriving at the hotel and dropping the bags are one thing, and it is
-		// called checking in.
-		const [first] = tripDays(base);
-		expect(first.fixedStart.map((w) => w.name)).toEqual([
-			'Fiumicino',
-			'Hotel Artemide check-in'
-		]);
-		expect(first.fixedStart[1].dwellMin).toBe(30);
-		expect(first.fixedStart[1].kind).toBe('hotel');
-		expect(first.fixedEnd.map((w) => w.name)).toEqual(['Hotel Artemide']);
-	});
 
-	it('anchors the last day bags, hotel, then airport', () => {
-		const last = tripDays(base).at(-1)!;
-		expect(last.fixedStart.map((w) => w.name)).toEqual(['Hotel Artemide']);
-		expect(last.fixedEnd.map((w) => w.name)).toEqual([
-			'Hotel Artemide',
-			'Collect the bags',
-			'Fiumicino'
-		]);
-		expect(last.fixedEnd[1].dwellMin).toBe(30);
-		// Checking in is time spent in the terminal, not a clamp.
-		expect(last.fixedEnd[2].dwellMin).toBe(base.departureBufferMin);
-	});
 
-	it('shapes a day like a middle day when there is no arrival point', () => {
-		const [first] = tripDays({ ...base, arrivalPoint: null });
-		expect(first.fixedStart.map((w) => w.name)).toEqual(['Hotel Artemide']);
-	});
 
 	it('gives a departure day with no usable time zero minutes, not a negative', () => {
 		const earlyFlight = { ...base, departureAt: '2026-04-13T05:00:00Z' }; // 07:00 Rome
@@ -120,14 +92,6 @@ describe('tripDays', () => {
 		expect(last.end.getTime()).toBeGreaterThanOrEqual(last.start.getTime());
 	});
 
-	it('checks in in no time when nothing is said about the bags', () => {
-		const [first] = tripDays({ ...base, bagDropMin: 0 });
-		expect(first.fixedStart.map((w) => w.name)).toEqual([
-			'Fiumicino',
-			'Hotel Artemide check-in'
-		]);
-		expect(first.fixedStart[1].dwellMin).toBe(0);
-	});
 
 	it('handles a single-day trip', () => {
 		expect(
@@ -221,7 +185,6 @@ describe('the journey shows on the plan', () => {
 			'Malpensa',
 			'FR 8012',
 			'Stansted',
-			`${base.hotelName} check-in`
 		]);
 	});
 
@@ -229,8 +192,6 @@ describe('the journey shows on the plan', () => {
 		const days = tripDays(withLegs());
 		const last = days[days.length - 1];
 		expect(last.fixedEnd.map((w) => w.name)).toEqual([
-			base.hotelName,
-			'Collect the bags',
 			'Stansted',
 			'FR 8013',
 			'Ciampino'
@@ -245,8 +206,7 @@ describe('the journey shows on the plan', () => {
 			'terminal',
 			'terminal',
 			'service',
-			'terminal',
-			'hotel'
+			'terminal'
 		]);
 	});
 
@@ -276,7 +236,6 @@ describe('the journey shows on the plan', () => {
 			'Malpensa',
 			'Malpensa → Stansted',
 			'Stansted',
-			`${base.hotelName} check-in`
 		]);
 	});
 
@@ -284,7 +243,6 @@ describe('the journey shows on the plan', () => {
 		const [first] = tripDays({ ...withLegs(), arrivalLegs: [] });
 		expect(first.fixedStart.map((w) => w.name)).toEqual([
 			'Stansted',
-			`${base.hotelName} check-in`
 		]);
 	});
 });
@@ -314,8 +272,7 @@ describe('journey cards carry the times off the ticket', () => {
 			'08:00',
 			'08:00–11:10',
 			// Landing at 11:10 and 45 minutes to get out of the airport.
-			'11:10–11:55',
-			null // checking in runs on the trip's own clock
+			'11:10–11:55'
 		]);
 	});
 
@@ -357,29 +314,6 @@ describe('reinterpret', () => {
 	});
 });
 
-describe('the morning is accounted for', () => {
-	const withPrep = (): Trip => ({ ...base, prep: { wakeAt: '08:00', prepMin: 30 } });
-
-	it('gives getting ready a card of its own', () => {
-		const days = tripDays(withPrep());
-		// Not the arrival day: on that one the traveller is at an airport.
-		const middle = days[1];
-		expect(middle.fixedStart.map((w) => w.name)).toEqual(['Hotel Artemide', 'Getting ready']);
-	});
-
-	it('spends real time on it, so the day opens at the wake time', () => {
-		// The caller passes the wake time as dayStart; the half hour after it is
-		// this card, not a window the plan silently starts late.
-		const ready = tripDays(withPrep())[1].fixedStart[1];
-		expect(ready.dwellMin).toBe(30);
-		expect(ready.kind).toBe('chore');
-	});
-
-	it('says nothing when nobody has set a wake time', () => {
-		expect(tripDays(base)[1].fixedStart.map((w) => w.name)).toEqual(['Hotel Artemide']);
-	});
-});
-
 describe('the departure day', () => {
 	const leaving = (): Trip => ({
 		...base,
@@ -401,12 +335,11 @@ describe('the departure day', () => {
 		]
 	});
 
-	it('goes back to the hotel and then collects the bags, in that order', () => {
+	it('draws the journey out and nothing else', () => {
+		// The hotel and the bags are the traveller's to place, so the day
+		// itself holds only what the trip is: the way home.
 		const last = tripDays(leaving()).at(-1)!;
-		expect(last.fixedEnd.slice(0, 2).map((w) => w.name)).toEqual([
-			'Hotel Artemide',
-			'Collect the bags'
-		]);
+		expect(last.fixedEnd.every((w) => w.kind === 'terminal' || w.kind === 'service')).toBe(true);
 	});
 
 	it('runs check-in up to the flight, not on from it', () => {

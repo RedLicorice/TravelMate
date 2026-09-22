@@ -10,10 +10,25 @@ import { supabase } from '$lib/supabase';
  * through each morning. Taking one off the plan says nothing about whether
  * the place is still wanted.
  */
+/**
+ * What a placement is of.
+ *
+ * 'stop' points at a place on the wishlist. The other two are the furniture of
+ * a day -- the hotel it starts and ends at, the half hour spent getting out of
+ * the door, the bags -- which used to be drawn by the app and could not be
+ * moved, removed or added to. They are placed like everything else now.
+ */
+export type PlacementKind = 'stop' | 'hotel' | 'chore';
+
 export type PlacementRow = {
 	id: string;
 	trip_id: string;
-	poi_id: string;
+	poi_id: string | null;
+	kind: PlacementKind;
+	/** What a chore is called. A stop and a hotel are named by what they are. */
+	name: string | null;
+	/** How long it takes; null leaves it to the trip's own allowance. */
+	minutes: number | null;
 	day_index: number;
 	order_index: number;
 	/** Replan may not move this one. When it happens is the card's to say. */
@@ -42,11 +57,56 @@ export async function place(
 ): Promise<PlacementRow> {
 	const { data, error } = await supabase
 		.from('placements')
-		.insert({ trip_id: tripId, poi_id: poiId, day_index: dayIndex, order_index: orderIndex, pinned })
+		.insert({
+			trip_id: tripId,
+			poi_id: poiId,
+			kind: 'stop',
+			day_index: dayIndex,
+			order_index: orderIndex,
+			pinned
+		})
 		.select('*')
 		.single();
 	if (error) throw new Error(error.message);
 	return data as PlacementRow;
+}
+
+/**
+ * Put a piece of the day's own furniture on a day: back to the hotel in the
+ * afternoon, a nap, an errand, the bags.
+ *
+ * Held from the moment it is placed. The traveller said where this goes, and
+ * Replan rearranging the sights around it is the point -- moving it is not.
+ */
+export async function placeAnchor(
+	tripId: string,
+	kind: 'hotel' | 'chore',
+	dayIndex: number,
+	orderIndex: number,
+	opts: { name?: string | null; minutes?: number | null } = {}
+): Promise<PlacementRow> {
+	const { data, error } = await supabase
+		.from('placements')
+		.insert({
+			trip_id: tripId,
+			poi_id: null,
+			kind,
+			name: opts.name ?? null,
+			minutes: opts.minutes ?? null,
+			day_index: dayIndex,
+			order_index: orderIndex,
+			pinned: true
+		})
+		.select('*')
+		.single();
+	if (error) throw new Error(error.message);
+	return data as PlacementRow;
+}
+
+/** How long this one takes, when the traveller says rather than the trip. */
+export async function setPlacementMinutes(id: string, minutes: number | null): Promise<void> {
+	const { error } = await supabase.from('placements').update({ minutes }).eq('id', id);
+	if (error) throw new Error(error.message);
 }
 
 /** Take one visit off the plan. The place stays on the wishlist. */
@@ -64,7 +124,15 @@ export async function unplace(id: string): Promise<void> {
  */
 export async function savePlacements(
 	tripId: string,
-	rows: { id: string; poiId: string; dayIndex: number; orderIndex: number }[]
+	rows: {
+		id: string;
+		poiId: string | null;
+		kind?: PlacementKind;
+		name?: string | null;
+		minutes?: number | null;
+		dayIndex: number;
+		orderIndex: number;
+	}[]
 ): Promise<void> {
 	if (!rows.length) return;
 	// The whole row, not just what changed: an upsert is an insert that gives
@@ -75,6 +143,9 @@ export async function savePlacements(
 			id: r.id,
 			trip_id: tripId,
 			poi_id: r.poiId,
+			kind: r.kind ?? 'stop',
+			name: r.name ?? null,
+			minutes: r.minutes ?? null,
 			day_index: r.dayIndex,
 			order_index: r.orderIndex
 		})),
@@ -85,5 +156,22 @@ export async function savePlacements(
 
 export async function holdPlacement(id: string, pinned: boolean): Promise<void> {
 	const { error } = await supabase.from('placements').update({ pinned }).eq('id', id);
+	if (error) throw new Error(error.message);
+}
+
+/**
+ * How many of a trip's days have been furnished already.
+ *
+ * A day the app has never drawn gets the usual furniture the first time it is
+ * seen -- the hotel at either end, getting out of the door, the bags. After
+ * that the day belongs to the traveller: a piece they removed stays removed,
+ * and one they added stays added, because nothing comes along afterwards to
+ * put the furniture back.
+ */
+export async function setFurnished(tripId: string, days: number): Promise<void> {
+	const { error } = await supabase
+		.from('trips')
+		.update({ furnished_days: days })
+		.eq('id', tripId);
 	if (error) throw new Error(error.message);
 }

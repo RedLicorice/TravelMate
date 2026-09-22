@@ -30,6 +30,7 @@ const row: TripRow = {
 	arrival_buffer_min: 45,
 	departure_buffer_min: 120,
 	bag_drop_min: 30,
+	furnished_days: 0,
 	allowed_modes: ['walk', 'transit'],
 	city_south: 41.8,
 	city_north: 42.0,

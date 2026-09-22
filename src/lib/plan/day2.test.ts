@@ -20,6 +20,12 @@ const trip: Trip = {
 const stop = (name: string, lat: number, lng: number, category: string, durationMin: number, orderIndex: number): PlanPoi =>
 	({ id: name, poiId: name, name, lat, lng, category, durationMin, priority: 3, dayIndex: 1, orderIndex, pinned: false });
 
+/** The hotel, placed at the front of the day the way a furnished day has it. */
+const home: PlanPoi = {
+	id: 'home', poiId: null, kind: 'hotel', name: trip.hotelName, lat: trip.hotel.lat, lng: trip.hotel.lng,
+	category: null, durationMin: 0, priority: 3, dayIndex: 1, orderIndex: -1, pinned: true
+};
+
 /** 2 October as it actually stood: a sandwich shop seventh in the route. */
 const day2 = () =>
 	schedule({
@@ -174,7 +180,7 @@ describe('the right sort of place for the right meal', () => {
 	const atMeal = (diners: PlanPoi[], meal: string) => {
 		const windows = slotsFrom(tightest([A]).windows);
 		return schedule({
-			pois: [stop('Notting Hill', out.lat, out.lng, 'suburb', 60, 0), ...diners],
+			pois: [home, stop('Notting Hill', out.lat, out.lng, 'suburb', 60, 0), ...diners],
 			days: tripDays(trip),
 			allowedModes: ['walk', 'transit'],
 			timezone: 'Europe/London',
@@ -278,6 +284,7 @@ describe('meal slots are containers', () => {
 	const run = (meals?: Map<string, MealSlotRow>) =>
 		schedule({
 			pois: [
+				home,
 				stop('Notting Hill', 51.509, -0.196, 'suburb', 60, 0),
 				cafe('near', 51.5154, -0.141),
 				cafe('other', 51.5152, -0.1408)

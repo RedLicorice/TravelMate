@@ -73,7 +73,19 @@ describe('replan', () => {
 	});
 
 	it('opens and closes each day on its anchors', () => {
-		const result = replan(input([poi('a', 41.9, 12.48)]));
+		// The hotel at either end of every day, as the traveller has it placed.
+		const home = (dayIndex: number, orderIndex: number): PlanPoi => ({
+			...poi(`home-${dayIndex}-${orderIndex}`, hotel.lat, hotel.lng),
+			poiId: null,
+			kind: 'hotel',
+			name: trip.hotelName,
+			category: null,
+			durationMin: 0,
+			dayIndex,
+			orderIndex
+		});
+		const furniture = days.flatMap((_, i) => [home(i, 0), home(i, 999)]);
+		const result = replan(input([...furniture, poi('a', 41.9, 12.48)]));
 		for (const day of result.days) {
 			expect(day.stops[0].anchor).toBe(true);
 			expect(day.stops.at(-1)!.anchor).toBe(true);

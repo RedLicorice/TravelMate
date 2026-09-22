@@ -36,6 +36,8 @@ export type TripRow = {
 	arrival_buffer_min: number;
 	departure_buffer_min: number;
 	bag_drop_min: number;
+	/** How many days have had their furniture placed. See setFurnished. */
+	furnished_days: number;
 	allowed_modes: string[];
 	city_south: number | null;
 	city_north: number | null;
