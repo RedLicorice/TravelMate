@@ -52,10 +52,20 @@ describe('tripDays', () => {
 		expect(first.fixedStart[0].dwellMin).toBe(base.arrivalBufferMin);
 	});
 
-	it('closes the last day at the moment of departure', () => {
-		// The window stretches by the check-in allowance, because that time is
-		// spent in the terminal rather than sightseeing.
-		expect(hhmm(tripDays(base).at(-1)!.end, base.timezone)).toBe('18:00');
+	it('closes the last day when the way out begins', () => {
+		// Not at the departure itself: checking in is the first card of the
+		// journey out, and a stop scheduled inside it is a stop nobody makes.
+		expect(hhmm(tripDays(base).at(-1)!.end, base.timezone)).toBe('16:00');
+	});
+
+	it('leaves no room after the way out begins', () => {
+		// Nothing may be scheduled inside the journey home: the window closes
+		// where the check-in card opens, so a stop cannot be timed through it.
+		const last = tripDays(base).at(-1)!;
+		const checkIn = new Date(
+			Date.parse(base.departureAt) - base.departureBufferMin * 60_000
+		);
+		expect(last.end.getTime()).toBeLessThanOrEqual(checkIn.getTime());
 	});
 
 	it('uses the normal day window for middle days', () => {
@@ -64,9 +74,12 @@ describe('tripDays', () => {
 		expect(hhmm(second.end, base.timezone)).toBe('19:00');
 	});
 
-	it('never starts the first day before day_start for an early arrival', () => {
+	it('starts the first day on landing, however early that is', () => {
+		// Waiting for day_start left an hour of nothing between the journey
+		// ending and the day beginning. Whoever gets in at five is in the city
+		// at five.
 		const early = { ...base, arrivalAt: '2026-04-10T03:00:00Z' }; // 05:00 Rome
-		expect(hhmm(tripDays(early)[0].start, base.timezone)).toBe('09:00');
+		expect(hhmm(tripDays(early)[0].start, base.timezone)).toBe('05:00');
 	});
 
 	it('anchors the first day airport, hotel, then the bags as their own card', () => {

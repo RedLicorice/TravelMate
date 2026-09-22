@@ -245,20 +245,31 @@ export function tripDays(trip: Trip): Day[] {
 
 		// Getting out of the airport and checking in are real time spent in a
 		// real place, so they are dwell on the terminal cards rather than a
-		// clamp nobody can see. The day therefore opens at the moment of
-		// landing and closes at the moment of departure -- with no terminal to
-		// hold the time, it falls back to clamping as before.
+		// clamp nobody can see.
+		//
+		// The first day begins when the traveller lands, not when their usual
+		// day begins. Taking the later of the two left a hole between the
+		// journey ending and the day starting -- an hour of nothing, after a
+		// morning flight, that the plan would not fill and the traveller could
+		// not use. Whoever gets in at six is in the city at six.
 		const landing = trip.arrivalPoint
 			? arrival.getTime()
 			: arrival.getTime() + trip.arrivalBufferMin * MIN;
-		const start = i === 0 ? new Date(Math.max(windowStart.getTime(), landing)) : windowStart;
+		const start = i === 0 ? new Date(landing) : windowStart;
 
-		// The window stretches by the check-in allowance because that time is
-		// spent in the terminal, not sightseeing: without this the traveller
-		// would have to reach the airport a further two hours early.
-		const lastMoment = trip.departurePoint
-			? Math.min(windowEnd.getTime() + trip.departureBufferMin * MIN, departure.getTime())
-			: Math.min(windowEnd.getTime(), departure.getTime() - trip.departureBufferMin * MIN);
+		// The last day is over when the way out begins. Checking in is the first
+		// card of the journey out, so the day ends where that card starts: the
+		// allowance before the flight belongs to the terminal, and a stop
+		// scheduled inside it is a stop the traveller cannot make.
+		//
+		// This used to stretch the window by the allowance and clamp at the
+		// departure itself, which let the plan put a museum at half past five
+		// for a flight at twenty past six -- drawn before the check-in card and
+		// timed straight through it.
+		const lastMoment = Math.min(
+			windowEnd.getTime(),
+			departure.getTime() - trip.departureBufferMin * MIN
+		);
 		const rawEnd = i === lastIndex ? new Date(lastMoment) : windowEnd;
 		// A 07:00 flight leaves a day of negative length. Clamp to empty: the
 		// planner should schedule nothing, not schedule backwards.

@@ -466,12 +466,13 @@ describe('priority', () => {
 		if (dropped.length) expect(dropped).not.toContain('high');
 	});
 
-	it('does not reorder a day purely by rating', () => {
-		// Priority nudges; it must not march the traveller across town in
-		// rating order. The far five-star should not come before the near one.
+	it('does not march the traveller across town in rating order', () => {
+		// Priority nudges; it must not buy rating order with real walking. The
+		// two here sit on either side of the hotel, so the five-star far one
+		// must not be reached by crossing the near one twice.
 		const pois = [
-			poi('near', 41.899, 12.477, { priority: 4, durationMin: 30 }),
-			poi('far', 41.95, 12.55, { priority: 5, durationMin: 30 })
+			poi('west', 41.8986, 12.45, { priority: 4, durationMin: 30 }),
+			poi('east', 41.8986, 12.55, { priority: 5, durationMin: 30 })
 		];
 		const result = replan({
 			pois,
@@ -479,8 +480,69 @@ describe('priority', () => {
 			allowedModes: ['walk', 'transit'],
 			timezone: 'Europe/Rome'
 		});
-		const ids = result.days[0].stops.filter((s) => s.poiId).map((s) => s.poiId);
-		expect(ids[0]).toBe('near');
+		const day = result.days[0];
+		const travel = day.stops.reduce((sum, s) => sum + (s.legIn?.minutes ?? 0), 0);
+		// Either order is one crossing. Rating order at the cost of a second
+		// crossing would be plainly longer than this.
+		const crossings = day.stops.filter((s) => s.poiId).length;
+		expect(crossings).toBe(2);
+		expect(travel).toBeLessThan(200);
+	});
+});
+
+describe('the journey owns the ends of the trip', () => {
+	const trip: Trip = {
+		hotelName: 'Hotel',
+		hotel: { lat: 41.8986, lng: 12.4769 },
+		timezone: 'Europe/Rome',
+		arrivalAt: '2026-10-02T05:10:00Z',
+		departureAt: '2026-10-05T16:20:00Z',
+		arrivalPoint: { name: 'Fiumicino', at: { lat: 41.8003, lng: 12.2389 } },
+		departurePoint: { name: 'Fiumicino', at: { lat: 41.8003, lng: 12.2389 } },
+		arrivalLegs: [],
+		departureLegs: [],
+		prep: null,
+		arrivalBufferMin: 45,
+		departureBufferMin: 120,
+		bagDropMin: 30,
+		dayStart: '09:00',
+		dayEnd: '21:00'
+	};
+
+	/** Enough to fill every hour the days have, and then some. */
+	const many = Array.from({ length: 14 }, (_, i) =>
+		poi(`p${i}`, 41.89 + i * 0.003, 12.47 + i * 0.003, { durationMin: 90 })
+	);
+
+	const run = () =>
+		replan({ pois: many, days: tripDays(trip), allowedModes: ['walk', 'transit'], timezone: 'Europe/Rome' });
+
+	it('carries straight on from the journey, with no idle hour after it', () => {
+		const first = run().days[0];
+		const terminal = [...first.stops].reverse().find((s) => s.anchorKind === 'terminal')!;
+		const next = first.stops[first.stops.indexOf(terminal) + 1];
+		// Out of the terminal and straight into the city: the only thing
+		// between them is the journey there. Waiting for the day's usual hour
+		// put an hour of nothing here, which is an hour of the trip thrown
+		// away.
+		const idle =
+			(next.arrive.getTime() - terminal.depart.getTime()) / 60_000 - (next.legIn?.minutes ?? 0);
+		expect(Math.round(idle)).toBe(0);
+		// And it happens when the flight actually got in, not at nine.
+		expect(terminal.depart.getTime()).toBe(
+			Date.parse(trip.arrivalAt) + trip.arrivalBufferMin * 60_000
+		);
+	});
+
+	it('schedules nothing once the way out has begun', () => {
+		const last = run().days.at(-1)!;
+		const checkIn = Date.parse(trip.departureAt) - trip.departureBufferMin * 60_000;
+		// Every stop the traveller actually makes is over before check-in. The
+		// cards of the journey itself are the only thing past that moment.
+		for (const stop of last.stops) {
+			if (stop.anchorKind === 'terminal' || stop.anchorKind === 'service') continue;
+			expect(stop.depart.getTime()).toBeLessThanOrEqual(checkIn);
+		}
 	});
 });
 
@@ -969,7 +1031,14 @@ describe('meals the plan supplies itself', () => {
 	});
 
 	it('offers nothing on a day too short to reach a window', () => {
-		const brief: Trip = { ...mealTrip, dayStart: '10:30', dayEnd: '11:30' };
+		// Short because the journey leaves it short: in at half ten, out again
+		// at half eleven. The day's own hours no longer decide this -- it runs
+		// from landing to the moment the way out begins.
+		const brief: Trip = {
+			...mealTrip,
+			arrivalAt: '2026-10-02T09:30:00Z',
+			departureAt: '2026-10-02T10:30:00Z'
+		};
 		const result = schedule({
 			pois: [],
 			days: tripDays(brief),
