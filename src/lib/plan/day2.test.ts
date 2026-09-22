@@ -439,12 +439,13 @@ describe('a slot the traveller placed keeps its time', () => {
 			])
 		}).days[1];
 
-	it('eats at eleven if that is where it was put', () => {
-		// Dinner closes at 21:30. Arriving late and eating at 23:00 is a plan,
-		// and the windows are there to shape the first one, not to overrule it.
+	it('eats at eleven if that is where it was put, and is told it is late', () => {
+		// Dinner closes at 21:30. The time is the traveller's and sticks; the
+		// window still has its say, as a warning rather than a veto.
 		const seated = run('2026-10-02T22:00:00.000Z').stops.find((s) => s.poiId === 'late');
 		expect(seated).toBeDefined();
 		expect(seated!.arrive.toISOString()).toBe('2026-10-02T22:00:00.000Z');
+		expect(seated!.warnings.some((w) => w.kind === 'off-hours')).toBe(true);
 	});
 
 	it('still seats a chosen place without a time inside its window', () => {

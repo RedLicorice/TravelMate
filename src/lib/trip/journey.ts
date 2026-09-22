@@ -17,10 +17,19 @@ export type JourneyPoint = {
  * timezone per leg. Only the leg that touches the destination city is ever
  * converted to an instant, and that one is in the trip's own zone.
  */
+/** How a leg is travelled. It decides which fields the leg is asked for. */
+export type JourneyMode = 'flight' | 'train' | 'coach' | 'ferry' | 'car';
+
 export type JourneyLeg = {
 	from: JourneyPoint | null;
 	to: JourneyPoint | null;
-	/** Flight, train or sailing number, as printed on the ticket. */
+	/**
+	 * Absent on legs stored before modes existed, and on a fresh leg until the
+	 * traveller says otherwise; `modeOf` reads those from the terminals instead,
+	 * so an old row keeps looking the way it always did.
+	 */
+	mode?: JourneyMode;
+	/** Flight, train or sailing number, as printed on the ticket. Never set on a car leg. */
 	service: string | null;
 	bookingRef: string | null;
 	/** `YYYY-MM-DDTHH:MM`, local to `from`. */
@@ -45,6 +54,24 @@ export const emptyLeg = (): JourneyLeg => ({
 	arriveLocal: null,
 	outMin: null
 });
+
+const MODE_OF_KIND: Record<TerminalKind, JourneyMode> = {
+	airport: 'flight',
+	train: 'train',
+	bus: 'coach',
+	ferry: 'ferry',
+	// Journeys were flights before anything else could be said, so an unknown
+	// terminal keeps reading as one rather than changing under old trips.
+	other: 'flight'
+};
+
+/**
+ * The mode a leg is travelled by. A declared mode wins; otherwise it is read
+ * off whichever end the traveller has named, since a leg out of an airport is
+ * a flight until they say it is a coach.
+ */
+export const modeOf = (leg: JourneyLeg): JourneyMode =>
+	leg.mode ?? MODE_OF_KIND[leg.from?.kind ?? leg.to?.kind ?? 'other'];
 
 /**
  * What the planner needs from a journey.

@@ -699,8 +699,12 @@
 	 */
 	const dropAt = $derived.by(() => {
 		const target = drag.state.target;
-		if (!target || target.kind !== 'stop' || !current) return null;
-		return current.stops.find((st) => st.poiId === target.id)?.arrive ?? null;
+		if (!target || target.kind !== 'slot' || !current) return null;
+		if (target.at) return new Date(target.at);
+		// Landing above a card is landing when that card does; landing at the
+		// end of the day is landing when the last of it does.
+		const stop = current.stops[target.index] ?? current.stops[target.index - 1];
+		return stop?.arrive ?? null;
 	});
 
 	/** poi id -> the day it sits on, for colouring the wishlist and the map. */
@@ -746,6 +750,17 @@
 			for (const st of d.stops) if (st.poiId) seen.set(st.poiId, { day, rank: rank++ });
 		});
 
+		// A slot is a position among the cards on screen, and most of those are
+		// not stops: the hotel, the terminals, the chores, an empty lunch. How
+		// many of the day's own stops sit above that position is the only part
+		// of it the order knows about.
+		const before =
+			target?.kind === 'slot'
+				? (result?.days[target.day]?.stops ?? [])
+						.slice(0, target.index)
+						.filter((st) => st.poiId && st.poiId !== draggedId).length
+				: undefined;
+
 		const rows = reorder(
 			pois.map((p) => ({
 				id: p.id,
@@ -753,7 +768,8 @@
 				orderIndex: seen.get(p.id)?.rank ?? p.order_index
 			})),
 			draggedId,
-			target
+			target,
+			before
 		);
 		if (!rows.length) return;
 
@@ -827,12 +843,16 @@
 		// Dropped in a gap, it happens at the moment it was let go; dropped on a
 		// stop, at that stop's moment. A meal is a stop like any other and lands
 		// where it was put.
+		// Let go in an opened gap it happens at the moment it was let go; let go
+		// on a card it happens when that card does. A meal is a stop like any
+		// other and lands where it was put.
+		const stops = result?.days[day]?.stops ?? [];
 		const at =
-			target.kind === 'gap'
-				? target.at
-				: target.kind === 'stop'
-					? result?.days[day]?.stops.find((st) => st.poiId === target.id)?.arrive.toISOString()
-					: null;
+			target.kind === 'slot'
+				? (target.at ??
+					(stops[target.index] ?? stops[target.index - 1])?.arrive.toISOString() ??
+					null)
+				: null;
 		if (!at) return;
 		await sayMeal(day, meal as MealName, { at });
 	}
@@ -960,6 +980,21 @@
 	const SLOT_DRAG = 'meal:';
 
 	const drag = createDrag((id, target) => applyMove(id, target));
+
+	/**
+	 * Where the held card would land, as a position among the cards on screen.
+	 *
+	 * Null when nothing is held or the finger is over another day. The card
+	 * above that position wears a line under it and the card below one over
+	 * it, so the answer to "where is this going" is drawn where it is going
+	 * rather than left to be guessed from an outline.
+	 */
+	const landing = $derived(
+		drag.state.id && drag.state.target?.kind === 'slot' && drag.state.target.day === dayIndex
+			? drag.state.target.index
+			: null
+	);
+
 
 	/**
 	 * A stop that has a day but no place in the stored plan -- added into a slot
@@ -1938,13 +1973,11 @@
 									: allowanceOf(stop, dayIndex)
 										? longPress(() => holdAllowance(stop, dayIndex))
 										: () => {}}
-							style={grabId && drag.state.id === grabId
-								? 'opacity:0.35'
-								: stop.poiId &&
-									  drag.state.target?.kind === 'stop' &&
-									  drag.state.target.id === stop.poiId
-									? 'outline:2px solid var(--tm-primary);outline-offset:-1px'
-									: ''}
+							class:tm-stop--above={landing === i}
+							class:tm-stop--below={landing === i + 1 && i === current.stops.length - 1}
+							data-slot-index={i}
+							data-slot-day={dayIndex}
+							style={grabId && drag.state.id === grabId ? 'opacity:0.35' : ''}
 						>
 							<!-- The time is the handle. It is the part of a card that is
 							     about when, which is what dragging one changes, and it
@@ -2036,6 +2069,8 @@
 								end={new Date(+next.arrive - (next.legIn?.minutes ?? 0) * 60_000)}
 								timezone={row.timezone}
 								day={dayIndex}
+								index={i + 1}
+								landing={landing === i + 1}
 								before={following?.poiId ?? null}
 								open={gapOpen(key)}
 								forced={!!drag.state.id}

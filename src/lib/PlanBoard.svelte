@@ -360,9 +360,7 @@
 		style="top:{o.top}px;height:{o.height}px;background:{o.fill};
 		border-left-color:{o.accent};
 		{o.stop?.poiId && drag.state.id === o.stop.poiId ? 'opacity:0.35;' : ''}
-		{o.stop?.poiId && drag.state.target?.kind === 'stop' && drag.state.target.id === o.stop.poiId
-			? 'outline:2px solid var(--tm-primary);outline-offset:-1px;'
-			: ''}"
+		"
 	>
 		<div style="display:flex;align-items:flex-start;gap:4px">
 			{#if o.stop?.poiId}

@@ -263,19 +263,22 @@ export const photon: PoiProvider = {
 	},
 
 	async searchTerminals(query, city, signal) {
-		// Repeated osm_tag params are OR'd by Photon, so one request covers
-		// airports, rail, coach and ferry rather than four round trips.
-		const tags = 'osm_tag=aeroway:aerodrome&osm_tag=railway:station&osm_tag=amenity:bus_station&osm_tag=amenity:ferry_terminal';
-		// Biased towards the city, never bounded by it. Stansted sits 20km north
-		// of London's own bounding box, as most airports sit outside the city
-		// they serve -- bounding the search hides exactly the airport wanted.
+		// Everything, not a chosen four. Filtering to airports, stations, coach
+		// and ferry meant a journey could not start at a car park, a hotel
+		// shuttle stop, a port gate or the friend's house being driven from --
+		// the search quietly refused to find what was typed. Results are biased
+		// towards the city and otherwise left alone.
+		//
+		// Biased, never bounded: Stansted sits 20km north of London's own
+		// bounding box, as most airports sit outside the city they serve, and
+		// bounding the search hides exactly the airport wanted.
 		const near = biasPoint(city);
-		const params = new URLSearchParams({ lang: 'en', q: query, limit: '8' });
+		const params = new URLSearchParams({ lang: 'en', q: query, limit: '12' });
 		if (near) {
 			params.set('lat', String(near.lat));
 			params.set('lon', String(near.lng));
 		}
-		const url = `${ENDPOINT}?${params}&${tags}`;
+		const url = `${ENDPOINT}?${params}`;
 		const res = await fetch(url, { signal, headers: { Accept: 'application/json' } });
 		if (!res.ok) throw new Error(`Terminal search failed (${res.status})`);
 		const body = await res.json();

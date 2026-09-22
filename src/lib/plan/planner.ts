@@ -770,18 +770,17 @@ function walkClock(
 			// Skipped: there is no breakfast that day, and no container either.
 			if (say?.skipped) continue;
 
-			// Anything the traveller has said about this slot -- a place for it, or
-			// a time they dragged it to. The windows, the waiting and the fitness
-			// rules exist to make the first plan sensible; none of them is a reason
-			// to override someone who has already decided. Arriving late and eating
-			// at eleven is a plan, not a mistake.
-			const theirs = !!say && (!!say.at || !!say.poi_id);
+			// A time the traveller dragged this meal to is when it opens, and
+			// that sticks. It is not a new window: the window is still the one
+			// in their profile, and the checks below ask their questions of a
+			// dragged meal the same as of any other. A dinner dragged to four
+			// o'clock happens at four, and the container says that four is not
+			// dinner time, rather than being excused the question because
+			// someone has already decided.
 			const moved = say?.at ? new Date(say.at).getTime() : null;
 			const opens = moved ?? zonedInstant(day.date, toHHMM(slot.from), timezone).getTime();
-			const closes = moved
-				? moved + 12 * 3_600_000
-				: zonedInstant(day.date, toHHMM(slot.to), timezone).getTime();
-			if (!theirs && opens > until) continue;
+			const closes = zonedInstant(day.date, toHHMM(slot.to), timezone).getTime();
+			if (opens > until) continue;
 
 			// The window has closed. On the last sweep a meal the day opened
 			// before is still had, late, rather than quietly dropped: the
@@ -789,15 +788,19 @@ function walkClock(
 			// dinner with it, and the honest answer is a late dinner, not no
 			// dinner at all. A window that had already closed when the day
 			// started is a different thing and stays gone.
-			const late = closes < clock;
-			if (!theirs && late && !(patient && opens >= day.start.getTime())) continue;
+			//
+			// A meal dragged past its window is not late until its own time has
+			// gone by as well. The window closing at half past nine is no reason
+			// to have a dinner asked for at eleven any earlier than eleven.
+			const late = Math.max(opens, closes) < clock;
+			if (late && !(patient && opens >= day.start.getTime())) continue;
 
 			// Not worth standing about for while there are still stops to make:
 			// skipped now, offered again after the next one, by which time the
 			// window is open and there is no gap. At the end of the day there is
 			// nothing else to do, so the wait is worth it -- otherwise a day
 			// that finishes at four has no dinner at all.
-			if (!theirs && !patient && opens - clock > MAX_MEAL_WAIT_MIN * 60_000) continue;
+			if (!patient && opens - clock > MAX_MEAL_WAIT_MIN * 60_000) continue;
 
 			const here = cursor ?? day.fixedStart[0]?.at;
 			if (!here) continue;
@@ -835,10 +838,11 @@ function walkClock(
 			const to = chosen ? chosenAt : here;
 			const minutes = chosen?.durationMin ?? MEAL_MINUTES[slot.name];
 			const hop = chosen ? leg(here, to, allowedModes, cursorTerminal, travel).minutes : 0;
-			const start = late ? clock + hop * 60_000 : Math.max(clock + hop * 60_000, opens);
+			const start = Math.max(clock + hop * 60_000, opens);
 			// Only when it actually fits, the way home included.
 			// A slot the traveller placed goes in even if the day runs long for
 			// it: that is their call, the same as a pinned stop.
+			const theirs = !!say && (!!say.at || !!say.poi_id);
 			if (!theirs && start + (minutes + tailCost(to)) * 60_000 > dayEndMs) continue;
 
 			// The clock really does move, but a placeholder's wait is not
@@ -855,7 +859,17 @@ function walkClock(
 			} else {
 				// An empty container. It keeps its place and its time, because
 				// a meal nobody has chosen yet is still a meal that will happen.
-				push(MEAL_LABEL[slot.name], here, minutes, true, null, slot.name, false, null, 'meal');
+				//
+				// Had outside its own window it says so, the way a restaurant
+				// reached at the wrong hour does. That is the whole of the
+				// plan's say over a dragged meal: the time is the traveller's,
+				// the remark that it is not a mealtime is ours. Measured against
+				// this slot alone, because a dinner at one o'clock is inside
+				// lunch and is still not dinner.
+				const miss = mealMiss(new Date(start), timezone, [slot]);
+				const note: Warning | null =
+					miss > 0.5 ? { kind: 'off-hours', message: 'Not really a mealtime' } : null;
+				push(MEAL_LABEL[slot.name], here, minutes, true, null, slot.name, false, null, 'meal', null, false, null, note);
 			}
 		}
 	};

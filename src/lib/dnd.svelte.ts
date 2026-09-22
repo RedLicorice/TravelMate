@@ -9,15 +9,22 @@
  * Targets are found with elementFromPoint and data attributes, so anything can
  * be a target by declaring one.
  */
+/**
+ * Where a held card would land.
+ *
+ * A slot is a position in the day as it is drawn: `index` is how many cards
+ * come before it, so 0 is the top of the day and stops.length is the end of
+ * it. Every card is a target -- the hotel, a terminal, an empty meal
+ * container, anything -- because a card is not a thing you drop onto, it is a
+ * place in a line you drop above or below. The upper half of a card is the
+ * position before it, the lower half the position after it.
+ *
+ * `at` is set when the card was let go in an opened gap, which is drawn to
+ * scale: there, where the finger was is a time as well as a place.
+ */
 export type DropTarget =
-	| { kind: 'stop'; id: string }
+	| { kind: 'slot'; day: number; index: number; at: string | null }
 	| { kind: 'day'; index: number }
-	/**
-	 * The open space between two stops. Where in it the card was let go is the
-	 * time it was let go at -- the gap is drawn to scale, so this is the one
-	 * target that carries a moment as well as a place in the order.
-	 */
-	| { kind: 'gap'; day: number; before: string | null; at: string }
 	| null;
 
 /**
@@ -89,8 +96,10 @@ export function createDrag(onDrop: (draggedId: string, target: DropTarget) => vo
 	}
 
 	function targetAt(x: number, y: number): DropTarget {
-		// The dragged clone sits under the finger; hide it so it is not found.
 		const el = document.elementFromPoint(x, y);
+
+		// An opened gap: a place in the order and, because the gap is drawn to
+		// scale, a time as well.
 		const gap = el?.closest<HTMLElement>('[data-drop-gap]');
 		if (gap && gap.dataset.gapStart && gap.dataset.gapEnd) {
 			const box = gap.getBoundingClientRect();
@@ -98,14 +107,27 @@ export function createDrag(onDrop: (draggedId: string, target: DropTarget) => vo
 			const from = Date.parse(gap.dataset.gapStart);
 			const to = Date.parse(gap.dataset.gapEnd);
 			return {
-				kind: 'gap',
+				kind: 'slot',
 				day: Number(gap.dataset.gapDay),
-				before: gap.dataset.dropGap || null,
+				index: Number(gap.dataset.slotIndex),
 				at: new Date(from + fraction * (to - from)).toISOString()
 			};
 		}
-		const stop = el?.closest<HTMLElement>('[data-drop-stop]');
-		if (stop?.dataset.dropStop) return { kind: 'stop', id: stop.dataset.dropStop };
+
+		// A card: which half of it decides whether the held one goes above or
+		// below. Every card answers, whatever kind it is.
+		const card = el?.closest<HTMLElement>('[data-slot-index]');
+		if (card?.dataset.slotIndex !== undefined) {
+			const box = card.getBoundingClientRect();
+			const below = y > box.top + box.height / 2;
+			return {
+				kind: 'slot',
+				day: Number(card.dataset.slotDay),
+				index: Number(card.dataset.slotIndex) + (below ? 1 : 0),
+				at: null
+			};
+		}
+
 		const day = el?.closest<HTMLElement>('[data-drop-day]');
 		if (day?.dataset.dropDay !== undefined) return { kind: 'day', index: Number(day.dataset.dropDay) };
 		return null;
@@ -215,25 +237,25 @@ export function createDrag(onDrop: (draggedId: string, target: DropTarget) => vo
  * Returns the full new assignment for the affected stops, so the caller writes
  * one coherent set of rows rather than patching indices in place and hoping
  * they stay consistent.
+ *
+ * `before` counts how many of the day's own stops come above the place the
+ * card was let go. The caller works that out, because only it knows which
+ * cards on screen are stops and which are anchors: the traveller drops above
+ * the hotel or below an empty lunch, and what that means in the order is a
+ * question about the day as drawn.
  */
 export function reorder<T extends { id: string; dayIndex: number | null; orderIndex: number | null }>(
 	all: T[],
 	draggedId: string,
-	target: DropTarget
+	target: DropTarget,
+	before?: number
 ): { id: string; dayIndex: number | null; orderIndex: number }[] {
 	if (!target) return [];
 	const dragged = all.find((p) => p.id === draggedId);
 	if (!dragged) return [];
 
-	const toDay =
-		target.kind === 'day'
-			? target.index
-			: target.kind === 'gap'
-				? target.day
-				: (all.find((p) => p.id === target.id)?.dayIndex ?? dragged.dayIndex);
+	const toDay = target.kind === 'day' ? target.index : target.day;
 	if (toDay === null || toDay === undefined) return [];
-	// Dropping a stop onto itself is a no-op, not an error.
-	if (target.kind === 'stop' && target.id === draggedId) return [];
 
 	const ordered = (day: number) =>
 		all
@@ -241,23 +263,9 @@ export function reorder<T extends { id: string; dayIndex: number | null; orderIn
 			.sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0));
 
 	const destination = ordered(toDay);
-
-	let insertAt = destination.length; // dropped on a day chip: append
-	if (target.kind === 'gap') {
-		// Dropped in the space above a stop: it goes above that stop. Null is
-		// the space after everything, which is where append already lands.
-		const slot = target.before ? destination.findIndex((p) => p.id === target.before) : -1;
-		if (slot >= 0) insertAt = slot;
-	}
-	if (target.kind === 'stop') {
-		const slot = destination.findIndex((p) => p.id === target.id);
-		// Dropping onto a stop means taking its place. Moving down the same day,
-		// that slot is one further along once the dragged stop is lifted out --
-		// insert-before would leave it sitting just above where it was dropped.
-		const movingDownSameDay =
-			dragged.dayIndex === toDay && (dragged.orderIndex ?? 0) < (all.find((p) => p.id === target.id)?.orderIndex ?? 0);
-		insertAt = Math.max(0, movingDownSameDay ? slot + 1 : slot);
-	}
+	// Dropped on a day chip, or onto a day with nothing to measure against:
+	// the end of that day is as good an answer as there is.
+	const insertAt = Math.min(destination.length, Math.max(0, before ?? destination.length));
 	destination.splice(insertAt, 0, dragged);
 
 	const rows = destination.map((p, i) => ({ id: p.id, dayIndex: toDay, orderIndex: i }));

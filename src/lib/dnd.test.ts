@@ -20,29 +20,34 @@ const orderOf = (result: ReturnType<typeof reorder>, day: number) =>
 
 describe('reorder within a day', () => {
 	it('moves a stop up', () => {
-		const result = reorder(rows(), 'c', { kind: 'stop', id: 'a' });
+		const result = reorder(rows(), 'c', { kind: 'slot', day: 0, index: 0, at: null }, 0);
 		expect(orderOf(result, 0)).toEqual(['c', 'a', 'b']);
 	});
 
 	it('moves a stop down', () => {
-		const result = reorder(rows(), 'a', { kind: 'stop', id: 'c' });
+		const result = reorder(rows(), 'a', { kind: 'slot', day: 0, index: 3, at: null }, 2);
 		expect(orderOf(result, 0)).toEqual(['b', 'c', 'a']);
 	});
 
 	it('renumbers from zero with no gaps', () => {
-		const result = reorder(rows(), 'c', { kind: 'stop', id: 'b' });
+		const result = reorder(rows(), 'c', { kind: 'slot', day: 0, index: 0, at: null });
 		const day0 = result.filter((r) => r.dayIndex === 0).map((r) => r.orderIndex).sort();
 		expect(day0).toEqual([0, 1, 2]);
 	});
 
-	it('treats a drop on itself as a no-op', () => {
-		expect(reorder(rows(), 'b', { kind: 'stop', id: 'b' })).toEqual([]);
+	it('leaves the day as it was when nothing actually moved', () => {
+		// Let go where it already is: the same order, written back.
+		expect(orderOf(reorder(rows(), 'b', { kind: 'slot', day: 0, index: 1, at: null }, 1), 0)).toEqual([
+			'a',
+			'b',
+			'c'
+		]);
 	});
 });
 
 describe('moving between days', () => {
-	it('inserts before the stop it was dropped on', () => {
-		const result = reorder(rows(), 'a', { kind: 'stop', id: 'y' });
+	it('lands at the counted position on the day it was dropped on', () => {
+		const result = reorder(rows(), 'a', { kind: 'slot', day: 1, index: 1, at: null }, 1);
 		expect(orderOf(result, 1)).toEqual(['x', 'a', 'y']);
 	});
 
@@ -73,18 +78,20 @@ describe('moving between days', () => {
 	});
 });
 
-describe('drop position when moving down', () => {
-	it('takes the slot of the stop it was dropped on, both directions', () => {
-		// The edge case every reorder gets wrong once: lifting the dragged stop
-		// out shifts everything below it up by one, so moving down needs to
-		// insert after the target, while moving up inserts before.
-		expect(orderOf(reorder(rows(), 'a', { kind: 'stop', id: 'b' }), 0)).toEqual(['b', 'a', 'c']);
-		expect(orderOf(reorder(rows(), 'c', { kind: 'stop', id: 'b' }), 0)).toEqual(['a', 'c', 'b']);
+describe('dropping at a counted position', () => {
+	const slot = (index: number) => ({ kind: 'slot', day: 0, index, at: null }) as const;
+
+	it('puts the card where the traveller pointed, counting from the top', () => {
+		// The caller counts how many of the day's own stops are above the place
+		// the card was let go, so this has nothing left to guess at.
+		expect(orderOf(reorder(rows(), 'a', slot(0), 1), 0)).toEqual(['b', 'a', 'c']);
+		expect(orderOf(reorder(rows(), 'c', slot(0), 1), 0)).toEqual(['a', 'c', 'b']);
+		expect(orderOf(reorder(rows(), 'x', slot(0), 1), 0)).toEqual(['a', 'x', 'b', 'c']);
 	});
 
-	it('still inserts before when the stop comes from another day', () => {
-		// Nothing shifts in the destination, so there is no slot to compensate.
-		expect(orderOf(reorder(rows(), 'x', { kind: 'stop', id: 'b' }), 0)).toEqual(['a', 'x', 'b', 'c']);
+	it('takes the top of the day and the end of it', () => {
+		expect(orderOf(reorder(rows(), 'c', slot(0), 0), 0)).toEqual(['c', 'a', 'b']);
+		expect(orderOf(reorder(rows(), 'a', slot(0), 9), 0)).toEqual(['b', 'c', 'a']);
 	});
 });
 

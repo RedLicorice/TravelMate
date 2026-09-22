@@ -84,22 +84,6 @@
 	</p>
 	<Journey direction="arrival" bind:legs={terminals.arrivalLegs} {city} />
 
-	<div class="tm-field mt-4">
-		<label class="tm-label" for="arrbuf">
-			Getting out takes about {terminals.arrivalBufferMin} min
-		</label>
-		<input
-			id="arrbuf"
-			type="range"
-			min="0"
-			max="180"
-			step="15"
-			bind:value={terminals.arrivalBufferMin}
-			style="width:100%;accent-color:var(--tm-primary)"
-		/>
-		<span class="tm-hint">Passport queues, baggage reclaim. Nothing is planned before this.</span>
-	</div>
-
 	<h3 class="tm-label mt-6">Getting home</h3>
 	<Journey direction="departure" bind:legs={terminals.departureLegs} {city} />
 

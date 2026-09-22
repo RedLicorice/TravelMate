@@ -29,6 +29,10 @@
 		before?: string | null;
 		/** The day this gap is in, for a card dropped into it. */
 		day: number;
+		/** This gap's position among the day's cards: what a drop here means. */
+		index: number;
+		/** A card is being held over this gap and would land here. */
+		landing?: boolean;
 		ontoggle: () => void;
 		onpick: (at: Date) => void;
 	};
@@ -42,6 +46,8 @@
 		forced = false,
 		before = null,
 		day,
+		index,
+		landing = false,
 		ontoggle,
 		onpick
 	}: Props = $props();
@@ -87,8 +93,10 @@
 	<div
 		class="tm-gap tm-gap--open"
 		style="height:{height}px"
+		class:tm-gap--landing={landing}
 		data-drop-gap={fillable ? (before ?? '') : undefined}
 		data-gap-day={day}
+		data-slot-index={index}
 		data-gap-start={start.toISOString()}
 		data-gap-end={end.toISOString()}
 	>
@@ -158,6 +166,16 @@
 
 	.tm-gap--open {
 		margin: 2px 0;
+	}
+
+	/* The card being held would land here. Said on the gap itself rather than
+	   by outlining a neighbour: the traveller is pointing at a space, and the
+	   space is what should answer. */
+	.tm-gap--landing .tm-gap__line {
+		border-style: solid;
+		border-color: var(--tm-primary);
+		background: var(--tm-primary-soft, var(--tm-surface-2));
+		color: var(--tm-primary);
 	}
 
 	.tm-gap__line {

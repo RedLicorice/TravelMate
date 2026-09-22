@@ -1,7 +1,7 @@
 <script lang="ts">
 	import Autocomplete from '$lib/Autocomplete.svelte';
 	import { poi as provider, type City, type Terminal } from '$lib/poi';
-	import { emptyLeg, type JourneyLeg, type JourneyPoint } from '$lib/trip/journey';
+	import { emptyLeg, modeOf, type JourneyLeg, type JourneyMode, type JourneyPoint } from '$lib/trip/journey';
 
 	type Props = {
 		/** 'arrival' reads left to right towards the city; 'departure' away from it. */
@@ -11,26 +11,29 @@
 	};
 	let { direction, legs = $bindable(), city }: Props = $props();
 
-	const SERVICE: Record<string, string> = {
-		airport: 'Flight number',
-		train: 'Train number',
-		bus: 'Coach number',
-		ferry: 'Sailing',
-		other: 'Service number'
-	};
-	const SERVICE_EG: Record<string, string> = {
-		airport: 'BA117',
-		train: 'IC 9612',
-		bus: 'FX010',
-		ferry: 'DFDS 1830',
-		other: ''
+	const MODES: { mode: JourneyMode; label: string }[] = [
+		{ mode: 'flight', label: 'Flight' },
+		{ mode: 'train', label: 'Train' },
+		{ mode: 'coach', label: 'Coach' },
+		{ mode: 'ferry', label: 'Ferry' },
+		{ mode: 'car', label: 'Car' }
+	];
+
+	/** What the service field is called and looks like, per mode. A car has none. */
+	const SERVICE: Record<Exclude<JourneyMode, 'car'>, { label: string; eg: string }> = {
+		flight: { label: 'Flight number', eg: 'BA117' },
+		train: { label: 'Train', eg: 'IC 9612' },
+		coach: { label: 'Coach', eg: 'FX010' },
+		ferry: { label: 'Sailing', eg: 'DFDS 1830' }
 	};
 
-	/** Name the field after whichever end of the leg the traveller has picked. */
-	const serviceLabel = (leg: JourneyLeg) =>
-		SERVICE[leg.from?.kind ?? leg.to?.kind ?? 'other'] ?? SERVICE.other;
-	const servicePlaceholder = (leg: JourneyLeg) =>
-		SERVICE_EG[leg.from?.kind ?? leg.to?.kind ?? 'other'] ?? '';
+	/**
+	 * A car has no ticket, so the service and booking it may have carried from
+	 * an earlier mode are dropped rather than hidden -- `describe` would print
+	 * a flight number after a leg that is now a drive.
+	 */
+	const setMode = (i: number, mode: JourneyMode) =>
+		patch(i, mode === 'car' ? { mode, service: null, bookingRef: null } : { mode });
 
 	const toPoint = (t: Terminal): JourneyPoint => ({
 		name: t.name,
@@ -69,6 +72,7 @@
 </script>
 
 {#each legs as leg, i (i)}
+	{@const mode = modeOf(leg)}
 	{#if i > 0}
 		<!-- Getting between two terminals is itself a leg: the transfer from a
 		     station to the airport it connects to, say. -->
@@ -112,28 +116,38 @@
 			/>
 		</div>
 
-		<div class="mt-3 flex flex-col gap-3">
-			<div class="tm-field">
-				<label class="tm-label" for="{direction}-svc-{i}">{serviceLabel(leg)}</label>
-				<input
-					class="tm-input"
-					id="{direction}-svc-{i}"
-					value={leg.service ?? ''}
-					placeholder={servicePlaceholder(leg)}
-					oninput={(e) => patch(i, { service: field(e) })}
-				/>
-			</div>
-			<div class="tm-field">
-				<label class="tm-label" for="{direction}-ref-{i}">Booking</label>
-				<input
-					class="tm-input"
-					id="{direction}-ref-{i}"
-					value={leg.bookingRef ?? ''}
-					placeholder="ABC123"
-					oninput={(e) => patch(i, { bookingRef: field(e) })}
-				/>
-			</div>
+		<div class="tm-seg mt-3" role="tablist" aria-label="Travelling by">
+			{#each MODES as m (m.mode)}
+				<button role="tab" aria-selected={mode === m.mode} onclick={() => setMode(i, m.mode)}>
+					{m.label}
+				</button>
+			{/each}
 		</div>
+
+		{#if mode !== 'car'}
+			<div class="mt-3 flex flex-col gap-3">
+				<div class="tm-field">
+					<label class="tm-label" for="{direction}-svc-{i}">{SERVICE[mode].label}</label>
+					<input
+						class="tm-input"
+						id="{direction}-svc-{i}"
+						value={leg.service ?? ''}
+						placeholder={SERVICE[mode].eg}
+						oninput={(e) => patch(i, { service: field(e) })}
+					/>
+				</div>
+				<div class="tm-field">
+					<label class="tm-label" for="{direction}-ref-{i}">Booking</label>
+					<input
+						class="tm-input"
+						id="{direction}-ref-{i}"
+						value={leg.bookingRef ?? ''}
+						placeholder="ABC123"
+						oninput={(e) => patch(i, { bookingRef: field(e) })}
+					/>
+				</div>
+			</div>
+		{/if}
 
 		<div class="mt-3 flex flex-col gap-3">
 			<div class="tm-field">

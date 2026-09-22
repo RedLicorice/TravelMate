@@ -136,6 +136,7 @@
 
 /* ---- timeline ---- */
 .tm-stop {
+  position: relative;
   display: grid;
   /* The time sizes itself and the name gives way. A fixed track squeezed
      08:48-09:18 into four wrapped lines on a narrow phone. */
@@ -428,6 +429,27 @@ button.tm-slot {
 }
 .tm-stop__open:hover {
   text-decoration: underline;
+}
+
+/* Where a held card would land, drawn on the card it would land beside: a
+   line above means it goes before this one, a line below means after. Said on
+   the card rather than by moving anything, because a list that reshuffles
+   under a finger is a list nobody can aim at. */
+.tm-stop--above::before,
+.tm-stop--below::after {
+  content: "";
+  position: absolute;
+  left: -4px;
+  right: -4px;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--tm-primary);
+}
+.tm-stop--above::before {
+  top: -5px;
+}
+.tm-stop--below::after {
+  bottom: -5px;
 }
 
 /* Three days, standing where they belong.
