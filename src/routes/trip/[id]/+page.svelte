@@ -1573,7 +1573,7 @@
 							<span
 								class="tm-stop__time"
 								class:tm-stop__time--grab={!!stop.poiId}
-								data-grab={stop.poiId ? '' : undefined}
+								data-grab={stop.poiId ? 'yes' : undefined}
 								{@attach stop.poiId
 									? (node: HTMLElement) => drag.handle(node, stop.poiId!)
 									: () => {}}

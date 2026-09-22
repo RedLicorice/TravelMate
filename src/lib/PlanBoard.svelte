@@ -364,7 +364,7 @@
 			{#if o.stop?.poiId}
 				<span
 					{@attach (node) => drag.handle(node as HTMLElement, o.stop!.poiId!)}
-					data-grab=""
+					data-grab="yes"
 					aria-hidden="true"
 					style="cursor:grab;touch-action:none;color:var(--tm-text-faint);
 					font-size:11px;line-height:1.2;user-select:none;flex:none"

@@ -56,8 +56,11 @@ export function longPress(fire: () => void, ms = 450) {
 			if (Math.hypot(e.clientX - from.x, e.clientY - from.y) > 8) stop();
 		};
 
-		// The desktop equivalent, so a right click reaches the same menu.
+		// The desktop equivalent, so a right click reaches the same menu. A
+		// touch long press raises this too, so it needs the same exemption as
+		// the press itself: a handle belongs to the drag.
 		const menu = (e: MouseEvent) => {
+			if ((e.target as HTMLElement | null)?.closest('[data-grab]')) return;
 			e.preventDefault();
 			fire();
 		};

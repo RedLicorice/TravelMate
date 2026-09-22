@@ -232,6 +232,10 @@ button.tm-slot { width: 100%; background: none; cursor: pointer; font-family: in
   border-radius: var(--tm-r-sm, 6px);
   background: var(--tm-surface-2);
   border: 1px solid var(--tm-border);
+  /* No text selection and no iOS callout: both fire on the press that starts
+     a drag, and both put something on screen over the card being moved. */
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 .tm-stop__time--grab::before {
   content: '⠿';
