@@ -82,15 +82,16 @@ describe('tripDays', () => {
 		expect(hhmm(tripDays(early)[0].start, base.timezone)).toBe('05:00');
 	});
 
-	it('anchors the first day airport, hotel, then the bags as their own card', () => {
+	it('anchors the first day the airport, then checking in', () => {
+		// Arriving at the hotel and dropping the bags are one thing, and it is
+		// called checking in.
 		const [first] = tripDays(base);
 		expect(first.fixedStart.map((w) => w.name)).toEqual([
 			'Fiumicino',
-			'Hotel Artemide',
-			'Drop the bags'
+			'Hotel Artemide check-in'
 		]);
-		expect(first.fixedStart[2].dwellMin).toBe(30);
-		expect(first.fixedStart[2].kind).toBe('chore');
+		expect(first.fixedStart[1].dwellMin).toBe(30);
+		expect(first.fixedStart[1].kind).toBe('hotel');
 		expect(first.fixedEnd.map((w) => w.name)).toEqual(['Hotel Artemide']);
 	});
 
@@ -119,9 +120,13 @@ describe('tripDays', () => {
 		expect(last.end.getTime()).toBeGreaterThanOrEqual(last.start.getTime());
 	});
 
-	it('skips the bag drop when bag_drop_min is zero', () => {
+	it('checks in in no time when nothing is said about the bags', () => {
 		const [first] = tripDays({ ...base, bagDropMin: 0 });
-		expect(first.fixedStart.map((w) => w.name)).toEqual(['Fiumicino', 'Hotel Artemide']);
+		expect(first.fixedStart.map((w) => w.name)).toEqual([
+			'Fiumicino',
+			'Hotel Artemide check-in'
+		]);
+		expect(first.fixedStart[1].dwellMin).toBe(0);
 	});
 
 	it('handles a single-day trip', () => {
@@ -216,8 +221,7 @@ describe('the journey shows on the plan', () => {
 			'Malpensa',
 			'FR 8012',
 			'Stansted',
-			base.hotelName,
-			'Drop the bags'
+			`${base.hotelName} check-in`
 		]);
 	});
 
@@ -242,8 +246,7 @@ describe('the journey shows on the plan', () => {
 			'terminal',
 			'service',
 			'terminal',
-			'hotel',
-			'chore'
+			'hotel'
 		]);
 	});
 
@@ -273,8 +276,7 @@ describe('the journey shows on the plan', () => {
 			'Malpensa',
 			'Malpensa → Stansted',
 			'Stansted',
-			base.hotelName,
-			'Drop the bags'
+			`${base.hotelName} check-in`
 		]);
 	});
 
@@ -282,8 +284,7 @@ describe('the journey shows on the plan', () => {
 		const [first] = tripDays({ ...withLegs(), arrivalLegs: [] });
 		expect(first.fixedStart.map((w) => w.name)).toEqual([
 			'Stansted',
-			base.hotelName,
-			'Drop the bags'
+			`${base.hotelName} check-in`
 		]);
 	});
 });
@@ -314,8 +315,7 @@ describe('journey cards carry the times off the ticket', () => {
 			'08:00–11:10',
 			// Landing at 11:10 and 45 minutes to get out of the airport.
 			'11:10–11:55',
-			null, // the hotel runs on the trip's own clock
-			null // and so do the bags
+			null // checking in runs on the trip's own clock
 		]);
 	});
 

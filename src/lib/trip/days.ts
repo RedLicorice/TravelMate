@@ -292,8 +292,16 @@ export function tripDays(trip: Trip): Day[] {
 			// You cannot drag a suitcase around the Colosseum. Its own card, so
 			// the half hour it costs is visible rather than hidden inside the
 			// hotel's.
-			fixedStart.push(hotelStop(0));
-			if (trip.bagDropMin > 0) fixedStart.push(choreStop('Drop the bags', trip.bagDropMin));
+			// Arriving at the hotel and dropping the bags are one thing, and it
+			// is called checking in. Two cards said the traveller went to the
+			// hotel, stood there for no time at all, and then spent half an
+			// hour dropping bags at it.
+			fixedStart.push({
+				name: `${trip.hotelName} check-in`,
+				at: trip.hotel,
+				dwellMin: trip.bagDropMin,
+				kind: 'hotel'
+			});
 		} else {
 			fixedStart.push(hotelStop(0));
 			// Real time, not a label: the day opens when the traveller wakes and

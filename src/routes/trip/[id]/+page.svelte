@@ -246,7 +246,7 @@
 
 	const ALLOWANCE_HINT: Record<Allowance, string> = {
 		prep: 'Waking and getting out of the door. Yours, on every trip.',
-		bags: 'At the hotel on arrival, and again before leaving.',
+		bags: 'Checking in when you arrive, and collecting the bags before you leave.',
 		out: 'Passport queues and baggage reclaim at the airport you land at.',
 		checkin: 'Standing in the terminal before you leave.'
 	};
@@ -254,6 +254,9 @@
 	/** Which allowance a card stands for, if it stands for one. */
 	function allowanceOf(stop: PlannedStop, dayIdx: number): Allowance | null {
 		if (stop.anchorKind === 'chore') return stop.name === 'Getting ready' ? 'prep' : 'bags';
+		// Checking in is the hotel card on the arrival day: one card for
+		// arriving and dropping the bags, because that is one thing.
+		if (stop.anchorKind === 'hotel') return stop.durationMin > 0 ? 'bags' : null;
 		if (stop.anchorKind !== 'terminal') return null;
 		return dayIdx === 0 ? 'out' : dayIdx === days.length - 1 ? 'checkin' : null;
 	}
@@ -370,12 +373,16 @@
 		}
 	}
 
+	/** Let Replan have every visit to this place back. */
 	async function unpin(poiId: string) {
 		carded = null;
 		busy = true;
 		try {
-			await updatePoi(poiId, { pinned: false, pinned_at: null });
-			pois = pois.map((p) => (p.id === poiId ? { ...p, pinned: false, pinned_at: null } : p));
+			const held = placements.filter((pl) => pl.poi_id === poiId && pl.pinned);
+			for (const pl of held) await holdPlacement(pl.id, false);
+			placements = placements.map((pl) =>
+				pl.poi_id === poiId ? { ...pl, pinned: false } : pl
+			);
 			await restore();
 		} catch (e) {
 			error = (e as Error).message;
@@ -1041,9 +1048,9 @@
 				.flatMap((d) => d.stops)
 				.find((st) => st.poiId === opts.hold)?.arrive;
 			if (at) {
-				await updatePoi(opts.hold, { pinned: true, pinned_at: at.toISOString() });
-				pois = pois.map((p) =>
-					p.id === opts.hold ? { ...p, pinned: true, pinned_at: at.toISOString() } : p
+				await holdPlacement(opts.hold, true);
+				placements = placements.map((pl) =>
+					pl.id === opts.hold ? { ...pl, pinned: true } : pl
 				);
 			}
 		}
@@ -1262,10 +1269,10 @@
 				osmId: null
 			});
 			pois = [...pois, created];
-			// Pinned: the traveller put it at a particular point in the day, and
-			// a block has no geography for Regenerate to reason about.
-			await updatePoi(created.id, { pinned: true });
-			await placeInto(created.id, target);
+			// The visit it is about to get is pinned: the traveller put this at
+			// a particular point in the day, and a block has no geography for
+			// Replan to reason about.
+			await placeInto(created.id, { ...target, hold: true });
 		} catch (e) {
 			error = (e as Error).message;
 			busy = false;
@@ -1326,7 +1333,7 @@
 
 	async function placeInto(
 		poiId: string,
-		target: { day: number; before: string | null; at?: string }
+		target: { day: number; before: string | null; at?: string; hold?: boolean }
 	) {
 		try {
 			// Where it goes among the day's visits: above the one it was put
@@ -1338,7 +1345,7 @@
 				? onDay.findIndex((pl) => pl.poi_id === target.before)
 				: onDay.length;
 			const at = slot < 0 ? onDay.length : slot;
-			const made = await place(tripId, poiId, target.day, at);
+			const made = await place(tripId, poiId, target.day, at, target.hold ?? false);
 			await savePlacements(tripId, [
 				{ id: made.id, poiId, dayIndex: target.day, orderIndex: at },
 				...onDay.slice(at).map((pl, i) => ({

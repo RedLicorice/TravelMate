@@ -1,5 +1,4 @@
 import { supabase } from '$lib/supabase';
-import { pool } from '$lib/pool';
 import type { Poi } from '$lib/poi';
 import type { PlanPoi } from '$lib/plan/planner';
 import type { PlacementRow } from '$lib/trip/placements';
@@ -23,11 +22,7 @@ export type PoiRow = {
 	 * on its placements now (0040); these three are still selected only until
 	 * the follow-up migration drops them. Nothing may read them.
 	 */
-	day_index: number | null;
-	order_index: number | null;
-	pinned: boolean;
 	/** The exact start a pin holds. Null on a pin made before times were held. */
-	pinned_at: string | null;
 	/** Any branch will do; the planner picks the nearest. */
 	any_branch: boolean;
 	branches: { lat: number; lng: number }[];
@@ -133,8 +128,6 @@ export async function updatePoi(
 		notes?: string | null;
 		name?: string;
 		priority?: number;
-		pinned?: boolean;
-		pinned_at?: string | null;
 		exit_lat?: number | null;
 		exit_lng?: number | null;
 	}
@@ -154,25 +147,3 @@ export async function removePoi(id: string): Promise<void> {
 	if (error) throw new Error(error.message);
 }
 
-/**
- * @deprecated Writes the dead day_index/order_index columns. A place's position
- * on the plan is a placement now (0040): use `place`, `unplace` and
- * `savePlacements` from `$lib/trip/placements`. Kept only until the last
- * caller has moved over; the columns are dropped in a follow-up migration.
- *
- * One upsert per changed row rather than a wholesale delete-and-insert, so a
- * failure halfway leaves a coherent trip instead of an empty one.
- */
-export async function saveAssignments(
-	rows: { id: string; dayIndex: number | null; orderIndex: number | null }[]
-): Promise<void> {
-	// In parallel, bounded: a trip with twenty stops was twenty round trips in
-	// a row, which is most of what made Replan feel like it had hung.
-	await pool(rows, 6, async (r) => {
-		const { error } = await supabase
-			.from('pois')
-			.update({ day_index: r.dayIndex, order_index: r.orderIndex })
-			.eq('id', r.id);
-		if (error) throw new Error(error.message);
-	});
-}
