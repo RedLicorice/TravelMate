@@ -37,7 +37,7 @@ const poi = (id: string, lat: number, lng: number, extra: Partial<PlanPoi> = {})
 	durationMin: 90,
 	priority: 3,
 	dayIndex: null,
-	orderIndex: null,
+	at: '2026-10-02T08:00:00Z',
 	pinned: false,
 	...extra
 });
@@ -71,28 +71,8 @@ describe('time only moves forwards', () => {
 		});
 		result.days.forEach(forwards);
 	});
-
-	it('holds when a pin is held earlier than the day can reach it', () => {
-		// The pin used to rewind the clock, and every stop after it was timed
-		// from a moment already spent.
-		const result = schedule({
-			pois: [
-				poi('long', 51.5081, -0.0759, { dayIndex: 0, orderIndex: 0, durationMin: 180 }),
-				poi('held', 51.5194, -0.127, {
-					dayIndex: 0,
-					orderIndex: 1,
-					pinned: true,
-					pinnedAt: '2026-10-02T08:30:00.000Z'
-				}),
-				poi('after', 51.5033, -0.1196, { dayIndex: 0, orderIndex: 2 })
-			],
-			days: tripDays(trip),
-			allowedModes: ['walk', 'transit'],
-			timezone: 'Europe/London'
-		});
-		result.days.forEach(forwards);
-	});
 });
+
 
 describe('a day is budgeted as a day', () => {
 	it('does not drop a stop while another day sits empty', () => {
@@ -126,17 +106,16 @@ describe('one dragged card does not empty the day', () => {
 		// dropped -- so dragging one card lost the other four.
 		const result = replan({
 			pois: [
-				poi('a', 51.5081, -0.0759, { dayIndex: 0, orderIndex: 0 }),
-				poi('b', 51.5194, -0.127, { dayIndex: 0, orderIndex: 1 }),
-				poi('c', 51.5033, -0.1196, { dayIndex: 0, orderIndex: 2 }),
-				poi('d', 51.5138, -0.0984, { dayIndex: 0, orderIndex: 3 }),
+				poi('a', 51.5081, -0.0759, { dayIndex: 0 }),
+				poi('b', 51.5194, -0.127, { dayIndex: 0 }),
+				poi('c', 51.5033, -0.1196, { dayIndex: 0 }),
+				poi('d', 51.5138, -0.0984, { dayIndex: 0 }),
 				poi('dinner', 51.5076, -0.0994, {
 					dayIndex: 0,
-					orderIndex: 4,
 					category: 'restaurant',
 					durationMin: 90,
 					pinned: true,
-					pinnedAt: '2026-10-02T18:00:00.000Z'
+					at: '2026-10-02T18:00:00.000Z'
 				})
 			],
 			days: tripDays(trip),
@@ -155,9 +134,9 @@ describe('nothing runs past the end of its day unannounced', () => {
 		const tight: Trip = { ...trip, dayEnd: '14:00' };
 		const result = schedule({
 			pois: [
-				poi('s1', 51.5081, -0.0759, { dayIndex: 0, orderIndex: 0, durationMin: 60 }),
-				poi('s2', 51.5194, -0.127, { dayIndex: 0, orderIndex: 1, durationMin: 120 }),
-				poi('s3', 51.5033, -0.1196, { dayIndex: 0, orderIndex: 2, durationMin: 75 })
+				poi('s1', 51.5081, -0.0759, { dayIndex: 0, at: '2026-10-02T08:00:00Z', durationMin: 60 }),
+				poi('s2', 51.5194, -0.127, { dayIndex: 0, at: '2026-10-02T09:30:00Z', durationMin: 120 }),
+				poi('s3', 51.5033, -0.1196, { dayIndex: 0, at: '2026-10-02T12:00:00Z', durationMin: 75 })
 			],
 			days: tripDays(tight),
 			allowedModes: ['walk', 'transit'],

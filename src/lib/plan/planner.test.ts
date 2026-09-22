@@ -42,7 +42,7 @@ const poi = (id: string, lat: number, lng: number, extra: Partial<PlanPoi> = {})
 	durationMin: 60,
 	priority: 3,
 	dayIndex: null,
-	orderIndex: null,
+	at: '2026-04-10T07:00:00Z',
 	...extra
 });
 
@@ -74,17 +74,17 @@ describe('replan', () => {
 
 	it('opens and closes each day on its anchors', () => {
 		// The hotel at either end of every day, as the traveller has it placed.
-		const home = (dayIndex: number, orderIndex: number): PlanPoi => ({
-			...poi(`home-${dayIndex}-${orderIndex}`, hotel.lat, hotel.lng),
+		const home = (dayIndex: number, at: string): PlanPoi => ({
+			...poi(`home-${dayIndex}-${at}`, hotel.lat, hotel.lng),
 			poiId: null,
 			kind: 'hotel',
 			name: trip.hotelName,
 			category: null,
 			durationMin: 0,
 			dayIndex,
-			orderIndex
+			at
 		});
-		const furniture = days.flatMap((_, i) => [home(i, 0), home(i, 999)]);
+		const furniture = days.flatMap((d, i) => [home(i, d.start.toISOString()), home(i, d.end.toISOString())]);
 		const result = replan(input([...furniture, poi('a', 41.9, 12.48)]));
 		for (const day of result.days) {
 			expect(day.stops[0].anchor).toBe(true);
@@ -139,17 +139,6 @@ describe('replan', () => {
 });
 
 describe('schedule', () => {
-	it('respects an assignment the traveller made by hand', () => {
-		const pois = [
-			poi('a', 41.95, 12.4, { dayIndex: 0, orderIndex: 1 }),
-			poi('b', 41.9, 12.48, { dayIndex: 0, orderIndex: 0 })
-		];
-		const result = schedule(input(pois));
-		const ids = result.days[0].stops.filter((s) => s.poiId).map((s) => s.poiId);
-		// b before a, because the traveller said so -- even though a is further.
-		expect(ids).toEqual(['b', 'a']);
-	});
-
 	it('treats an unassigned POI as unplaced rather than inventing a day', () => {
 		const result = schedule(input([poi('a', 41.9, 12.48)]));
 		expect(result.unplaced.map((u) => u.poi.id)).toEqual(['a']);
@@ -575,7 +564,7 @@ describe('arrival day capacity', () => {
 		durationMin: 90,
 		priority: 3,
 		dayIndex: null,
-		orderIndex: null
+		at: '2026-10-02T08:00:00Z'
 	});
 
 	// The arrival day's window looks usable -- 255 minutes -- but the airport
@@ -633,7 +622,7 @@ describe('pinned stops', () => {
 		durationMin: 60,
 		priority: 3,
 		dayIndex: null,
-		orderIndex: null,
+		at: '2026-10-02T08:00:00Z',
 		...extra
 	});
 
@@ -644,14 +633,12 @@ describe('pinned stops', () => {
 
 	const dayOfIn = (result: ReturnType<typeof replan>, id: string) =>
 		result.days.find((d) => d.stops.some((s) => s.poiId === id))?.index ?? null;
-	const orderIn = (result: ReturnType<typeof replan>, dayIndex: number) =>
-		result.days[dayIndex].stops.filter((s) => s.poiId).map((s) => s.poiId);
 
 	it('keeps a pinned stop on the day it was pinned to', () => {
 		const days = tripDays(pinTrip);
 		const pois = [
 			// Pinned to day 1 despite sitting in the middle of day 0's cluster.
-			east('pinned', { dayIndex: 1, orderIndex: 0, pinned: true }),
+			east('pinned', { dayIndex: 1, pinned: true }),
 			east('e1'),
 			east('e2'),
 			west('w1'),
@@ -661,23 +648,11 @@ describe('pinned stops', () => {
 		expect(dayOfIn(result, 'pinned')).toBe(1);
 	});
 
-	it('keeps a pinned stop at the place in the day it was pinned to', () => {
-		const days = tripDays(pinTrip);
-		const pois = [
-			west('first', { dayIndex: 0, orderIndex: 0, pinned: true }),
-			east('e1', { dayIndex: 0, orderIndex: 1 }),
-			east('e2', { dayIndex: 0, orderIndex: 2 }),
-			east('e3', { dayIndex: 0, orderIndex: 3 })
-		];
-		const result = replan({ pois, days, allowedModes: ['walk'], timezone: 'Europe/London' });
-		// Nearest-neighbour from the hotel would never open in the far west.
-		expect(orderIn(result, 0)[0]).toBe('first');
-	});
 
 	it('plans the free stops around the pin rather than ignoring it', () => {
 		const days = tripDays(pinTrip);
 		const pois = [
-			east('pinned', { dayIndex: 0, orderIndex: 0, pinned: true }),
+			east('pinned', { dayIndex: 0, pinned: true }),
 			east('e1'),
 			west('w1')
 		];
@@ -725,7 +700,7 @@ describe('a pin is the traveller\'s, not the planner\'s', () => {
 		durationMin: 240,
 		priority: 3,
 		dayIndex: 0,
-		orderIndex: 0,
+		at: '2026-10-02T08:00:00Z',
 		pinned: true
 	};
 
@@ -755,31 +730,6 @@ describe('a pin is the traveller\'s, not the planner\'s', () => {
 		]);
 	});
 
-	it('orders two pins the way the traveller put them', () => {
-		// Not by the moments they hold. A pin says Replan may not move this
-		// one; which comes first is the order, the same as for everything
-		// else -- a stop dragged above another used to be pulled back under it
-		// by whichever clock happened to be earlier.
-		const at = (id: string, iso: string, orderIndex: number): PlanPoi => ({
-			...stubborn,
-			id,
-			poiId: id,
-			name: id,
-			durationMin: 30,
-			pinnedAt: iso,
-			orderIndex
-		});
-		const result = replan({
-			pois: [at('evening', '2026-10-02T18:00:00.000Z', 0), at('noon', '2026-10-02T11:00:00.000Z', 1)],
-			days: tripDays({ ...tight, dayEnd: '22:00' }),
-			allowedModes: ['walk'],
-			timezone: 'Europe/London'
-		});
-		expect(result.days[0].stops.filter((s) => s.poiId).map((s) => s.poiId)).toEqual([
-			'evening',
-			'noon'
-		]);
-	});
 
 });
 
@@ -816,7 +766,7 @@ describe('a stop you leave from somewhere else', () => {
 		durationMin: 20,
 		priority: 3,
 		dayIndex: 0,
-		orderIndex: 0,
+		at: '2026-10-02T08:00:00Z',
 		exitAt
 	});
 	const afterwards: PlanPoi = {
@@ -829,7 +779,7 @@ describe('a stop you leave from somewhere else', () => {
 		durationMin: 30,
 		priority: 3,
 		dayIndex: 0,
-		orderIndex: 1
+		at: '2026-10-02T08:30:00Z'
 	};
 
 	const legAfter = (exitAt: { lat: number; lng: number } | null) => {
@@ -923,7 +873,7 @@ describe('rating does not buy detours', () => {
 		durationMin: 45,
 		priority,
 		dayIndex: null,
-		orderIndex: null
+		at: '2026-10-02T08:00:00Z'
 	});
 
 	const travelOf = (priorities: number[]) =>
@@ -979,15 +929,15 @@ describe('meals the plan supplies itself', () => {
 		durationMin,
 		priority: 3,
 		dayIndex: 0,
-		orderIndex: Number(id.slice(1)),
+		at: '2026-10-02T07:00:00Z',
 		pinned: false
 	});
 
-	const mealsOn = (result: ReturnType<typeof schedule>) =>
+	const mealsOn = (result: ReturnType<typeof replan>) =>
 		result.days[0].stops.filter((s) => s.anchorKind === 'meal').map((s) => s.name);
 
 	const run = (pois: PlanPoi[]) =>
-		schedule({
+		replan({
 			pois,
 			days: tripDays(mealTrip),
 			allowedModes: ['walk', 'transit'],
@@ -1024,7 +974,7 @@ describe('meals the plan supplies itself', () => {
 			arrivalAt: '2026-10-02T09:30:00Z',
 			departureAt: '2026-10-02T10:30:00Z'
 		};
-		const result = schedule({
+		const result = replan({
 			pois: [],
 			days: tripDays(brief),
 			allowedModes: ['walk'],
@@ -1063,7 +1013,7 @@ describe('a block of time the traveller added', () => {
 		durationMin: 60,
 		priority: 3,
 		dayIndex: 0,
-		orderIndex: 0,
+		at: '2026-10-02T08:00:00Z',
 		pinned: false
 	};
 	/** Stored at the hotel, but the day is nowhere near it by then. */
@@ -1076,7 +1026,7 @@ describe('a block of time the traveller added', () => {
 		lat: 51.5145,
 		lng: -0.127,
 		durationMin: 45,
-		orderIndex: 1,
+		at: '2026-10-02T09:00:00Z',
 		pinned: true
 	};
 

@@ -62,7 +62,7 @@ export const toPlanPoi = (
 	durationMin: row.duration_min,
 	priority: row.priority ?? 3,
 	dayIndex: placement.day_index,
-	orderIndex: placement.order_index,
+	at: placement.at,
 	pinned: placement.pinned,
 	pinnedAt: placement.pinned ? heldAt : null,
 	branches: row.any_branch ? (row.branches ?? []) : null,

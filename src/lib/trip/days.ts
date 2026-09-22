@@ -26,6 +26,16 @@ export type Waypoint = {
 	 * same minute.
 	 */
 	timeLabel?: string | null;
+	/**
+	 * When this card happens, off the ticket rather than off the walk.
+	 *
+	 * A journey is a run of cards at one set of coordinates, so walking them
+	 * gives every one of them the same minute -- and a day ordered by the
+	 * clock then has nothing to tell them apart by, which is how a flight
+	 * came to be drawn above the airport it leaves from. The ticket already
+	 * says when each of them happens; this is that.
+	 */
+	startsAt?: Date | null;
 };
 
 export type Trip = {
@@ -205,20 +215,29 @@ export function tripDays(trip: Trip): Day[] {
 			name: string | null | undefined,
 			kind: 'terminal' | 'service',
 			timeLabel: string | null = null,
-			dwellMin = 0
+			dwellMin = 0,
+			startsAt: Date | null = null
 		) => {
 			if (!name) return;
 			// A connection names the same station twice -- arriving on one leg
 			// and leaving on the next. It is one card, and it keeps the earlier
 			// arrival time rather than being redrawn with the later departure.
 			if (out[out.length - 1]?.name === name) return;
-			out.push({ name, at, dwellMin, kind, timeLabel });
+			out.push({ name, at, dwellMin, kind, timeLabel, startsAt });
+		};
+
+		/** The instant a `YYYY-MM-DDTHH:MM` off a ticket names, in the trip's zone. */
+		const ticket = (local: string | null | undefined): Date | null => {
+			const [date, time] = local?.split('T') ?? [];
+			return date && time ? zonedInstant(date, time.slice(0, 5), tz) : null;
 		};
 
 		legs.forEach((leg, i) => {
-			push(leg.from?.name, 'terminal', clockOf(leg.departLocal));
+			const departs = ticket(leg.departLocal);
+			const arrives = ticket(leg.arriveLocal);
+			push(leg.from?.name, 'terminal', clockOf(leg.departLocal), 0, departs);
 			const route = [leg.from?.name, leg.to?.name].filter(Boolean).join(' → ');
-			push(leg.service ?? (route || null), 'service', span(leg));
+			push(leg.service ?? (route || null), 'service', span(leg), 0, departs);
 
 			// Getting out of the terminal you just reached. Stated per leg, so a
 			// connection can be five minutes and an airport an hour; the trip's
@@ -236,7 +255,7 @@ export function tripDays(trip: Trip): Day[] {
 			const leaves = connects ? clockOf(onward.departLocal) : null;
 
 			const ends = leaves ?? (landed && out_ > 0 ? shift(landed, out_) : null);
-			push(leg.to?.name, 'terminal', landed && ends ? `${landed}–${ends}` : landed, out_);
+			push(leg.to?.name, 'terminal', landed && ends ? `${landed}–${ends}` : landed, out_, arrives);
 		});
 		return out;
 	};

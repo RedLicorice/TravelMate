@@ -23,8 +23,10 @@ const row = (p: Partial<PlanStopRow> & { day_index: number; order_index: number 
 	anchor: false,
 	anchor_kind: null,
 	time_label: null,
-	starts_at: '2026-10-03T09:00:00.000Z',
-	ends_at: '2026-10-03T10:00:00.000Z',
+	// A card happens an hour after the one before it: a day is read by the
+	// clock, so a fixture that means "second" has to say so in time.
+	starts_at: `2026-10-03T${String(9 + p.order_index).padStart(2, '0')}:00:00.000Z`,
+	ends_at: `2026-10-03T${String(10 + p.order_index).padStart(2, '0')}:00:00.000Z`,
 	duration_min: 60,
 	pinned: false,
 	leg_mode: null,

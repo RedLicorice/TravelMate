@@ -18,7 +18,7 @@ import { supabase } from '$lib/supabase';
  * the door, the bags -- which used to be drawn by the app and could not be
  * moved, removed or added to. They are placed like everything else now.
  */
-export type PlacementKind = 'stop' | 'hotel' | 'chore';
+export type PlacementKind = 'stop' | 'hotel' | 'chore' | 'meal';
 
 export type PlacementRow = {
 	id: string;
@@ -29,8 +29,17 @@ export type PlacementRow = {
 	name: string | null;
 	/** How long it takes; null leaves it to the trip's own allowance. */
 	minutes: number | null;
+	/** Which sitting a 'meal' card is. Null for everything else. */
+	meal: 'breakfast' | 'lunch' | 'dinner' | null;
 	day_index: number;
-	order_index: number;
+	/**
+	 * When this card happens.
+	 *
+	 * The card's own clock, and the only thing the day is ordered by. Set by
+	 * the traveller when they put the card somewhere, and written by Replan
+	 * when it decides a day.
+	 */
+	at: string;
 	/** Replan may not move this one. When it happens is the card's to say. */
 	pinned: boolean;
 	created_at: string;
@@ -42,7 +51,7 @@ export async function listPlacements(tripId: string): Promise<PlacementRow[]> {
 		.select('*')
 		.eq('trip_id', tripId)
 		.order('day_index', { ascending: true })
-		.order('order_index', { ascending: true });
+		.order('at', { ascending: true });
 	if (error) throw new Error(error.message);
 	return (data ?? []) as PlacementRow[];
 }
@@ -52,7 +61,7 @@ export async function place(
 	tripId: string,
 	poiId: string,
 	dayIndex: number,
-	orderIndex: number,
+	at: string,
 	pinned = false
 ): Promise<PlacementRow> {
 	const { data, error } = await supabase
@@ -62,7 +71,7 @@ export async function place(
 			poi_id: poiId,
 			kind: 'stop',
 			day_index: dayIndex,
-			order_index: orderIndex,
+			at,
 			pinned
 		})
 		.select('*')
@@ -84,10 +93,10 @@ export async function place(
  */
 export async function placeAnchor(
 	tripId: string,
-	kind: 'hotel' | 'chore',
+	kind: 'hotel' | 'chore' | 'meal',
 	dayIndex: number,
-	orderIndex: number,
-	opts: { name?: string | null; minutes?: number | null } = {}
+	at: string,
+	opts: { name?: string | null; minutes?: number | null; meal?: PlacementRow['meal'] } = {}
 ): Promise<PlacementRow> {
 	const { data, error } = await supabase
 		.from('placements')
@@ -97,8 +106,9 @@ export async function placeAnchor(
 			kind,
 			name: opts.name ?? null,
 			minutes: opts.minutes ?? null,
+			meal: opts.meal ?? null,
 			day_index: dayIndex,
-			order_index: orderIndex,
+			at,
 			pinned: false
 		})
 		.select('*')
@@ -134,8 +144,10 @@ export async function savePlacements(
 		kind?: PlacementKind;
 		name?: string | null;
 		minutes?: number | null;
+		meal?: PlacementRow['meal'];
 		dayIndex: number;
-		orderIndex: number;
+		/** When the card happens: the only thing that orders a day. */
+		at: string;
 	}[]
 ): Promise<void> {
 	if (!rows.length) return;
@@ -150,8 +162,9 @@ export async function savePlacements(
 			kind: r.kind ?? 'stop',
 			name: r.name ?? null,
 			minutes: r.minutes ?? null,
+			meal: r.meal ?? null,
 			day_index: r.dayIndex,
-			order_index: r.orderIndex
+			at: r.at
 		})),
 		{ onConflict: 'id' }
 	);
@@ -192,8 +205,9 @@ export async function placeMany(
 		kind: PlacementKind;
 		name?: string | null;
 		minutes?: number | null;
+		meal?: PlacementRow['meal'];
 		dayIndex: number;
-		orderIndex: number;
+		at: string;
 		pinned?: boolean;
 	}[],
 	tripId: string
@@ -208,8 +222,9 @@ export async function placeMany(
 				kind: r.kind,
 				name: r.name ?? null,
 				minutes: r.minutes ?? null,
+				meal: r.meal ?? null,
 				day_index: r.dayIndex,
-				order_index: r.orderIndex,
+				at: r.at,
 				pinned: r.pinned ?? false
 			}))
 		)
@@ -217,3 +232,16 @@ export async function placeMany(
 	if (error) throw new Error(error.message);
 	return (data ?? []) as PlacementRow[];
 }
+
+/** Move a card to a moment. The day reorders itself around it. */
+export async function moveTo(id: string, at: string, dayIndex?: number): Promise<void> {
+	const { error } = await supabase
+		.from('placements')
+		.update(dayIndex === undefined ? { at } : { at, day_index: dayIndex })
+		.eq('id', id);
+	if (error) throw new Error(error.message);
+}
+
+/** Halfway between two moments: when a card put between two others happens. */
+export const between = (a: string | Date, b: string | Date): string =>
+	new Date((new Date(a).getTime() + new Date(b).getTime()) / 2).toISOString();

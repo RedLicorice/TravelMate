@@ -2,10 +2,10 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { base } from '$app/paths';
-	import { cityBBox, getTrip, updateCityBBox, type TripRow } from '$lib/trip/repo';
+	import { cityBBox, getTrip, toTrip, updateCityBBox, type TripRow } from '$lib/trip/repo';
+	import { tripDays } from '$lib/trip/days';
 	import { addPoi, DuplicatePoiError, listPois, type PoiRow } from '$lib/trip/pois';
-	import { listPlacements, place, savePlacements, type PlacementRow } from '$lib/trip/placements';
-	import { insertInto } from '$lib/dnd.svelte';
+	import { between, listPlacements, place, type PlacementRow } from '$lib/trip/placements';
 	import { goto } from '$app/navigation';
 	import { poi as provider, type City, type Poi } from '$lib/poi';
 	import { durationFor } from '$lib/poi/photon';
@@ -30,6 +30,9 @@
 		if (!page.url.searchParams.has('day') || !Number.isInteger(day) || day < 0) return null;
 		return { day, before: page.url.searchParams.get('before') };
 	});
+
+	/** Where a day starts, for the first card ever put on it. */
+	const dayStart = (i: number) => (trip ? tripDays(toTrip(trip))[i]?.start : null) ?? null;
 
 	let trip = $state<TripRow | null>(null);
 	let saved = $state<PoiRow[]>([]);
@@ -287,39 +290,34 @@
 
 			if (slot) {
 				// Put it in the slot it was asked for, then hand the trip page
-				// back the day it landed on so it opens there. The new visit is
-				// slotted among the day's existing ones with the same arithmetic
-				// a drop uses, so the two cannot disagree about where "above"
-				// is; `before` still names a place on the trip page for now, so
-				// a placement of that place is accepted too.
-				const NEW = 'new';
-				const before =
-					placements.find((x) => x.id === slot.before || x.poi_id === slot.before)?.id ?? null;
-				const rows = insertInto(
-					[
-						...placements.map((x) => ({ id: x.id, dayIndex: x.day_index, orderIndex: x.order_index })),
-						{ id: NEW, dayIndex: null, orderIndex: null }
-					],
-					NEW,
-					slot.day,
-					before
-				);
-				const poiOf = new Map(placements.map((x) => [x.id, x.poi_id]));
+				// back the day it landed on so it opens there.
+				//
+				// Asking for a slot is asking for a time: above `before` means
+				// in the space between `before` and whatever comes before it.
+				// Nothing else on the day moves -- a card is where its clock
+				// says, so making room is a matter of picking a free minute,
+				// not of renumbering the neighbours. `before` still names a
+				// place on the trip page for now, so a placement of that place
+				// is accepted too.
+				const day = placements
+					.filter((x) => x.day_index === slot.day)
+					.sort((a, b) => a.at.localeCompare(b.at));
+				const i = day.findIndex((x) => x.id === slot.before || x.poi_id === slot.before);
+				const next = i < 0 ? undefined : day[i];
+				const prev = i < 0 ? day.at(-1) : day[i - 1];
+				const when =
+					prev && next
+						? between(prev.at, next.at)
+						: next
+							? new Date(Date.parse(next.at) - 60 * 60_000).toISOString()
+							: prev
+								? new Date(Date.parse(prev.at) + 60 * 60_000).toISOString()
+								: (dayStart(slot.day) ?? new Date()).toISOString();
 				// Back to the day at once. The visit is written on the way out
 				// -- the trip page reads the placements when it opens, and by
 				// then this has landed; a failure surfaces there rather than
 				// holding a screen the traveller has finished with.
-				const writing = place(
-					tripId,
-					row.id,
-					slot.day,
-					rows.find((r) => r.id === NEW)!.orderIndex
-				).then(() =>
-					savePlacements(
-						tripId,
-						rows.filter((r) => r.id !== NEW).map((r) => ({ ...r, poiId: poiOf.get(r.id)! }))
-					)
-				);
+				const writing = place(tripId, row.id, slot.day, when);
 				await goto(`${base}/trip/${tripId}?day=${slot.day}`, { replaceState: true });
 				await writing;
 				return;

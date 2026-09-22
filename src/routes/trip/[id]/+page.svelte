@@ -39,13 +39,15 @@
 		place,
 		placeAnchor,
 		placeMany,
+		between,
+		moveTo,
 		setFurnished,
 		setPlacementMinutes,
 		savePlacements,
 		unplace as dropPlacement,
 		type PlacementRow
 	} from '$lib/trip/placements';
-	import { tripDays, zonedInstant, type Day } from '$lib/trip/days';
+	import { tripDays, type Day } from '$lib/trip/days';
 	import {
 		replan,
 		schedule,
@@ -72,6 +74,7 @@
 		latestPrep,
 		latestReady,
 		MEAL_LABEL,
+		MEAL_MINUTES,
 		MEAL_NAMES,
 		slotAt,
 		slotsFrom,
@@ -99,11 +102,10 @@
 	import Stars from '$lib/Stars.svelte';
 	import LegDetail from '$lib/LegDetail.svelte';
 	import { dayTruncated, dayUrl, routePoints } from '$lib/maps';
-	import { createDrag, insertInto, reorder } from '$lib/dnd.svelte';
-	import { cardTimes } from '$lib/board';
+	import { createDrag, type DropTarget } from '$lib/dnd.svelte';
+	import { cardTimes } from '$lib/cardtime';
 	import { haversineKm } from '$lib/plan/geo';
 	import { longPress } from '$lib/longpress.svelte';
-	import PlanBoard from '$lib/PlanBoard.svelte';
 	import StopCard from '$lib/StopCard.svelte';
 	import DayLine from '$lib/DayLine.svelte';
 	import TimeGap from '$lib/TimeGap.svelte';
@@ -155,7 +157,8 @@
 		durationMin: p.duration_min,
 		priority: p.priority ?? 3,
 		dayIndex: null,
-		orderIndex: null,
+		// No clock: it is not on a day yet, and Replan is what gives it one.
+		at: '',
 		pinned: false,
 		pinnedAt: null,
 		branches: p.any_branch ? (p.branches ?? []) : null,
@@ -182,14 +185,15 @@
 			id: pl.id,
 			poiId: null,
 			kind: pl.kind,
-			name: pl.name ?? row.hotel_name,
+			meal: pl.meal,
+			name: pl.name ?? (pl.meal ? MEAL_LABEL[pl.meal] : row.hotel_name),
 			lat: row.hotel_lat,
 			lng: row.hotel_lng,
 			category: null,
 			durationMin: pl.minutes ?? allowanceFor(pl),
 			priority: 3,
 			dayIndex: pl.day_index,
-			orderIndex: pl.order_index,
+			at: pl.at,
 			// Held in place by being an anchor, not by a pin. A pin would also
 			// hold the moment -- whatever the clock said last time -- and a
 			// time that is wrong once would then stay wrong for ever.
@@ -207,6 +211,7 @@
 	 * traveller's own getting-ready time, which is theirs across every trip.
 	 */
 	function allowanceFor(pl: PlacementRow): number {
+		if (pl.kind === 'meal') return pl.meal ? MEAL_MINUTES[pl.meal] : 0;
 		if (pl.kind !== 'chore' || !row) return 0;
 		if (pl.name === 'Getting ready') return prep?.prepMin ?? 0;
 		return row.bag_drop_min;
@@ -256,18 +261,6 @@
 		return MEAL_NAMES.filter((m) => !present.has(m));
 	});
 
-	/** A meal container dragged to a new time on the board. */
-	async function moveMeal(stop: PlannedStop, dayIdx: number, minutes: number) {
-		const meal = mealFor(stop);
-		if (!meal || !row) return;
-		const at = zonedInstant(
-			days[dayIdx].date,
-			`${String(Math.floor(minutes / 60) % 24).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`,
-			row.timezone
-		);
-		await sayMeal(dayIdx, meal, { at: at.toISOString() });
-	}
-
 	async function sayMeal(
 		dayIdx: number,
 		meal: MealName,
@@ -304,8 +297,15 @@
 			// used to lift it out of the route and re-seat it by window,
 			// which is how dropping a card before it did nothing at all.
 			if (change !== 'reset' && change.poiId && !placements.some((pl) => pl.poi_id === change.poiId)) {
-				const last = placements.filter((pl) => pl.day_index === dayIdx).length;
-				placements = [...placements, await place(tripId, change.poiId, dayIdx, last)];
+				// At the meal's own hour: the sitting is a card on the day like
+				// any other, and the place chosen for it happens when it does.
+				const sitting = (result?.days[dayIdx]?.stops ?? []).find(
+					(st) => st.anchorKind === 'meal' && mealFor(st) === meal
+				);
+				const at = sitting
+					? sitting.arrive.toISOString()
+					: momentFor({ day: dayIdx, before: null });
+				placements = [...placements, await place(tripId, change.poiId, dayIdx, at)];
 			}
 
 			mealRows = await loadMeals(tripId);
@@ -536,7 +536,7 @@
 		}
 	}
 	let dayIndex = $state(0);
-	let view = $state<'plan' | 'board' | 'map' | 'wishlist'>('plan');
+	let view = $state<'plan' | 'map' | 'wishlist'>('plan');
 	let showDetails = $state(false);
 	/** The day with its own line drawn behind the cards. */
 	let expanded = $state(false);
@@ -669,27 +669,36 @@
 		const wanted: Parameters<typeof placeMany>[0] = [];
 		for (let i = first; i < days.length; i++) {
 			const last = i === days.length - 1;
-			let order = 0;
+			const { start, end } = days[i];
 			if (i === 0 && row.arrival_point_name) {
 				// Arriving at the hotel and handing over the bags are one thing,
-				// and it is called checking in.
+				// and it is called checking in. It happens when the day starts,
+				// which on the first day is when the journey in has finished.
 				wanted.push({
 					kind: 'hotel',
 					name: 'Check-in',
 					minutes: row.bag_drop_min,
 					dayIndex: i,
-					orderIndex: order++
+					at: start.toISOString()
 				});
 			} else {
-				wanted.push({ kind: 'hotel', minutes: 0, dayIndex: i, orderIndex: order++ });
-				wanted.push({ kind: 'chore', name: 'Getting ready', dayIndex: i, orderIndex: order++ });
+				wanted.push({ kind: 'hotel', minutes: 0, dayIndex: i, at: start.toISOString() });
+				// A minute later, because two cards at the same instant have no
+				// order to be in: waking up and getting ready are one after the
+				// other, and the clock has to say so.
+				wanted.push({
+					kind: 'chore',
+					name: 'Getting ready',
+					dayIndex: i,
+					at: new Date(start.getTime() + 60_000).toISOString()
+				});
 			}
-			// The end of the day, given room above it for everything the day
-			// turns out to hold. Replan renumbers these into a tidy run.
+			// The end of the day is the hotel it is slept in -- that is what
+			// ends a day. The last one ends at the station instead.
 			if (last && row.departure_point_name) {
-				wanted.push({ kind: 'chore', name: 'Check-out', dayIndex: i, orderIndex: 900 });
+				wanted.push({ kind: 'chore', name: 'Check-out', dayIndex: i, at: end.toISOString() });
 			} else {
-				wanted.push({ kind: 'hotel', minutes: 0, dayIndex: i, orderIndex: 901 });
+				wanted.push({ kind: 'hotel', minutes: 0, dayIndex: i, at: end.toISOString() });
 			}
 		}
 		// One insert for the lot, rather than four round trips per day before
@@ -984,10 +993,101 @@
 	}
 
 	/**
+	 * When a drop happened.
+	 *
+	 * A drop says when, and that is the whole of what it says. A day is its
+	 * cards in the order their clocks read, so putting a card somewhere is
+	 * setting its clock -- there is no position to write and nothing else to
+	 * reconcile. Let go in an opened gap, it happens at the moment the gap was
+	 * opened at; let go between two cards, halfway between them, which is a
+	 * minute both of them leave free; let go on the day itself, after the last
+	 * thing the day does and before the hotel it is slept in.
+	 */
+	function momentOf(target: DropTarget, draggedId: string): string | null {
+		if (!target) return null;
+		const day = target.kind === 'day' ? target.index : target.day;
+		const drawn = result?.days[day]?.stops ?? [];
+		// The card being moved is not one of its own neighbours.
+		const cards = drawn.filter((st) => st.placementId !== draggedId);
+
+		// A gap knows its own moment: it is the hour the traveller aimed at.
+		if (target.kind === 'slot' && target.at) return target.at;
+
+		let index: number;
+		if (target.kind === 'day') {
+			// Back past the furniture the day finishes on: a visit after the
+			// hotel is a visit made in the traveller's sleep.
+			index = cards.length;
+			while (index > 0 && cards[index - 1].anchor) index--;
+		} else {
+			index = drawn.slice(0, target.index).filter((st) => st.placementId !== draggedId).length;
+		}
+
+		return free(spaceAt(cards, index, day), cards);
+	}
+
+	/**
+	 * A minute of its own.
+	 *
+	 * Two cards at the same instant have no order to be in, and a day read by
+	 * the clock would then draw them in whichever order it happened to have
+	 * them. Dropping into a space of no length -- between a card and the hotel
+	 * that starts the moment it ends -- is exactly that case, so the card takes
+	 * the next free minute instead.
+	 */
+	function free(at: string, cards: PlannedStop[]): string {
+		const taken = new Set(cards.map((st) => st.arrive.getTime()));
+		let when = Date.parse(at);
+		while (taken.has(when)) when += 60_000;
+		return new Date(when).toISOString();
+	}
+
+	/**
+	 * The minute between two cards, or beyond the one card there is.
+	 *
+	 * Halfway into the space beside it: the gap where there is one, and
+	 * otherwise between the two clocks themselves, which always leaves the
+	 * card between the pair it was put between.
+	 */
+	function spaceAt(cards: PlannedStop[], index: number, day: number): string {
+		const prev = cards[index - 1];
+		const next = cards[index];
+		if (prev && next) {
+			const from = prev.depart < next.arrive ? prev.depart : prev.arrive;
+			return between(from, next.arrive);
+		}
+		if (prev) return new Date(prev.depart.getTime() + 15 * 60_000).toISOString();
+		if (next) return new Date(next.arrive.getTime() - 60 * 60_000).toISOString();
+		return (days[day]?.start ?? new Date()).toISOString();
+	}
+
+	/**
+	 * When a card added from a slot happens.
+	 *
+	 * Tapped in an opened gap, the gap is drawn to scale and the tap said a
+	 * time: that is the answer. Tapped on the slot above a card, it happens in
+	 * the space before that card. With nothing named, it happens after the
+	 * last thing the day does and before the hotel it is slept in.
+	 */
+	function momentFor(target: { day: number; before: string | null; at?: string | null }): string {
+		if (target.at) return target.at;
+		const cards = result?.days[target.day]?.stops ?? [];
+		let index = target.before
+			? cards.findIndex((st) => st.poiId === target.before || st.placementId === target.before)
+			: -1;
+		if (index < 0) {
+			index = cards.length;
+			while (index > 0 && cards[index - 1].anchor) index--;
+		}
+		return spaceAt(cards, index, target.day);
+	}
+
+
+	/**
 	 * A manual move runs steps 3-5 only -- the traveller has just stated the
 	 * assignment and the order, and re-clustering would undo the drag.
 	 */
-	async function applyMove(draggedId: string, target: Parameters<typeof reorder>[2]) {
+	async function applyMove(draggedId: string, target: DropTarget) {
 		track('drag.drop', {
 			dragged: draggedId,
 			target: target?.kind ?? 'none',
@@ -996,80 +1096,21 @@
 		});
 		if (draggedId.startsWith(SLOT_DRAG)) return moveSlot(draggedId, target);
 
-		// Order the move the way the traveller sees it. A stop's stored order is
-		// what the planner was last given, not what it decided: the day on
-		// screen has since been routed, re-timed and threaded with meals. Read
-		// in stored order, a drop onto the third card landed in some unrelated
-		// place -- which is what made moving a card look random.
-		const seen = new Map<string, { day: number; rank: number }>();
-		(result?.days ?? []).forEach((d, day) => {
-			let rank = 0;
-			for (const st of d.stops) if (st.placementId) seen.set(st.placementId, { day, rank: rank++ });
-		});
+		if (!target) return;
+		const day = target.kind === 'day' ? target.index : target.day;
+		const when = momentOf(target, draggedId);
+		if (when === null) return;
 
-		// A slot is a position among the cards on screen, and most of those are
-		// not stops: the hotel, the terminals, the chores, an empty lunch. How
-		// many of the day's own stops sit above that position is the only part
-		// of it the order knows about.
-		const before =
-			target?.kind === 'slot'
-				? (result?.days[target.day]?.stops ?? [])
-						.slice(0, target.index)
-						.filter((st) => st.placementId && st.placementId !== draggedId).length
-				: undefined;
-
-		const rows = reorder(
-			placements.map((pl) => ({
-				id: pl.id,
-				dayIndex: seen.get(pl.id)?.day ?? pl.day_index,
-				orderIndex: seen.get(pl.id)?.rank ?? pl.order_index
-			})),
-			draggedId,
-			target,
-			before
-		);
-		if (!rows.length) return;
-
-		// Held where it was put, and by no moment at all.
-		//
-		// pinned means Replan may not move it. Where it goes is the order the
-		// traveller just stated by dropping it, and that is the whole of what a
-		// drop says.
-		//
-		// A moment was minted here, from where the card landed on the day's
-		// line, and it was the bug: the planner orders pinned stops by the time
-		// they hold (planner.ts, `pins`), so the minted moment outranked the
-		// order. Drop a card early in a day that cannot start that early, or
-		// beside a meal the meal pass seats by its own window, and the stop was
-		// put back where its old moment said -- pinned, in the place it had
-		// just been dragged out of. Clearing it is also what stops a pin from
-		// a week ago dragging today's move backwards.
-		// A drop says where, and only where. It used to pin as well, and a pin
-		// carries the moment the card had -- so the order was written and then
-		// outranked by a clock the same gesture invented, and the card slid
-		// back under whatever had an earlier time. Pins are the traveller's to
-		// set, deliberately, and nothing else sets them.
-		const held = {};
 		// Its old card time is where it used to be, and it is not there any
-		// more: the walk about to run decides when it happens now.
+		// more: the walk about to run decides how the day reads around it.
 		justMoved = draggedId;
-
 		// Follow the stop to its new day. Without this it simply vanishes from
 		// the day on screen and the move looks like a deletion.
-		const landedOn = rows.find((r) => r.id === draggedId)?.dayIndex;
-		if (landedOn !== null && landedOn !== undefined) dayIndex = landedOn;
+		dayIndex = day;
 
-		const byId = new Map(rows.map((r) => [r.id, r]));
-		placements = placements.map((pl) => ({
-			...pl,
-			...(byId.has(pl.id)
-				? {
-						day_index: byId.get(pl.id)!.dayIndex ?? pl.day_index,
-						order_index: byId.get(pl.id)!.orderIndex
-					}
-				: {}),
-			...(pl.id === draggedId ? held : {})
-		}));
+		placements = placements.map((pl) =>
+			pl.id === draggedId ? { ...pl, day_index: day, at: when } : pl
+		);
 
 		// Show the move now, from what is already known. The same scheduler the
 		// round trips will run, on the travel times already in hand: the card
@@ -1079,23 +1120,7 @@
 		if (input) fresh = schedule({ ...input, travel: known() }).days;
 
 		try {
-			await savePlacements(
-				tripId,
-				rows
-					.filter((r) => r.dayIndex !== null)
-					.map((r) => {
-						const was = placements.find((pl) => pl.id === r.id);
-						return {
-							id: r.id,
-							poiId: was?.poi_id ?? null,
-							kind: was?.kind ?? 'stop',
-							name: was?.name ?? null,
-							minutes: was?.minutes ?? null,
-							dayIndex: r.dayIndex as number,
-							orderIndex: r.orderIndex
-						};
-					})
-			);
+			await moveTo(draggedId, when, day);
 			// Refine in the background: real road times may shift the day by a
 			// few minutes, and that is not worth a frozen screen.
 			await restore();
@@ -1116,7 +1141,7 @@
 	 * drop takes the moment of whatever it landed on. A slot is keyed by its
 	 * day and its meal, and a day has one lunch, so it stays on its own day.
 	 */
-	async function moveSlot(draggedId: string, target: Parameters<typeof reorder>[2]) {
+	async function moveSlot(draggedId: string, target: DropTarget) {
 		if (!target) return;
 		const [, rawDay, meal] = draggedId.split(':');
 		const day = Number(rawDay);
@@ -1215,7 +1240,11 @@
 			timezone: row.timezone,
 			mealWindows: agreed.windows,
 			curves,
-			meals: mealPlan
+			meals: mealPlan,
+			// Where the day sleeps. A day ends at the hotel, and when there is
+			// none on it Replan puts one there rather than leaving the evening
+			// to trail off.
+			hotel: { name: row.hotel_name, lat: row.hotel_lat, lng: row.hotel_lng }
 		};
 	}
 
@@ -1460,40 +1489,16 @@
 		slot = null;
 		const was = placements;
 		try {
-			const onDay = placements
-				.filter((pl) => pl.day_index === target.day)
-				.sort((a, b) => a.order_index - b.order_index);
-			const slotAt = target.before
-				? onDay.findIndex((pl) => pl.poi_id === target.before)
-				: onDay.length;
-			const at = slotAt < 0 ? onDay.length : slotAt;
-			const made = await placeAnchor(tripId, kind, target.day, at, {
+			// Nothing else on the day moves: the new card takes a free minute
+			// and the day reads in the order the clocks say.
+			const made = await placeAnchor(tripId, kind, target.day, momentFor(target), {
 				name: kind === 'chore' ? 'Time to yourself' : null,
 				minutes: kind === 'chore' ? 60 : 0
 			});
-			placements = [
-				...placements.map((pl) =>
-					pl.day_index === target.day && pl.order_index >= at
-						? { ...pl, order_index: pl.order_index + 1 }
-						: pl
-				),
-				made
-			];
+			placements = [...placements, made];
 			dayIndex = target.day;
 			const input = planInput();
 			if (input) fresh = schedule({ ...input, travel: known() }).days;
-			await savePlacements(
-				tripId,
-				onDay.slice(at).map((pl, i) => ({
-					id: pl.id,
-					poiId: pl.poi_id,
-					kind: pl.kind,
-					name: pl.name,
-					minutes: pl.minutes,
-					dayIndex: target.day,
-					orderIndex: at + i + 1
-				}))
-			);
 			await restore();
 		} catch (e) {
 			error = (e as Error).message;
@@ -1559,25 +1564,10 @@
 		target: { day: number; before: string | null; at?: string; hold?: boolean }
 	) {
 		try {
-			// Where it goes among the day's visits: above the one it was put
-			// before, or at the end when it was put after everything.
-			const onDay = placements
-				.filter((pl) => pl.day_index === target.day)
-				.sort((a, b) => a.order_index - b.order_index);
-			const slot = target.before
-				? onDay.findIndex((pl) => pl.poi_id === target.before)
-				: onDay.length;
-			const at = slot < 0 ? onDay.length : slot;
-			const made = await place(tripId, poiId, target.day, at);
-			await savePlacements(tripId, [
-				{ id: made.id, poiId, dayIndex: target.day, orderIndex: at },
-				...onDay.slice(at).map((pl, i) => ({
-					id: pl.id,
-					poiId: pl.poi_id,
-					dayIndex: target.day,
-					orderIndex: at + i + 1
-				}))
-			]);
+			// When it happens is the whole of where it goes: the minute it was
+			// put at, or the space above the card it was put before. Nothing
+			// else on the day is touched.
+			await place(tripId, poiId, target.day, momentFor(target));
 			placements = await listPlacements(tripId);
 			// Pinned before the plan is worked out, not after: the scheduler has
 			// to already know this one is the traveller's, or it drops it for not
@@ -1599,8 +1589,8 @@
 	}
 
 	/**
-	 * The day and order replan settled, written back onto the stops so the
-	 * second pass re-times that same plan rather than reshuffling it.
+	 * The day and the clock replan settled, written back onto the visits so
+	 * the second pass re-times that same plan rather than reshuffling it.
 	 */
 	function assignedFrom(planned: PlanResult) {
 		// Keyed by the visit: the same place can be on the plan twice, and
@@ -1609,13 +1599,16 @@
 			planned.days.flatMap((d) =>
 				d.stops
 					.filter((st) => st.placementId)
-					.map((st, i) => [st.placementId!, { dayIndex: d.index, orderIndex: i }] as const)
+					.map(
+						(st) =>
+							[st.placementId!, { dayIndex: d.index, at: st.arrive.toISOString() }] as const
+					)
 			)
 		);
 		return everyVisit().map((v) => ({
 			...v,
 			dayIndex: placed.get(v.id)?.dayIndex ?? null,
-			orderIndex: placed.get(v.id)?.orderIndex ?? null
+			at: placed.get(v.id)?.at ?? v.at
 		}));
 	}
 
@@ -1646,7 +1639,8 @@
 				timezone: row.timezone,
 				mealWindows: agreed.windows,
 				curves,
-				meals: mealPlan
+				meals: mealPlan,
+				hotel: { name: row.hotel_name, lat: row.hotel_lat, lng: row.hotel_lng }
 			};
 			// The matrix prices every pair the ordering might need. This is the
 			// one thing worth paying for up front: which stops share a day, and
@@ -1685,17 +1679,36 @@
 							name: was?.name ?? null,
 							minutes: was?.minutes ?? null,
 							dayIndex: d.index,
-							orderIndex: i
+							// What Replan decided this card happens at.
+							at: st.arrive.toISOString()
 						};
 					})
 			);
 			for (const made of decided.filter((r) => r.id.startsWith(NEW) && r.poiId)) {
-				await place(tripId, made.poiId!, made.dayIndex, made.orderIndex);
+				await place(tripId, made.poiId!, made.dayIndex, made.at);
 			}
 			await savePlacements(
 				tripId,
 				decided.filter((r) => !r.id.startsWith(NEW))
 			);
+
+			// What Replan drew that nothing had placed yet: a sitting it
+			// decided the day needed, and the hotel a day ends at when the
+			// traveller has not put one there. They become placements like
+			// everything else -- they hold a clock, they drag, they come off.
+			const invented = next.days.flatMap((d) =>
+				d.stops
+					.filter((st) => !st.placementId && (st.anchorKind === 'meal' || st.anchorKind === 'hotel'))
+					.map((st) => ({
+						kind: st.anchorKind === 'meal' ? ('meal' as const) : ('hotel' as const),
+						meal: st.anchorKind === 'meal' ? mealFor(st) : null,
+						name: st.anchorKind === 'meal' ? null : st.name,
+						minutes: st.durationMin,
+						dayIndex: d.index,
+						at: st.arrive.toISOString()
+					}))
+			);
+			if (invented.length) await placeMany(invented, tripId);
 			// A visit the day could not reach goes back to the wishlist. A
 			// pinned one keeps its day whatever happened, or the traveller
 			// would find it gone with no idea why.
@@ -2120,7 +2133,6 @@
 
 			<div class="tm-seg" role="tablist" aria-label="View">
 				<button role="tab" aria-selected={view === 'plan'} onclick={() => (view = 'plan')}>Day</button>
-				<button role="tab" aria-selected={view === 'board'} onclick={() => (view = 'board')}>Board</button>
 				<button role="tab" aria-selected={view === 'map'} onclick={() => (view = 'map')}>Map</button>
 				<button role="tab" aria-selected={view === 'wishlist'} onclick={() => (view = 'wishlist')}>List</button>
 			</div>
@@ -2195,34 +2207,7 @@
 			</div>
 		{/if}
 
-		{#if view === 'board'}
-			<div class="min-h-0 min-w-0 flex-1 overflow-hidden">
-				{#if !pois.length}
-					<div class="tm-card m-4" style="background: var(--tm-surface-2)">
-						<p class="tm-card__title">Nothing to plan yet</p>
-						<p class="tm-card__meta">Add some places and the days will arrange themselves.</p>
-					</div>
-				{:else if result}
-					<PlanBoard
-						{days}
-						planned={result.days}
-						timezone={row.timezone}
-						{dayColor}
-						{drag}
-						pinned={pinnedIds}
-						onpick={(id) => openCard(id)}
-						onhold={(id) => openCard(id)}
-						onpin={(id) => togglePin(id)}
-						onholdanchor={(stop, dayIdx) =>
-							stop.anchorKind === 'meal' ? holdMeal(stop, dayIdx) : holdAllowance(stop, dayIdx)}
-						onmovemeal={(stop, dayIdx, minutes) => moveMeal(stop, dayIdx, minutes)}
-						onfillmeal={(stop, dayIdx) =>
-							(slot = { day: dayIdx, before: null, meal: stop.name })}
-						onadd={(dayIdx, beforeId) => (slot = { day: dayIdx, before: beforeId })}
-					/>
-				{/if}
-			</div>
-		{:else if view === 'map'}
+		{#if view === 'map'}
 			<div class="flex-1"><TripMap {markers} {routes} center={centre} /></div>
 		{:else if view === 'wishlist'}
 			<div class="flex-1 overflow-y-auto p-4">
@@ -2357,6 +2342,12 @@
 						{@const after = emptyMeal
 							? current.stops.slice(i + 1).find((x) => x.poiId)
 							: undefined}
+						<!-- The way in and the way out: the tickets the traveller
+						     holds, in the order the tickets say. Nothing goes
+						     between an airport and its flight, so these take no
+						     drop. -->
+						{@const journey =
+							stop.anchorKind === 'terminal' || stop.anchorKind === 'service'}
 						{@const t = cardTimes(
 							stop.timeLabel,
 							hhmm(stop.arrive, row.timezone),
@@ -2394,8 +2385,9 @@
 										: () => {}}
 							class:tm-stop--above={landing === i}
 							class:tm-stop--below={landing === i + 1 && i === current.stops.length - 1}
-							data-slot-index={i}
-							data-slot-day={dayIndex}
+							{...journey
+								? {}
+								: { 'data-slot-index': i, 'data-slot-day': dayIndex }}
 							style={grabId && drag.state.id === grabId ? 'opacity:0.35' : ''}
 							role={emptyMeal ? 'button' : undefined}
 							tabindex={emptyMeal ? 0 : undefined}

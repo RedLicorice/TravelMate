@@ -37,7 +37,7 @@ describe('the last day must reach check-in', () => {
 				durationMin: 120,
 				priority: 3,
 				dayIndex: days.length - 1,
-				orderIndex: 0
+				at: '2026-10-02T08:00:00Z'
 			}
 		];
 		const result = schedule({

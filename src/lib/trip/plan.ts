@@ -21,6 +21,7 @@ export type PlanStopRow = {
 	 */
 	placement_id: string | null;
 	day_index: number;
+	/** Written for older clients. Nothing reads it: a day goes by the clock. */
 	order_index: number;
 	poi_id: string | null;
 	name: string;
@@ -140,7 +141,7 @@ export async function savePlan(
 	const byDay = new Map<number, PlanStopRow[]>();
 	for (const r of known) byDay.set(r.day_index, [...(byDay.get(r.day_index) ?? []), r]);
 	for (const [day, rows] of byDay) {
-		const ordered = [...rows].sort((a, b) => a.order_index - b.order_index);
+		const ordered = orderedRows(rows);
 		const keys = identities(
 			day,
 			ordered.map((r) => ({
@@ -196,6 +197,38 @@ export async function loadPlan(tripId: string): Promise<PlanStopRow[]> {
 	return (data ?? []) as PlanStopRow[];
 }
 
+/**
+ * A day's rows in the order they happen.
+ *
+ * By the clock, which is what orders a day -- except for the journeys at
+ * either end of the trip. A journey is atomic: airport, flight, airport;
+ * station, train, station. It is the tickets the traveller holds, in the
+ * order the tickets say, and it is not theirs to rearrange and not the
+ * plan's either. So the run of journey cards the day opens with stays as it
+ * was written, the run it closes with likewise, and the clock orders what
+ * lies between them -- which is the part of the day anybody can move.
+ */
+const isJourney = (r: PlanStopRow) => r.anchor_kind === 'terminal' || r.anchor_kind === 'service';
+
+export function orderedRows(rows: PlanStopRow[]): PlanStopRow[] {
+	const days = new Map<number, PlanStopRow[]>();
+	for (const r of rows) days.set(r.day_index, [...(days.get(r.day_index) ?? []), r]);
+	const out: PlanStopRow[] = [];
+	for (const day of [...days.keys()].sort((a, b) => a - b)) {
+		const stored = days.get(day)!;
+		let head = 0;
+		while (head < stored.length && isJourney(stored[head])) head++;
+		let tail = stored.length;
+		while (tail > head && isJourney(stored[tail - 1])) tail--;
+		out.push(
+			...stored.slice(0, head),
+			...stored.slice(head, tail).sort((a, b) => a.starts_at.localeCompare(b.starts_at)),
+			...stored.slice(tail)
+		);
+	}
+	return out;
+}
+
 const toLeg = (row: PlanStopRow): Leg | null => {
 	if (row.leg_mode === null) return null;
 	const km = Number(row.leg_km ?? 0);
@@ -247,9 +280,7 @@ export function toPlannedDays(rows: PlanStopRow[], days: Day[]): PlannedDay[] {
 		overflowed: []
 	}));
 
-	for (const row of [...rows].sort(
-		(a, b) => a.day_index - b.day_index || a.order_index - b.order_index
-	)) {
+	for (const row of orderedRows(rows)) {
 		planned[row.day_index]?.stops.push({
 			id: row.id,
 			placementId: row.placement_id,
@@ -291,7 +322,7 @@ export function tableFromPlan(rows: PlanStopRow[]): TravelTable {
 		byDay.set(row.day_index, day);
 	}
 	for (const day of byDay.values()) {
-		const ordered = [...day].sort((a, b) => a.order_index - b.order_index);
+		const ordered = orderedRows(day);
 		ordered.forEach((row, i) => {
 			const previous = ordered[i - 1];
 			if (!previous || row.leg_source !== 'routed' || !row.leg_mode) return;

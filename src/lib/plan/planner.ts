@@ -18,16 +18,21 @@ import {
 	slotsFrom,
 	toHHMM,
 	waitUntilSlot,
+	type MealName,
 	type MealSlot,
 	type MealWindows
 } from './meals';
 
 export type PlanPoi = {
 	/**
-	 * The placement: this visit, on this day, in this position. Two visits to
-	 * the same cafe are two of these, and everything that orders, pins, drags
-	 * or drops a stop works in these -- because "the cafe" cannot say which of
+	 * The placement: this visit, on this day, at this time. Two visits to the
+	 * same cafe are two of these, and everything that orders, pins, drags or
+	 * drops a stop works in these -- because "the cafe" cannot say which of
 	 * Tuesday and Thursday is being moved.
+	 *
+	 * Empty on a card the planner invented itself and nothing has stored yet;
+	 * such a card comes back with no placementId, which is what saving gives
+	 * one to.
 	 */
 	id: string;
 	/**
@@ -38,11 +43,15 @@ export type PlanPoi = {
 	/**
 	 * What this placement is of. Absent means a stop. A 'hotel' or a 'chore'
 	 * is an anchor -- the hotel the day starts from, getting ready, the bags,
-	 * a return in the afternoon -- placed by the traveller and walked where
-	 * they put it. It has the hotel's coordinates, a name and a length, and no
-	 * wishlist row.
+	 * a return in the afternoon -- placed by the traveller and walked at the
+	 * clock they gave it. It has the hotel's coordinates, a name and a length,
+	 * and no wishlist row. A 'meal' is a sitting with nowhere chosen yet: it
+	 * says which meal it is in `meal`, happens wherever the day already is,
+	 * and takes the time it was given.
 	 */
-	kind?: 'stop' | 'hotel' | 'chore';
+	kind?: 'stop' | 'hotel' | 'chore' | 'meal';
+	/** Which sitting a 'meal' card is. */
+	meal?: MealName | null;
 	name: string;
 	lat: number;
 	lng: number;
@@ -51,17 +60,21 @@ export type PlanPoi = {
 	/** 1-5, how much the traveller wants this. 3 when unsaid. */
 	priority: number;
 	dayIndex: number | null;
-	orderIndex: number | null;
 	/**
-	 * Held where the traveller put it. Regenerate reshuffles everything around
-	 * it rather than moving it.
+	 * This card's own clock, as an ISO instant. Everything holds one. A day is
+	 * its cards in the order their clocks say; a re-time walks each card at
+	 * its clock and says whether the traveller can make it; Replan writes new
+	 * ones onto everything it is allowed to move.
+	 */
+	at: string;
+	/** Not read. Position is no longer a concept; the clock orders the day. */
+	orderIndex?: number | null;
+	/**
+	 * Held where the traveller put it -- its day and its clock. Regenerate
+	 * reshuffles everything around it rather than moving it.
 	 */
 	pinned?: boolean;
-	/**
-	 * The exact moment a pin holds, as an ISO instant. A pin without one holds
-	 * only its day and its place in the order, which is what every pin made
-	 * before times were held does.
-	 */
+	/** Not read. A pin holds `at`; there is no second moment to hold. */
 	pinnedAt?: string | null;
 	/**
 	 * Where this stop lets you out, when that is not where you got on. A cable
@@ -110,8 +123,10 @@ export type PlannedStop = {
 	/**
 	 * The visit: which placement this card is. What a drag moves and a delete
 	 * removes, since two cards for the same cafe share a poiId and only this
-	 * tells them apart. Null for an anchor, and for a meal the traveller put in
-	 * a slot by hand -- that one lives in the slot, not in a placement.
+	 * tells them apart. Null for a card the planner invented -- a hotel to
+	 * close a day, an empty meal -- and for a meal the traveller put in a slot
+	 * by hand, which lives in the slot, not in a placement. After a Replan,
+	 * `arrive` is the clock the caller stores on this placement.
 	 */
 	placementId: string | null;
 	name: string;
@@ -163,11 +178,23 @@ export type PlanInput = {
 	/**
 	 * What the traveller has said about particular meals, keyed by day and
 	 * meal. Absent entries are the plan's to decide, which is most of them.
+	 * Read by Replan only: a re-time walks the cards it is given.
 	 */
 	meals?: MealPlan;
+	/**
+	 * Where the traveller sleeps. Replan closes every day on a hotel card; a
+	 * day without one gets this drawn at its end, and the caller stores it.
+	 * Without it a day without a hotel simply ends at its last card.
+	 */
+	hotel?: { name: string; lat: number; lng: number } | null;
 };
 
 const at = (p: { lat: number; lng: number }): LatLng => ({ lat: p.lat, lng: p.lng });
+
+/** Ascending by each card's own clock: the only order a day has. */
+const byClock = (a: PlanPoi, b: PlanPoi) => Date.parse(a.at) - Date.parse(b.at);
+
+const OFF_HOURS: Warning = { kind: 'off-hours', message: 'Not really a mealtime' };
 
 /**
  * The furniture of a day: the hotel, or a chore done at it. Placed by the
@@ -178,12 +205,21 @@ export const isAnchor = (p: PlanPoi): p is PlanPoi & { kind: 'hotel' | 'chore' }
 	p.kind === 'hotel' || p.kind === 'chore';
 
 /**
- * Whether a placement stays exactly where the traveller put it: a pin, or an
- * anchor. Everything that reorders a day or moves a stop between days asks
- * this rather than `pinned`, so an anchor is held whether or not the caller
- * remembered to pin it.
+ * Whether a placement stays where the traveller put it: a pin, an anchor, or
+ * a meal container. Everything that reorders a day or moves a stop between
+ * days asks this rather than `pinned`, so an anchor is held whether or not the
+ * caller remembered to pin it. Only a pin also holds its clock.
  */
-const stays = (p: PlanPoi) => !!p.pinned || isAnchor(p);
+const stays = (p: PlanPoi) => !!p.pinned || isAnchor(p) || p.kind === 'meal';
+
+/**
+ * Whether a card's clock is already decided: a pin, or furniture the traveller
+ * placed -- the hotel, a chore, a meal container. Replan arranges the free
+ * stops around such a card and never rewrites its time. The one card whose
+ * clock is the walk's to give is the closing hotel Replan draws itself, which
+ * has no stored row and so no stated time.
+ */
+const holdsClock = (p: PlanPoi) => !!p.pinned || ((isAnchor(p) || p.kind === 'meal') && p.id !== '');
 
 /**
  * The visits as places, for the crowd table. Busyness belongs to the venue:
@@ -258,7 +294,7 @@ export const BLOCK_CATEGORY = 'block';
  * trip. A stored plan older than this re-times itself when the trip is opened,
  * so the traveller never has to tap Replan because the app changed.
  */
-export const PLANNER_VERSION = 3;
+export const PLANNER_VERSION = 4;
 
 /** The default when nobody has rated a stop: wanting it averagely. */
 const NEUTRAL_PRIORITY = 3;
@@ -329,9 +365,9 @@ function kmeans(pois: PlanPoi[], k: number, rounds = 8): number[] {
  * Pinned stops are not distributed. They are placed on the day they are already
  * on, and the free stops are clustered around them -- so a pin both keeps its
  * day and spends that day's minutes, which is what stops the rest of the day
- * being planned as though the pin were not there. The day's anchors are held
- * the same way: the hotel and the chores are placements now, and the time
- * they take is counted against the day through `load` like any stop's.
+ * being planned as though the pin were not there. The day's anchors and meal
+ * containers are held the same way: they are placements, and the time they
+ * take is counted against the day through `load` like any stop's.
  */
 export function assignDays(
 	pois: PlanPoi[],
@@ -348,8 +384,8 @@ export function assignDays(
 
 	// An anchor on a day that no longer exists is not free to be clustered
 	// somewhere: it belongs to a day the dates have since removed, and the
-	// caller is the one to tidy that up.
-	const free = pois.filter((p) => !held.includes(p) && !isAnchor(p));
+	// caller is the one to tidy that up. A meal container the same.
+	const free = pois.filter((p) => !held.includes(p) && !isAnchor(p) && p.kind !== 'meal');
 	if (!free.length) return buckets;
 
 	const labels = kmeans(free, Math.min(usable.length, free.length));
@@ -448,9 +484,30 @@ function centroid(list: PlanPoi[]): LatLng | null {
 // ------------------------------------------------------------------ ordering
 
 /**
+ * The rest of a day as it will actually be walked: the restaurants the meal
+ * pass may seat, what the traveller has said about the slots, which day this
+ * is, the places they put in a slot by hand, and the empty containers the day
+ * already has -- so an invented meal keeps the id of the one it replaces.
+ *
+ * Without these, 2-opt scored a day with no meals in it at all and then the
+ * real walk seated them -- so the order was chosen against one day and the
+ * overflow fell out of another.
+ */
+type Rest = {
+	diners?: PlanPoi[];
+	says?: Map<string, MealSlotRow>;
+	dayIndex?: number;
+	picked?: Map<string, PlanPoi>;
+	containers?: Map<string, PlanPoi>;
+};
+
+const NO_SAYS: Map<string, MealSlotRow> = new Map();
+const NO_POIS: Map<string, PlanPoi> = new Map();
+
+/**
  * Nearest-neighbour from wherever the day begins, then 2-opt against the full
  * schedule cost. An open path, not a loop: the journey cards are never part of
- * it, and the anchors within it hold the slots the traveller gave them.
+ * it, and the held placements within it keep the order their clocks give them.
  */
 export function orderDay(
 	pois: PlanPoi[],
@@ -460,21 +517,7 @@ export function orderDay(
 	curves: CrowdCurves,
 	slots: MealSlot[],
 	travel: TravelTable,
-	/**
-	 * The rest of the day as it will actually be walked: the restaurants the
-	 * meal pass may seat, what the traveller has said about the slots, and
-	 * which day this is.
-	 *
-	 * Without these, 2-opt scored a day with no meals in it at all and then
-	 * the real walk seated them -- so the order was chosen against one day and
-	 * the overflow fell out of another.
-	 */
-	rest: {
-		diners?: PlanPoi[];
-		says?: Map<string, MealSlotRow>;
-		dayIndex?: number;
-		picked?: Map<string, PlanPoi>;
-	} = {}
+	rest: Rest = {}
 ): PlanPoi[] {
 	if (pois.length < 2) return pois;
 
@@ -483,112 +526,62 @@ export function orderDay(
 	// the first placement -- usually the hotel -- and the nearest neighbour to
 	// nowhere is simply the first stop offered, which is the most wanted.
 	const start = day.fixedStart.at(-1)?.at ?? null;
-	// Pinned stops and anchors hold their place; only the rest are ordered.
-	// Nearest neighbour from wherever the day currently stands, which for a
-	// slot that follows a pin is the pin itself.
+	// Held placements come out in the order their clocks say, whatever else is
+	// true of them; only the free stops are ordered, and they are threaded
+	// between the held ones by time. A held card's clock is when it happens.
+	const held = pois.filter(stays).sort(byClock);
 	const remaining = pois.filter((p) => !stays(p));
-	// By the moment they are held at, where they have one: two pins at 13:00
-	// and 19:00 have an order whatever their stored indices say.
-	// Where the traveller put them, in the order they put them. A pin used to
-	// be seated by the moment its card happened to hold, so a stop dragged
-	// above a meal was pulled back under it by a clock nobody had asked about
-	// -- the order said one thing and the times said another, and the times
-	// won. A pin says Replan may not move this one. Which one comes first is
-	// the order, the same as for everything else on the day.
-	const pins = pois
-		.filter((p) => p.pinned && !isAnchor(p))
-		.sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0));
-	// An anchor has a position and nothing else to say about it: the hotel is
-	// first because the traveller put it first, not because of any clock.
-	const anchors = pois
-		.filter(isAnchor)
-		.sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0));
 
 	const route: PlanPoi[] = [];
-	const held = new Map<number, PlanPoi>();
-	// The anchors take their slots before the pins do. Pins are ranked by the
-	// moments they hold and a pin with no moment ranks last, so the hotel at
-	// index 0 -- which has no moment -- would otherwise be seated after every
-	// dragged stop, and since every drag records a time that was every day
-	// with a drag on it: the morning opening halfway through the afternoon.
-	let nextFree = 0;
-	for (const anchor of anchors) {
-		let slot = Math.min(Math.max(anchor.orderIndex ?? 0, nextFree), pois.length - 1);
-		while (held.has(slot) && slot < pois.length - 1) slot++;
-		// Two anchors past the end of a short day: the second is appended
-		// below, in its stored order, which is still after the first.
-		if (held.has(slot)) break;
-		held.set(slot, anchor);
-		nextFree = slot + 1;
-	}
-	// Slots for the pins, in the order the moments they hold put them. Keyed
-	// off the stored index where that is free and does not contradict the
-	// times -- two pins that both claim index 9 must still come out in the
-	// order their clocks say.
-	nextFree = 0;
-	pins.forEach((pin, rank) => {
-		// Its own place in the day, not its rank among the pins. Taking the rank
-		// put a single pinned stop at the front of the day and, since 2-opt
-		// cannot cross a pin, left everything else behind it to be dropped --
-		// and since every drag records a time, every dragged card did this.
-		// The times still order the pins against each other, through nextFree.
-		const wanted = pin.orderIndex ?? rank;
-		let slot = Math.min(Math.max(wanted, nextFree), pois.length - 1);
-		while (held.has(slot) && slot < pois.length - 1) slot++;
-		// Only ever forwards. Falling back to an earlier slot put a pin before
-		// one it comes after -- two pins stored at the same index came out in
-		// the wrong order however clearly their clocks disagreed. A pin with
-		// nowhere left is appended below, in time order, which is right.
-		if (held.has(slot)) return;
-		held.set(slot, pin);
-		nextFree = slot + 1;
-	});
 	let cursor = start;
-	for (let slot = 0; slot < pois.length; slot++) {
-		const pin = held.get(slot);
-		if (pin) {
-			route.push(pin);
-			cursor = at(pin);
-			continue;
+	let clock = day.start.getTime();
+	/**
+	 * Nearest neighbour from wherever the day stands, for as long as the next
+	 * stop and the way on to `next` would be done before `until`.
+	 */
+	const thread = (until: number, next: PlanPoi | null) => {
+		while (remaining.length) {
+			let bestI = 0;
+			let bestD = Infinity;
+			remaining.forEach((p, i) => {
+				const d = cursor ? haversineKm(cursor, at(p)) : 0;
+				if (d < bestD) {
+					bestD = d;
+					bestI = i;
+				}
+			});
+			const p = remaining[bestI];
+			const done =
+				clock +
+				((cursor ? leg(cursor, p, allowedModes, false, travel).minutes : 0) + p.durationMin) *
+					60_000;
+			const onward = next ? leg(p.exitAt ?? p, next, allowedModes, false, travel).minutes : 0;
+			if (done + onward * 60_000 > until) break;
+			remaining.splice(bestI, 1);
+			route.push(p);
+			cursor = p.exitAt ?? at(p);
+			clock = done;
 		}
-		if (!remaining.length) continue;
-		let bestI = 0;
-		let bestD = Infinity;
-		remaining.forEach((p, i) => {
-			const d = cursor ? haversineKm(cursor, at(p)) : 0;
-			if (d < bestD) {
-				bestD = d;
-				bestI = i;
-			}
-		});
-		const [next] = remaining.splice(bestI, 1);
-		route.push(next);
-		cursor = at(next);
+	};
+	// Before a card whose clock is decided go the stops that are done by then.
+	// Before the closing hotel Replan drew itself -- the one card with no
+	// clock of its own -- goes everything else: the traveller gets home after
+	// the last stop, not before.
+	for (const h of held) {
+		thread(holdsClock(h) ? Date.parse(h.at) : Infinity, h);
+		route.push(h);
+		const reach =
+			clock + (cursor ? leg(cursor, h, allowedModes, false, travel).minutes : 0) * 60_000;
+		clock = (holdsClock(h) ? Math.max(reach, Date.parse(h.at)) : reach) + h.durationMin * 60_000;
+		cursor = at(h);
 	}
-	// An anchor or a pin whose index landed past the end of a shorter day, or
-	// two claiming one slot: whatever the map could not place still belongs
-	// here, anchors in their stored order and then the pins in theirs.
-	for (const anchor of anchors) if (!route.includes(anchor)) route.push(anchor);
-	for (const pin of pins) if (!route.includes(pin)) route.push(pin);
-	for (const free of remaining) route.push(free);
+	thread(Infinity, null);
 
 	// 2-opt on the real objective: travel minutes plus a soft crowd cost. This
 	// is what lets a museum move out of its 11-15 peak, and what stops it moving
 	// when the detour costs more than the queue.
 	const score = (order: PlanPoi[]) => {
-		const sim = walkClock(
-			order,
-			day,
-			allowedModes,
-			timezone,
-			curves,
-			slots,
-			travel,
-			rest.diners ?? [],
-			rest.says ?? new Map(),
-			rest.dayIndex ?? 0,
-			rest.picked ?? new Map()
-		);
+		const sim = walkClock(order, day, allowedModes, timezone, curves, slots, travel, rest);
 		return (
 			sim.travelMin +
 			CROWD_WEIGHT_MIN * sim.crowdSum +
@@ -624,7 +617,7 @@ export function orderDay(
 			for (let j = i + 1; j < best.length; j++) {
 				// Reversing a segment that contains a pin or an anchor moves it.
 				// Only free stops are permuted, so every held placement keeps
-				// the index the seeding gave it.
+				// the place the seeding gave it.
 				if (best.slice(i, j + 1).some(stays)) continue;
 				const candidate = [...best.slice(0, i), ...best.slice(i, j + 1).reverse(), ...best.slice(j + 1)];
 				const s = score(candidate);
@@ -654,8 +647,14 @@ type ClockResult = {
 
 /**
  * Walk the day's clock: the journey in, then leg, dwell, leg, dwell through
- * every placement in order -- the hotel and the chores among them, where the
- * traveller put them -- then the journey out.
+ * every placement in sequence -- the hotel and the chores among them, where
+ * the traveller put them -- then the journey out.
+ *
+ * `arrange` is whether the plan is deciding the day. When it is, a free stop
+ * happens when the walk reaches it, meals are offered as their windows open,
+ * and what does not fit is spilled for Replan to find another day. When it is
+ * not, every card happens at its own clock: the walk only says whether the
+ * traveller can get there by then, and what the day costs.
  */
 function walkClock(
 	pois: PlanPoi[],
@@ -665,29 +664,8 @@ function walkClock(
 	curves: CrowdCurves,
 	slots: MealSlot[],
 	travel: TravelTable,
-	/**
-	 * Restaurants for this day that the traveller did not pin. Deliberately not
-	 * part of the route: the route settles first, and then each meal window
-	 * takes whichever of these is nearest to wherever the day has them.
-	 */
-	diners: PlanPoi[] = [],
-	/** What the traveller has said about this day's meals. */
-	says: Map<string, MealSlotRow> = new Map(),
-	dayIndex = 0,
-	/**
-	 * Places the traveller put in a slot themselves, already resolved. Seated
-	 * as given: an assignment is not a candidate to be weighed against the
-	 * ones nearby, it is the answer.
-	 */
-	picked: Map<string, PlanPoi> = new Map(),
-	/**
-	 * Whether the day's limits apply. They do when the plan is arranging the
-	 * day itself: what does not fit is spilled, and Replan finds it another
-	 * day. They do not when the traveller has arranged it: every placement
-	 * they made is walked where they put it, and a day that runs past its end
-	 * says so on the cards rather than quietly losing the last of them.
-	 */
-	spill = true
+	rest: Rest = {},
+	arrange = true
 ): ClockResult {
 	const stops: PlannedStop[] = [];
 	const overflowed: PlanPoi[] = [];
@@ -699,34 +677,47 @@ function walkClock(
 	let clock = day.start.getTime();
 	let cursor: LatLng | null = null;
 	let cursorTerminal = false;
+	const diners = rest.diners ?? [];
+	const says = rest.says ?? NO_SAYS;
+	const dayIndex = rest.dayIndex ?? 0;
+	const picked = rest.picked ?? NO_POIS;
+	const containers = rest.containers ?? NO_POIS;
 	/** Meals the day has already had, whether from the wishlist or from us. */
 	const served = new Set<string>();
 	const unseated = [...diners];
 
-	// Meals the traveller placed themselves. Their slots are claimed before the
-	// day is walked, not when the clock reaches them: the meal pass offers a
-	// window as soon as it opens, which is earlier than the route gets to the
-	// stop, so a chosen breakfast would otherwise arrive to find an invented
-	// one already sitting in it and the morning counted twice.
-	//
-	// Every meal left in the route is pinned -- the meal pass owns the rest --
-	// so the time each will be had is known in advance.
-	for (const p of pois) {
-		if (!isMeal(p.category) || !p.pinnedAt) continue;
-		const slot = slotAt(new Date(p.pinnedAt), timezone, slots);
-		if (slot) served.add(slot);
-	}
+	if (arrange) {
+		// Meals the traveller placed themselves. Their slots are claimed before
+		// the day is walked, not when the clock reaches them: the meal pass
+		// offers a window as soon as it opens, which is earlier than the route
+		// gets to the stop, so a chosen breakfast would otherwise arrive to
+		// find an invented one already sitting in it and the morning counted
+		// twice.
+		//
+		// Every meal left in the route holds its clock -- the meal pass owns
+		// the rest -- so the time each will be had is known in advance.
+		for (const p of pois) {
+			if (p.kind === 'meal') {
+				if (p.meal) served.add(p.meal);
+				continue;
+			}
+			if (!isMeal(p.category) || !p.pinned) continue;
+			const slot = slotAt(new Date(p.at), timezone, slots);
+			if (slot) served.add(slot);
+		}
 
-	// A slot the traveller filled with a place that is on this day: that place
-	// is the meal, wherever the day reaches it. Without this the day would walk
-	// their choice and then offer an empty container for the same meal.
-	//
-	// By place, because that is what the slot names: however many visits to
-	// the cafe the day has, one of them is breakfast.
-	const onTheDay = new Set(pois.map((p) => p.poiId));
-	for (const name of MEAL_NAMES) {
-		const id = says.get(mealKey(dayIndex, name))?.poi_id;
-		if (id && onTheDay.has(id)) served.add(name);
+		// A slot the traveller filled with a place that is on this day: that
+		// place is the meal, wherever the day reaches it. Without this the day
+		// would walk their choice and then offer an empty container for the
+		// same meal.
+		//
+		// By place, because that is what the slot names: however many visits
+		// to the cafe the day has, one of them is breakfast.
+		const onTheDay = new Set(pois.map((p) => p.poiId));
+		for (const name of MEAL_NAMES) {
+			const id = says.get(mealKey(dayIndex, name))?.poi_id;
+			if (id && onTheDay.has(id)) served.add(name);
+		}
 	}
 
 	const push = (
@@ -745,7 +736,12 @@ function walkClock(
 		/** Held where the traveller put it, which the card says on screen. */
 		pinned = false,
 		/** Anything else worth saying about this stop. */
-		note: Warning | null = null
+		note: Warning | null = null,
+		/**
+		 * The card's own clock, when it has one that holds. Null means the
+		 * walk decides: the card happens when the traveller gets there.
+		 */
+		at: number | null = null
 	) => {
 		let legIn: Leg | null = null;
 		if (cursor) {
@@ -762,20 +758,20 @@ function walkClock(
 			clock += legIn.minutes * 60_000;
 			travelMin += legIn.minutes;
 		}
-		// A pinned stop happens when the traveller said it happens. Being early
-		// is waiting; being late means the day is over-full, and the warning
-		// below says so rather than the plan quietly sliding the pin.
-		//
-		// Never backwards. Setting the clock to a moment already past rewound
-		// the day: the stop was timed before the one it follows, everything
-		// after it overlapped, and the plan of record showed times that ran
-		// the wrong way.
+		// A card with a clock happens when its clock says. Being early is
+		// waiting; being late means the traveller cannot get here by then, and
+		// the warning below says so rather than the plan quietly sliding the
+		// card. Nothing is moved: the card keeps its stated time and the day
+		// carries on from the end of it.
+		const late = at !== null && clock > at;
+		if (at !== null) clock = at;
 		let arrive = new Date(clock);
 
 		// A meal reached before its slot waits for it rather than being eaten at
 		// the wrong hour -- but only if the day can absorb the wait. Otherwise
 		// the stop keeps its early time and picks up an off-hours warning below.
-		if (!anchor && isMeal(category)) {
+		// Only a stop whose time is the walk's to choose.
+		if (at === null && !anchor && isMeal(category)) {
 			const opens = waitUntilSlot(arrive, timezone, slots);
 			if (
 				opens &&
@@ -801,15 +797,31 @@ function walkClock(
 		const dayIsOver = dayEndMs <= day.start.getTime();
 
 		const warnings: Warning[] = [];
-		// One overflow warning, not two. A card can both run past the end of the
-		// day and be one the day never reaches, and saying so twice told the
-		// traveller nothing they did not know -- while the screen, which draws
-		// warnings keyed by kind, refused to render the trip at all.
-		// Not on the furniture. The hotel at the end of a day cannot run past
-		// the end of the day -- it is where the day ends, and the traveller is
-		// asleep in it. Getting back late is something the stops did; the
-		// cards that say so are the stops.
-		if (runsLate && !dayIsOver && !anchor) {
+		// One overflow warning, not two. A card can both be one the traveller
+		// cannot reach in time and run past the end of the day, and saying so
+		// twice told the traveller nothing they did not know -- while the
+		// screen, which draws warnings keyed by kind, refused to render the
+		// trip at all. Not being able to get there is the more particular
+		// fact, so it wins.
+		// Running past the end is not said on the furniture. The hotel at the
+		// end of a day cannot run past the end of the day -- it is where the
+		// day ends, and the traveller is asleep in it. Getting back late is
+		// something the stops did; the cards that say so are the stops.
+		// The journey is not something the traveller can be late for by
+		// planning badly: it is the ticket they hold, and its cards read what
+		// the ticket reads whatever the day around them does.
+		// Nor is furniture told, while Replan is arranging the day, that it
+		// cannot be reached: the traveller said when it happens, and the free
+		// stops are what Replan arranges to make that so. A re-time still says
+		// it, because a re-time reports the day exactly as it stands.
+		const ticketed = anchorKind === 'terminal' || anchorKind === 'service';
+		// Never on the day's own furniture. Where the hotel is and when the
+		// traveller checks in is something they stated, not something the plan
+		// worked out, and telling them they cannot reach their own hotel is
+		// noise on every card of every day.
+		if (late && !dayIsOver && !ticketed && !anchor) {
+			warnings.push({ kind: 'overflow', message: 'You cannot get here by then' });
+		} else if (runsLate && !dayIsOver && !anchor) {
 			warnings.push({ kind: 'overflow', message: 'Runs past the end of the day' });
 		}
 		if (note) warnings.push(note);
@@ -823,9 +835,7 @@ function walkClock(
 			if (slot) served.add(slot);
 			const miss = mealMiss(arrive, timezone, slots);
 			mealMissHours += miss;
-			if (miss > 0.5) {
-				warnings.push({ kind: 'off-hours', message: 'Not really a mealtime' });
-			}
+			if (miss > 0.5) warnings.push(OFF_HOURS);
 		}
 
 		stops.push({
@@ -850,35 +860,38 @@ function walkClock(
 		cursorTerminal = terminal;
 	};
 
+	// The way in, at the times the tickets say. Every card of a journey sits
+	// at the same coordinates, so walking them would give all of them one
+	// minute and leave a day ordered by the clock with nothing to tell a
+	// flight from the airport it leaves.
 	for (const w of day.fixedStart) {
-		push(w.name, w.at, w.dwellMin, true, null, null, null, w.kind === 'terminal', null, w.kind, w.timeLabel ?? null);
+		push(w.name, w.at, w.dwellMin, true, null, null, null, w.kind === 'terminal', null, w.kind, w.timeLabel ?? null, false, false, null, w.startsAt?.getTime() ?? null);
 	}
 
 	/**
-	 * Offer the meals the day has not had yet, at whichever slot is open.
+	 * The meal pass: fill whatever window is open, from the day's own
+	 * restaurants where one is near enough and from nothing where none is.
 	 *
 	 * A placeholder eats where the traveller already is -- the cursor -- so it
 	 * costs nothing to reach, which is also true of how people actually choose
 	 * lunch. It takes real time, because a day that pretends lunch is free is
 	 * lying about how much of it is left.
 	 *
-	 * `until` is the moment the caller is about to spend: a meal is only
-	 * offered if its window is open before then, so the day fills in order
-	 * rather than collecting three meals at the end. `next` is the index of
-	 * the placement about to be walked, so the way home can be priced through
-	 * whatever anchors still stand between here and the end of the day.
-	 */
-	/**
-	 * The meal pass: fill whatever window is open, from the day's own
-	 * restaurants where one is near enough and from nothing where none is.
-	 *
 	 * Run against a route that is already settled. Restaurants are not part of
 	 * that route -- which is the whole point. Leaving them in it let a sandwich
 	 * shop decide the shape of a day: the route bent towards it, the clock
 	 * stalled waiting for its window, and whichever window it happened to reach
 	 * became the meal. A meal is a thing you do near where you already are.
+	 *
+	 * `until` is the moment the caller is about to spend: a meal is only
+	 * offered if its window is open before then, so the day fills in order
+	 * rather than collecting three meals at the end. `next` is the index of
+	 * the placement about to be walked, so the way home can be priced through
+	 * whatever anchors still stand between here and the end of the day. `by`
+	 * is that placement's clock when it holds one: the meal has to be over
+	 * before it.
 	 */
-	const offerMeals = (until: number, next: number, patient = false) => {
+	const offerMeals = (until: number, next: number, patient = false, by = Infinity) => {
 		for (const slot of slots) {
 			if (served.has(slot.name)) continue;
 
@@ -887,15 +900,7 @@ function walkClock(
 			// Skipped: there is no breakfast that day, and no container either.
 			if (say?.skipped) continue;
 
-			// A time the traveller dragged this meal to is when it opens, and
-			// that sticks. It is not a new window: the window is still the one
-			// in their profile, and the checks below ask their questions of a
-			// dragged meal the same as of any other. A dinner dragged to four
-			// o'clock happens at four, and the container says that four is not
-			// dinner time, rather than being excused the question because
-			// someone has already decided.
-			const moved = say?.at ? new Date(say.at).getTime() : null;
-			const opens = moved ?? zonedInstant(day.date, toHHMM(slot.from), timezone).getTime();
+			const opens = zonedInstant(day.date, toHHMM(slot.from), timezone).getTime();
 			const closes = zonedInstant(day.date, toHHMM(slot.to), timezone).getTime();
 			if (opens > until) continue;
 
@@ -905,19 +910,8 @@ function walkClock(
 			// dinner with it, and the honest answer is a late dinner, not no
 			// dinner at all. A window that had already closed when the day
 			// started is a different thing and stays gone.
-			//
-			// A meal dragged past its window is not late until its own time has
-			// gone by as well. The window closing at half past nine is no reason
-			// to have a dinner asked for at eleven any earlier than eleven.
-			const late = Math.max(opens, closes) < clock;
+			const late = closes < clock;
 			if (late && !(patient && opens >= day.start.getTime())) continue;
-
-			// Not worth standing about for while there are still stops to make:
-			// skipped now, offered again after the next one, by which time the
-			// window is open and there is no gap. At the end of the day there is
-			// nothing else to do, so the wait is worth it -- otherwise a day
-			// that finishes at four has no dinner at all.
-			if (!patient && opens - clock > MAX_MEAL_WAIT_MIN * 60_000) continue;
 
 			// Before anything has been walked there is nowhere the traveller
 			// already is, so the meal is had where they are about to be. A day
@@ -960,21 +954,25 @@ function walkClock(
 			const minutes = chosen?.durationMin ?? MEAL_MINUTES[slot.name];
 			const hop = chosen ? leg(here, to, allowedModes, cursorTerminal, travel).minutes : 0;
 			const start = Math.max(clock + hop * 60_000, opens);
+			// The next card holds its clock: the traveller is idle until then,
+			// so waiting for the window costs nothing -- but the meal has to be
+			// over before that card, or it makes the card unreachable.
+			if (start + minutes * 60_000 > by) continue;
+			// Otherwise not worth standing about for while there are still
+			// stops to make: skipped now, offered again after the next one, by
+			// which time the window is open and there is no gap. At the end of
+			// the day there is nothing else to do, so the wait is worth it --
+			// otherwise a day that finishes at four has no dinner at all.
+			if (by === Infinity && !patient && opens - clock > MAX_MEAL_WAIT_MIN * 60_000) continue;
 			// Would this meal, the way home included, run past the end of the
-			// day? When the plan is arranging the day, that is the end of it:
-			// only a slot the traveller placed goes in regardless, the same as
-			// a pinned stop. When the traveller has arranged the day it is
-			// seated all the same, and says it runs long like every other card
-			// -- a day that is too full should look too full, not quietly
-			// shorter. The one thing a meal may never do is push the journey
-			// out past the time on its ticket. On a departure day the day ends
-			// exactly where checking in begins, so the same measure answers
-			// that; and it is asked only of a placeholder, because a
-			// restaurant the traveller placed is theirs to miss a flight for.
-			const theirs = !!say && (!!say.at || !!say.poi_id);
+			// day? Then that is the end of it: only a slot the traveller filled
+			// goes in regardless, the same as a pinned stop. The one thing a
+			// meal may never do is push the journey out past the time on its
+			// ticket. On a departure day the day ends exactly where checking in
+			// begins, so the same measure answers that.
+			const theirs = !!say?.poi_id;
 			const over = start + (minutes + tailCost(to, next)) * 60_000 > dayEndMs;
-			const dropped = spill ? !theirs : !chosen && day.fixedEnd.length > 0;
-			if (over && dropped) continue;
+			if (over && !theirs) continue;
 
 			// The clock really does move, but a placeholder's wait is not
 			// counted against the route: it eats wherever the traveller happens
@@ -996,17 +994,12 @@ function walkClock(
 			} else {
 				// An empty container. It keeps its place and its time, because
 				// a meal nobody has chosen yet is still a meal that will happen.
-				//
-				// Had outside its own window it says so, the way a restaurant
-				// reached at the wrong hour does. That is the whole of the
-				// plan's say over a dragged meal: the time is the traveller's,
-				// the remark that it is not a mealtime is ours. Measured against
-				// this slot alone, because a dinner at one o'clock is inside
-				// lunch and is still not dinner.
-				const miss = mealMiss(new Date(start), timezone, [slot]);
-				const note: Warning | null =
-					miss > 0.5 ? { kind: 'off-hours', message: 'Not really a mealtime' } : null;
-				push(MEAL_LABEL[slot.name], here, minutes, true, null, null, slot.name, false, null, 'meal', null, over, false, note);
+				// Where the day already had one for this sitting, this is that
+				// card, re-timed: it keeps the id, so what is stored is updated
+				// rather than replaced.
+				const note = mealMiss(new Date(start), timezone, [slot]) > 0.5 ? OFF_HOURS : null;
+				const id = containers.get(slot.name)?.id ?? null;
+				push(MEAL_LABEL[slot.name], here, minutes, true, null, id, null, false, null, 'meal', null, over, false, note);
 			}
 		}
 	};
@@ -1060,28 +1053,27 @@ function walkClock(
 
 	for (let i = 0; i < pois.length; i++) {
 		const p = pois[i];
-		const anchorKind = isAnchor(p) ? p.kind : null;
+		const anchorKind = isAnchor(p) ? p.kind : p.kind === 'meal' ? 'meal' : null;
 		const anchor = anchorKind !== null;
-		// Would this stop, plus getting to the day's final anchor, run past the
-		// end of the day? If so it does not fit -- and neither will anything
-		// after it, since the route is ordered.
+		// Its clock, where that holds: every card on a re-time, and a pin or
+		// the traveller's own furniture when the plan is arranging the day.
+		// Anything else happens when the walk gets there.
+		const held = !arrange || holdsClock(p) ? Date.parse(p.at) : null;
 		// A block of time the traveller added themselves -- a rest, an errand,
-		// a nap -- happens wherever they already are, the same as a meal the
-		// plan supplies. Its stored coordinates are a formality. An anchor's
-		// are not: the hotel is a place, and getting back to it is a leg.
-		const where = anchor
+		// a nap -- happens wherever they already are, the same as a meal. Its
+		// stored coordinates are a formality. An anchor's are not: the hotel
+		// is a place, and getting back to it is a leg.
+		const where = isAnchor(p)
 			? at(p)
-			: p.category === BLOCK_CATEGORY
+			: p.kind === 'meal' || p.category === BLOCK_CATEGORY
 				? (cursor ?? at(p))
 				: nearestBranch(p, cursor ?? at(p), haversineKm);
-		// A pin holds a position, not a clock.
-		//
-		// It used to hold the moment its card had, and the day was then seated
-		// around that moment -- so where a card sat and when it happened were
-		// two facts that could disagree, and when they did the clock won. They
-		// are not two facts. A day is a walk: where a card sits is when it
-		// happens, and moving it is the only way to change either.
-		const held = null;
+		/** When this card would be over: its clock plus its length, or the walk's. */
+		const ends = () => {
+			const leg_ = leg(cursor ?? where, where, allowedModes, cursorTerminal, travel);
+			const reach = clock + (cursor ? leg_.minutes : 0) * 60_000;
+			return (held ?? reach) + p.durationMin * 60_000;
+		};
 		// Anything whose window opens before this stop would end. Offered here
 		// so the day fills in order rather than saving every meal until the end.
 		//
@@ -1097,13 +1089,13 @@ function walkClock(
 		// not after it -- but only once the day is somewhere. Before the
 		// opening hotel there is nowhere to eat but the hotel itself, and
 		// breakfast is had from it, not on the way to it.
-		const reach = () => {
-			const leg_ = leg(cursor ?? where, where, allowedModes, cursorTerminal, travel);
-			return clock + (cursor ? leg_.minutes : 0) * 60_000 + p.durationMin * 60_000;
-		};
-		if (i === closing) offerMeals(dayEndMs, i, true);
-		else if (i < closing && p.kind !== 'chore' && (!anchor || cursor)) offerMeals(reach(), i);
-		const finish = reach();
+		if (arrange) {
+			if (i === closing) offerMeals(dayEndMs, i, true);
+			else if (i < closing && p.kind !== 'chore' && (!anchor || cursor)) {
+				offerMeals(ends(), i, false, held ?? Infinity);
+			}
+		}
+		const finish = ends();
 
 		// The way home starts from wherever the stop lets the traveller out --
 		// measuring it from the entrance would price a cable car's whole span
@@ -1112,14 +1104,33 @@ function walkClock(
 		// A stop the traveller pinned is not the planner's to drop. They put it
 		// there; it goes in, and if the day runs long the plan says so rather
 		// than quietly deciding for them. An anchor the same: there is no plan
-		// in which the traveller does not go back to the hotel.
-		// A pin waits for its moment, so its real end is that moment plus its
-		// length -- not where the route happened to arrive.
-		const ends = finish;
-		const runsLate = ends + tailCost(leaves, i + 1) * 60_000 > day.end.getTime();
-		if (runsLate && spill && !stays(p)) {
-			overflowed.push(p);
-			continue;
+		// in which the traveller does not go back to the hotel. And on a
+		// re-time nothing at all is dropped: the traveller arranged the day,
+		// and a day that is too full should look too full.
+		const runsLate = finish + tailCost(leaves, i + 1) * 60_000 > dayEndMs;
+		if (arrange && !stays(p)) {
+			// A free stop must also be done, and the traveller on their way,
+			// before the next card whose clock is decided: the hotel at six is
+			// the hotel at six, and a museum that runs into it does not fit this
+			// day -- it is spilled, and Replan finds it another.
+			let next = i + 1;
+			while (next < pois.length && !holdsClock(pois[next])) next++;
+			const missesNext =
+				next < pois.length &&
+				finish + leg(leaves, pois[next], allowedModes, false, travel).minutes * 60_000 >
+					Date.parse(pois[next].at);
+			if (runsLate || missesNext) {
+				overflowed.push(p);
+				continue;
+			}
+		}
+		// An empty container had outside its own window says so. Measured
+		// against its slot alone, because a dinner at one o'clock is inside
+		// lunch and is still not dinner.
+		let note: Warning | null = null;
+		if (p.kind === 'meal' && held !== null) {
+			const slot = slots.find((s) => s.name === p.meal);
+			if (slot && mealMiss(new Date(held), timezone, [slot]) > 0.5) note = OFF_HOURS;
 		}
 		push(
 			p.name,
@@ -1127,62 +1138,62 @@ function walkClock(
 			p.durationMin,
 			anchor,
 			p.poiId,
-			p.id,
-			p.category,
+			p.id || null,
+			p.kind === 'meal' ? null : p.category,
 			false,
 			p.exitAt ?? null,
 			anchorKind,
 			null,
 			runsLate,
-			p.pinned ?? false
+			p.pinned ?? false,
+			note,
+			held
 		);
 	}
 
 	// Whatever the day never got round to, while there is still room for it --
 	// on a day that does not close on an anchor, since one that does has had
 	// this sweep already, before going home.
-	if (closing >= pois.length) offerMeals(dayEndMs, pois.length, true);
+	if (arrange && closing >= pois.length) offerMeals(dayEndMs, pois.length, true);
 
+	// The way out, likewise: the tickets, in the order the tickets say.
 	for (const w of day.fixedEnd) {
-		push(w.name, w.at, w.dwellMin, true, null, null, null, w.kind === 'terminal', null, w.kind, w.timeLabel ?? null);
+		push(w.name, w.at, w.dwellMin, true, null, null, null, w.kind === 'terminal', null, w.kind, w.timeLabel ?? null, false, false, null, w.startsAt?.getTime() ?? null);
 	}
 
 	return { stops, overflowed, travelMin, crowdSum, mealMissHours, waitedMin };
 }
 
 /**
- * A day's stops split in two: what the route is made of, and the restaurants
- * the meal pass may seat.
+ * A day's cards split three ways: what the route is made of, the restaurants
+ * the meal pass may seat, and the empty containers it may re-time.
  *
- * A pinned restaurant stays in the route -- the traveller said where and when,
- * and that is not the meal pass's to reconsider.
+ * A pinned restaurant or container stays in the route -- the traveller said
+ * where and when, and that is not the meal pass's to reconsider.
  */
-function split(list: PlanPoi[], chosen: Set<string> = new Set()): { route: PlanPoi[]; diners: PlanPoi[] } {
-	// A place the traveller put in a slot stays in the route, like a pinned
-	// one: they said what it is and where it goes, and the meal pass has
-	// nothing left to decide about it.
-	const diners = list.filter(
-		(p) => p.poiId !== null && isMeal(p.category) && !p.pinned && !chosen.has(p.poiId)
-	);
-	return { route: list.filter((p) => !diners.includes(p)), diners };
+function split(list: PlanPoi[]): { route: PlanPoi[]; diners: PlanPoi[]; containers: Map<string, PlanPoi> } {
+	const diners = list.filter((p) => p.poiId !== null && isMeal(p.category) && !p.pinned);
+	const containers = new Map<string, PlanPoi>();
+	for (const p of list) if (p.kind === 'meal' && p.meal && !p.pinned) containers.set(p.meal, p);
+	return {
+		route: list.filter((p) => !diners.includes(p) && !(p.kind === 'meal' && !p.pinned)),
+		diners,
+		containers
+	};
 }
 
 // ------------------------------------------------------------------ entrypoints
 
 /**
- * Steps 3-5. Respects the day/order the traveller already chose -- and, since
- * it is the traveller's arrangement, all of it. Every drag, every placement
- * and every reopen re-times the plan through here, and a day they have
- * overfilled is walked to its end with its cards saying it runs long. The
- * day's limits belong to Replan, which arranges the day itself and may spill
- * what does not fit.
+ * A re-time. Every card happens at its own clock, in the order the clocks
+ * say; the walk fills in the legs, the lengths, what the day costs and
+ * whether each card can be reached by then. Nothing is moved, dropped,
+ * seated or invented -- the traveller arranged this day, and a day they have
+ * overfilled is walked to its end with its cards saying so. The day's limits
+ * belong to Replan, which arranges the day itself and may spill what does
+ * not fit.
  */
 export function schedule(input: PlanInput): PlanResult {
-	return retime(input, false);
-}
-
-/** The re-time proper, with the day's limits on or off. */
-function retime(input: PlanInput, spill: boolean): PlanResult {
 	const curves = input.curves ?? categoryCurves(places(input.pois), input.days, input.timezone);
 	const slots = slotsFrom(input.mealWindows ?? DEFAULT_WINDOWS);
 	const travel = input.travel ?? noTravel;
@@ -1190,85 +1201,30 @@ function retime(input: PlanInput, spill: boolean): PlanResult {
 	input.days.forEach((_, i) => byDay.set(i, []));
 	const unplaced: Unplaced[] = [];
 
-	// Places the traveller put in a meal slot. The slot says which meal they
-	// are; it does not take them out of the day. A place chosen for lunch is a
-	// stop on that day, in the order it was put in, and is dragged about like
-	// any other -- which is what was wrong before: it was lifted out of the
-	// route entirely and re-seated by the meal pass, so dropping anything
-	// before it did nothing at all.
-	const says = input.meals ?? new Map();
-	/** Every place named by a slot, on whatever day. */
-	const chosen = new Set(
-		[...says.values()].map((r) => r.poi_id).filter((id): id is string => !!id)
-	);
-
 	for (const p of input.pois) {
-		if (p.dayIndex === null || !byDay.has(p.dayIndex)) {
-			// Chosen for a meal before it had a day of its own: the slot is where
-			// it goes, so it is not waiting for a plan.
-			if (p.poiId !== null && chosen.has(p.poiId)) continue;
-			// An anchor is never waiting for a plan either. Off any day it is
-			// furniture from a day the dates have removed, and there is nothing
-			// to say about it that would help.
-			if (isAnchor(p)) continue;
-			// Never been through the planner, or points at a day that no longer
-			// exists because the dates moved.
-			unplaced.push({ poi: p, reason: 'not-planned-yet' });
-		} else {
+		if (p.dayIndex !== null && byDay.has(p.dayIndex)) {
 			byDay.get(p.dayIndex)!.push(p);
+			continue;
 		}
-	}
-	for (const list of byDay.values()) {
-		list.sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0));
+		// Furniture off any day belongs to a day the dates have removed, and
+		// there is nothing to say about it that would help. A stop off any day
+		// has never been through the planner, or points at a day that no
+		// longer exists because the dates moved.
+		if (isAnchor(p) || p.kind === 'meal') continue;
+		unplaced.push({ poi: p, reason: 'not-planned-yet' });
 	}
 
 	const days = input.days.map((day, i) => {
-		// Nothing on this day is a candidate for anything. The traveller put
-		// each of these somewhere, and a re-time walks them where they are --
-		// pulling an unpinned restaurant out to be re-seated by its window is
-		// what sent one dragged into a free hour back to the wishlist.
-		const route = byDay.get(i)!;
-		const diners: PlanPoi[] = [];
-		void chosen;
-
-		// Slots the traveller filled with a place that is not on this day --
-		// chosen before it had one, or left over from a day that moved. A place
-		// already on the day is walked where it sits; seating it again would put
-		// it on the day twice.
-		//
-		// All by place. The slot names one, and any visit to it will do to say
-		// where it is and how long it takes, which is all the meal pass asks.
-		const here = new Set(byDay.get(i)!.map((p) => p.poiId));
-		const picked = new Map<string, PlanPoi>();
-		for (const meal of MEAL_NAMES) {
-			const id = says.get(mealKey(i, meal))?.poi_id;
-			if (!id || here.has(id)) continue;
-			const poi = input.pois.find((p) => p.poiId === id);
-			if (poi) picked.set(meal, poi);
-		}
 		const result = walkClock(
-			route,
+			byDay.get(i)!.sort(byClock),
 			day,
 			input.allowedModes,
 			input.timezone,
 			curves,
 			slots,
 			travel,
-			diners,
-			says,
-			i,
-			picked,
-			spill
-		);
-		unplaced.push(...result.overflowed.map((poi) => ({ poi, reason: 'day-full' as const })));
-		// A restaurant no mealtime came near enough to reach. By visit: two
-		// visits to the same cafe are two candidates, and seating one for
-		// breakfast says nothing about whether the other found a lunch.
-		const seated = new Set(result.stops.map((st) => st.placementId));
-		unplaced.push(
-			...diners
-				.filter((d) => !seated.has(d.id))
-				.map((poi) => ({ poi, reason: 'no-mealtime' as const }))
+			{},
+			false
 		);
 		return { index: i, date: day.date, stops: result.stops, overflowed: result.overflowed };
 	});
@@ -1277,20 +1233,27 @@ function retime(input: PlanInput, spill: boolean): PlanResult {
 }
 
 /**
- * An order index that puts a stop after the last of a day's stops and still
- * ahead of the anchors that close it. Whatever the plan moves onto a day is a
- * stop, and the traveller goes back to the hotel after it, not before. Half a
- * step, so it sorts between the day's own dense indices without renumbering
- * them; nothing stores this, the walk hands out fresh indices afterwards.
+ * The hotel that closes a day the traveller has not closed themselves. Its
+ * clock is the day's end, which puts it after everything else; the walk gives
+ * it the moment the traveller actually gets back. No id: the caller stores it.
  */
-function endOfDay(placed: PlanPoi[], dayIndex: number): number {
-	const day = placed
-		.filter((p) => p.dayIndex === dayIndex)
-		.sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0));
-	let k = day.length;
-	while (k > 0 && isAnchor(day[k - 1])) k--;
-	return k === day.length ? 999 : (day[k].orderIndex ?? 0) - 0.5;
-}
+const closingHotel = (
+	hotel: { name: string; lat: number; lng: number },
+	day: Day,
+	dayIndex: number
+): PlanPoi => ({
+	id: '',
+	poiId: null,
+	kind: 'hotel',
+	name: hotel.name,
+	lat: hotel.lat,
+	lng: hotel.lng,
+	category: null,
+	durationMin: 0,
+	priority: NEUTRAL_PRIORITY,
+	dayIndex,
+	at: day.end.toISOString()
+});
 
 /** Steps 1-5. A full reshuffle -- what the Replan control runs. */
 export function replan(input: PlanInput): PlanResult {
@@ -1307,15 +1270,15 @@ export function replan(input: PlanInput): PlanResult {
 				index,
 				date: day.date,
 				stops: walkClock(
-					input.pois
-						.filter((p) => isAnchor(p) && p.dayIndex === index)
-						.sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0)),
+					input.pois.filter((p) => isAnchor(p) && p.dayIndex === index).sort(byClock),
 					day,
 					input.allowedModes,
 					input.timezone,
 					curves,
 					slots,
-					travel
+					travel,
+					{},
+					false
 				).stops,
 				overflowed: []
 			})),
@@ -1337,40 +1300,35 @@ export function replan(input: PlanInput): PlanResult {
 	// empty one. Every test fixture ends at 19:00, where dinner does not fit,
 	// which is why nothing caught it.
 	const anchorMin = input.days.map((day) => {
-		const stops = walkClock(
-			[],
-			day,
-			input.allowedModes,
-			input.timezone,
-			curves,
-			[],
-			travel
-		).stops;
+		const stops = walkClock([], day, input.allowedModes, input.timezone, curves, [], travel).stops;
 		const last = stops[stops.length - 1];
 		return last ? Math.max(0, (last.depart.getTime() - day.start.getTime()) / 60_000) : 0;
 	});
 
 	const buckets = assignDays(input.pois, input.days, anchorMin);
+	const says = input.meals ?? NO_SAYS;
 
-	const assigned: PlanPoi[] = [];
+	// Each day as a sequence, and the rest of what its walk needs. The
+	// sequence is Replan's own -- what orderDay chose -- and the walk writes
+	// the clocks onto it; nothing here is sorted by a stored time, because
+	// the stored times are what Replan is about to replace.
+	const routes = new Map<number, PlanPoi[]>();
+	const rests = new Map<number, Rest>();
 	const spilled: PlanPoi[] = [];
 	buckets.forEach((list, dayIndex) => {
-		// Cap meals per day before ordering: geographic clustering happily puts
-		// three restaurants in one day, and nobody eats three sit-down meals.
+		const day = input.days[dayIndex];
 		const byWant = (a: PlanPoi, b: PlanPoi) =>
 			(b.priority ?? NEUTRAL_PRIORITY) - (a.priority ?? NEUTRAL_PRIORITY);
-		const { route, diners } = split(list);
-		// More restaurants than the day has sittings. The least wanted wait for
-		// another day rather than crowding out the sights.
+		const { route, diners, containers } = split(list);
+		// Cap meals per day before ordering: geographic clustering happily puts
+		// three restaurants in one day, and nobody eats three sit-down meals.
+		// More restaurants than the day has sittings: the least wanted wait
+		// for another day rather than crowding out the sights.
 		const seatable = diners.sort(byWant).slice(0, MEALS_PER_DAY);
 		spilled.push(...diners.slice(MEALS_PER_DAY));
 
-		// Sorted most-wanted-first so that when the day runs out of hours, it is
-		// the least wanted stops that fall off the end rather than whichever
-		// happened to be furthest along the route.
 		// The slots as the real walk will see them, so 2-opt is scoring the day
 		// that is actually going to happen.
-		const says = input.meals ?? new Map();
 		const picked = new Map<string, PlanPoi>();
 		for (const meal of MEAL_NAMES) {
 			const id = says.get(mealKey(dayIndex, meal))?.poi_id;
@@ -1378,23 +1336,64 @@ export function replan(input: PlanInput): PlanResult {
 			if (chosen) picked.set(meal, chosen);
 		}
 
-		const ordered = orderDay(
-			route.sort(byWant),
-			input.days[dayIndex],
-			input.allowedModes,
-			input.timezone,
-			curves,
-			slots,
-			travel,
-			{ diners: seatable, says, dayIndex, picked }
+		// The day ends at the hotel the traveller sleeps at. A day whose last
+		// anchor is not a hotel -- or whose only hotel is the one it opens on
+		// -- gets one drawn at its end.
+		// ponytail: a day with only a closing hotel on it gets a second one.
+		// Tell them apart by clock against the day's midpoint if it matters.
+		const anchors = route.filter(isAnchor).sort(byClock);
+		const last = anchors.at(-1);
+		if (input.hotel && (last?.kind !== 'hotel' || anchors.length < 2)) {
+			route.push(closingHotel(input.hotel, day, dayIndex));
+		}
+
+		const rest: Rest = { diners: seatable, says, dayIndex, picked, containers };
+		rests.set(dayIndex, rest);
+		routes.set(
+			dayIndex,
+			orderDay(
+				route.map((p) => ({ ...p, dayIndex })).sort(byWant),
+				day,
+				input.allowedModes,
+				input.timezone,
+				curves,
+				slots,
+				travel,
+				rest
+			)
 		);
-		ordered.forEach((p, orderIndex) => assigned.push({ ...p, dayIndex, orderIndex }));
-		// The meal pass places these; they only need to belong to the day.
-		seatable.forEach((p, i) => assigned.push({ ...p, dayIndex, orderIndex: ordered.length + i }));
 	});
 
-	let placed = assigned;
-	let result = retime({ ...input, pois: placed, curves, travel }, true);
+	const walk = (): PlanResult => {
+		const unplaced: Unplaced[] = [];
+		const days = input.days.map((day, i) => {
+			const rest = rests.get(i)!;
+			const result = walkClock(
+				routes.get(i)!,
+				day,
+				input.allowedModes,
+				input.timezone,
+				curves,
+				slots,
+				travel,
+				rest
+			);
+			unplaced.push(...result.overflowed.map((poi) => ({ poi, reason: 'day-full' as const })));
+			// A restaurant no mealtime came near enough to reach. By visit: two
+			// visits to the same cafe are two candidates, and seating one for
+			// breakfast says nothing about whether the other found a lunch.
+			const seated = new Set(result.stops.map((st) => st.placementId));
+			unplaced.push(
+				...(rest.diners ?? [])
+					.filter((d) => !seated.has(d.id))
+					.map((poi) => ({ poi, reason: 'no-mealtime' as const }))
+			);
+			return { index: i, date: day.date, stops: result.stops, overflowed: result.overflowed };
+		});
+		return { days, unplaced };
+	};
+
+	let result = walk();
 
 	// Budgets are an estimate -- minutes of visiting, with a quarter held back
 	// for travel -- and a cluster spread across a city spends more on travel
@@ -1425,15 +1424,29 @@ export function replan(input: PlanInput): PlanResult {
 				.sort((a, b) => roomOn(b) - roomOn(a))[0];
 			if (target === undefined || roomOn(target) < poi.durationMin * 60_000) continue;
 
-			// This visit alone. Matching on the place would carry every other
-			// visit to it along, days it was never dropped from included.
-			const orderIndex = endOfDay(placed, target);
-			placed = placed.map((p) => (p.id === poi.id ? { ...p, dayIndex: target, orderIndex } : p));
+			// This visit alone, off its day and onto the target -- threaded into
+			// that day by clock like any other free stop, so it lands between
+			// the furniture rather than on top of it.
+			const from = routes.get(poi.dayIndex!)!;
+			from.splice(from.indexOf(poi), 1);
+			routes.set(
+				target,
+				orderDay(
+					[...routes.get(target)!, { ...poi, dayIndex: target }],
+					input.days[target],
+					input.allowedModes,
+					input.timezone,
+					curves,
+					slots,
+					travel,
+					rests.get(target)!
+				)
+			);
 			used.set(target, (used.get(target) ?? 0) + poi.durationMin * 60_000);
 			moved = true;
 		}
 		if (!moved) break;
-		result = retime({ ...input, pois: placed, curves, travel }, true);
+		result = walk();
 	}
 
 	return {

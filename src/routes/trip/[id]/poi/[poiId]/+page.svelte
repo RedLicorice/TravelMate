@@ -5,7 +5,7 @@
 	import { goto } from '$app/navigation';
 	import { getTrip, hotelMissing, toTrip, type TripRow } from '$lib/trip/repo';
 	import { getPoi, removePoi, updatePoi, type PoiRow } from '$lib/trip/pois';
-	import { listPlacements, place, unplace, type PlacementRow } from '$lib/trip/placements';
+	import { between, listPlacements, place, unplace, type PlacementRow } from '$lib/trip/placements';
 	import { tripDays } from '$lib/trip/days';
 	import { REASON_TEXT, type UnplacedReason } from '$lib/plan/planner';
 	import { loadPlan, toPlannedDays, type PlanStopRow } from '$lib/trip/plan';
@@ -94,7 +94,7 @@
 		placements.map((pl) => {
 			const stops = plan?.find((d) => d.index === pl.day_index)?.stops ?? [];
 			const rank = placements.filter(
-				(o) => o.day_index === pl.day_index && o.order_index < pl.order_index
+				(o) => o.day_index === pl.day_index && o.at < pl.at
 			).length;
 			const stop =
 				stops.find((s) => s.placementId === pl.id) ??
@@ -186,17 +186,32 @@
 
 	/**
 	 * The keyboard-reachable way to put a place on a day. Dragging is faster
-	 * with a thumb, and impossible without one. Lands at the end of the day:
-	 * the trip's other visits are not loaded here, so "the end" is read from
-	 * the plan as it stands, which is right until someone else adds to that
-	 * day in the same minute -- and Replan renumbers anyway.
+	 * with a thumb, and impossible without one.
+	 *
+	 * Lands at the end of the day's sightseeing, which is not the end of the
+	 * day: the day ends at the hotel it is slept in, and a visit put after
+	 * that one is a visit made in the traveller's sleep. It goes in the space
+	 * before whatever furniture closes the day out.
 	 */
 	async function addToDay(index: number) {
 		saving = true;
 		error = null;
 		try {
-			const end = plan?.find((d) => d.index === index)?.stops.filter((s) => !s.anchor).length ?? 0;
-			placements = [...placements, await place(tripId, poiId, index, end)];
+			const stops = plan?.find((d) => d.index === index)?.stops ?? [];
+			// Back past the furniture the day finishes on.
+			let i = stops.length;
+			while (i > 0 && stops[i - 1].anchor) i--;
+			const prev = stops[i - 1];
+			const next = stops[i];
+			const when =
+				prev && next
+					? between(prev.depart, next.arrive)
+					: prev
+						? new Date(prev.depart.getTime() + 15 * 60_000).toISOString()
+						: next
+							? new Date(next.arrive.getTime() - 60 * 60_000).toISOString()
+							: (days[index]?.start ?? new Date()).toISOString();
+			placements = [...placements, await place(tripId, poiId, index, when)];
 		} catch (e) {
 			error = (e as Error).message;
 		} finally {

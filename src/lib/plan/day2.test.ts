@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { tripDays, type Trip } from '$lib/trip/days';
-import { replan, schedule, type PlanPoi } from './planner';
+import { replan, type PlanPoi } from './planner';
 import type { MealSlotRow } from '$lib/trip/meals';
 import { isMeal, slotAt, slotsFrom, tightest, type MealWindows } from './meals';
 
@@ -17,25 +17,19 @@ const trip: Trip = {
 	dayStart: '08:00', dayEnd: '23:59'
 };
 
-const stop = (name: string, lat: number, lng: number, category: string, durationMin: number, orderIndex: number): PlanPoi =>
-	({ id: name, poiId: name, name, lat, lng, category, durationMin, priority: 3, dayIndex: 1, orderIndex, pinned: false });
-
-/** The hotel, placed at the front of the day the way a furnished day has it. */
-const home: PlanPoi = {
-	id: 'home', poiId: null, kind: 'hotel', name: trip.hotelName, lat: trip.hotel.lat, lng: trip.hotel.lng,
-	category: null, durationMin: 0, priority: 3, dayIndex: 1, orderIndex: -1, pinned: true
-};
+const stop = (name: string, lat: number, lng: number, category: string, durationMin: number): PlanPoi =>
+	({ id: name, poiId: name, name, lat, lng, category, durationMin, priority: 3, dayIndex: 1, at: '2026-10-02T08:00:00Z', pinned: false });
 
 /** 2 October as it actually stood: a sandwich shop seventh in the route. */
 const day2 = () =>
 	replan({
 		pois: [
-			stop('Madame Tussauds', 51.5230, -0.1547, 'museum', 120, 0),
-			stop('Abbey Road', 51.5320, -0.1777, 'attraction', 60, 1),
-			stop('Notting Hill', 51.5090, -0.1960, 'suburb', 60, 2),
-			stop('Portobello Market', 51.5170, -0.2050, 'marketplace', 45, 3),
-			stop('Pret A Manger', 51.5093, -0.1960, 'restaurant', 45, 4),
-			stop('Big Ben', 51.5007, -0.1246, 'attraction', 60, 5)
+			stop('Madame Tussauds', 51.5230, -0.1547, 'museum', 120),
+			stop('Abbey Road', 51.5320, -0.1777, 'attraction', 60),
+			stop('Notting Hill', 51.5090, -0.1960, 'suburb', 60),
+			stop('Portobello Market', 51.5170, -0.2050, 'marketplace', 45),
+			stop('Pret A Manger', 51.5093, -0.1960, 'restaurant', 45),
+			stop('Big Ben', 51.5007, -0.1246, 'attraction', 60)
 		],
 		days: tripDays(trip),
 		allowedModes: ['walk', 'transit'],
@@ -96,14 +90,13 @@ describe('a meal the traveller chose', () => {
 		durationMin: 20,
 		priority: 3,
 		dayIndex: 1,
-		orderIndex: 0,
-		pinned: true,
-		pinnedAt: iso
+		at: iso,
+		pinned: true
 	});
 
 	const day = (iso: string) =>
 		replan({
-			pois: [chosen(iso), stop('Notting Hill', 51.509, -0.196, 'suburb', 60, 1)],
+			pois: [chosen(iso), stop('Notting Hill', 51.509, -0.196, 'suburb', 60)],
 			days: tripDays(trip),
 			allowedModes: ['walk', 'transit'],
 			timezone: 'Europe/London',
@@ -144,17 +137,18 @@ describe('assigning a slot by hand', () => {
 		durationMin: 20,
 		priority: 3,
 		dayIndex: null,
-		orderIndex: null,
+		at: '2026-10-02T08:00:00Z',
 		pinned: false
 	});
 
 	const run = (poiId: string | null) =>
 		replan({
-			pois: [stop('Notting Hill', 51.509, -0.196, 'suburb', 60, 0), far('starbucks')],
+			pois: [stop('Notting Hill', 51.509, -0.196, 'suburb', 60), far('starbucks')],
 			days: tripDays(trip),
 			allowedModes: ['walk', 'transit'],
 			timezone: 'Europe/London',
 			mealWindows: tightest([A]).windows,
+			hotel: { name: trip.hotelName, ...trip.hotel },
 			meals: new Map([
 				[
 					'1:breakfast',
@@ -194,8 +188,8 @@ describe('a day that runs through its own dinner', () => {
 	const run = () =>
 		replan({
 			pois: [
-				stop('Notting Hill', 51.509, -0.196, 'suburb', 60, 0),
-				stop('British Museum', 51.5194, -0.127, 'museum', 480, 1)
+				stop('Notting Hill', 51.509, -0.196, 'suburb', 60),
+				stop('British Museum', 51.5194, -0.127, 'museum', 480)
 			],
 			days: tripDays(trip),
 			allowedModes: ['walk', 'transit'],
@@ -217,8 +211,8 @@ describe('a day that runs through its own dinner', () => {
 	it('does not invent a meal whose window closed before the day began', () => {
 		// A day starting at 10:30 has missed breakfast, and no amount of
 		// pushing down makes it breakfast.
-		const late = schedule({
-			pois: [stop('Notting Hill', 51.509, -0.196, 'suburb', 60, 0)],
+		const late = replan({
+			pois: [stop('Notting Hill', 51.509, -0.196, 'suburb', 60)],
 			days: tripDays({ ...trip, dayStart: '10:30', prep: null }),
 			allowedModes: ['walk'],
 			timezone: 'Europe/London',

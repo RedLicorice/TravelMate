@@ -12,8 +12,6 @@ export type MealSlotRow = {
 	meal: MealName;
 	/** Null with `skipped` false is a container emptied on purpose. */
 	poi_id: string | null;
-	/** Set when the slot has been dragged off its window. */
-	at: string | null;
 	skipped: boolean;
 };
 
@@ -28,7 +26,7 @@ export const toMealPlan = (rows: MealSlotRow[]): MealPlan =>
 export async function loadMeals(tripId: string): Promise<MealSlotRow[]> {
 	const { data, error } = await supabase
 		.from('trip_meals')
-		.select('day_index,meal,poi_id,at,skipped')
+		.select('day_index,meal,poi_id,skipped')
 		.eq('trip_id', tripId)
 		.order('day_index', { ascending: true });
 	if (error) throw new Error(error.message);
@@ -38,19 +36,23 @@ export async function loadMeals(tripId: string): Promise<MealSlotRow[]> {
 /**
  * Record a say about one meal. Upserted on the day and meal, because there is
  * one breakfast on 3 October however many times the traveller changes it.
+ *
+ * Only what was passed is written. An upsert names the columns it was given,
+ * so a row that is only being emptied keeps whatever else it said -- sending
+ * the whole row instead is how skipping a meal used to clear the place the
+ * traveller had chosen for it.
  */
 export async function saveMeal(
 	tripId: string,
-	slot: { dayIndex: number; meal: MealName; poiId?: string | null; at?: string | null; skipped?: boolean }
+	slot: { dayIndex: number; meal: MealName; poiId?: string | null; skipped?: boolean }
 ): Promise<void> {
 	const { error } = await supabase.from('trip_meals').upsert(
 		{
 			trip_id: tripId,
 			day_index: slot.dayIndex,
 			meal: slot.meal,
-			poi_id: slot.poiId ?? null,
-			at: slot.at ?? null,
-			skipped: slot.skipped ?? false
+			...(slot.poiId !== undefined ? { poi_id: slot.poiId } : {}),
+			...(slot.skipped !== undefined ? { skipped: slot.skipped } : {})
 		},
 		{ onConflict: 'trip_id,day_index,meal' }
 	);

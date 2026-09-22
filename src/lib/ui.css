@@ -541,10 +541,17 @@ button.tm-slot {
   border-bottom: 1px solid var(--tm-border);
   padding-bottom: 2px;
 }
+/* The handle and everything drawn inside it. touch-action applies to the
+   element the finger actually lands on, and it does not inherit: with it set
+   only here, a finger landing on one of the two time spans inside gave the
+   gesture to the scroller, which cancelled the drag on the first move. */
+.tm-stop__time--grab,
+.tm-stop__time--grab * {
+  touch-action: none;
+}
 .tm-stop__time--grab {
   opacity: 1;
   cursor: grab;
-  touch-action: none;
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
