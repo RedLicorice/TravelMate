@@ -84,6 +84,7 @@
 	import { haversineKm } from '$lib/plan/geo';
 	import { longPress } from '$lib/longpress.svelte';
 	import PlanBoard from '$lib/PlanBoard.svelte';
+	import StopCard from '$lib/StopCard.svelte';
 	import TripAvatar from '$lib/TripAvatar.svelte';
 	import { supabase } from '$lib/supabase';
 	import { zoneAt } from '$lib/trip/timezone';
@@ -214,6 +215,34 @@
 				await updateAllowance(tripId, patch);
 				row = { ...row, ...patch };
 			}
+			await restore();
+		} catch (e) {
+			error = (e as Error).message;
+		} finally {
+			busy = false;
+		}
+	}
+
+	/**
+	 * A quick edit from the card: applied where the traveller is looking, and
+	 * the day re-timed around it, rather than sending them to another screen
+	 * and back to see what it did.
+	 */
+	async function editCarded(patch: {
+		duration_min?: number;
+		priority?: number;
+		pinned?: boolean;
+	}) {
+		const held = carded;
+		if (!held) return;
+		busy = true;
+		try {
+			const updated = await updatePoi(held.id, {
+				...patch,
+				...(patch.pinned === false ? { pinned_at: null } : {})
+			});
+			pois = pois.map((p) => (p.id === held.id ? updated : p));
+			carded = updated;
 			await restore();
 		} catch (e) {
 			error = (e as Error).message;
@@ -1349,7 +1378,7 @@
 						{dayColor}
 						{drag}
 						pinned={pinnedIds}
-						onpick={(id) => goto(`${base}/trip/${tripId}/poi/${id}`)}
+						onpick={(id) => (carded = pois.find((p) => p.id === id) ?? null)}
 						onhold={(id) => (carded = pois.find((p) => p.id === id) ?? null)}
 						onpin={(id) => togglePin(id)}
 						onadd={(dayIdx, beforeId) => (slot = { day: dayIdx, before: beforeId })}
@@ -1368,10 +1397,10 @@
 				{:else}
 					{#each pois as p (p.id)}
 						{@const assigned = dayOf.has(p.id)}
-						<a
-							href="{base}/trip/{tripId}/poi/{p.id}"
+						<button
 							class="tm-result"
-							style="align-items: center; text-decoration: none; color: inherit"
+							style="align-items: center; color: inherit"
+							onclick={() => (carded = p)}
 						>
 							<span style="display: flex; gap: 10px; align-items: flex-start">
 								<span
@@ -1394,7 +1423,7 @@
 								</span>
 							</span>
 							<span style="color: var(--tm-text-faint)">›</span>
-						</a>
+						</button>
 					{/each}
 					<p class="tm-hint mt-3">
 						Tap any place for busyness, booking and how long to stay.
@@ -1474,7 +1503,11 @@
 											aria-hidden="true"
 											style="display:inline-block;cursor:grab;touch-action:none;color:var(--tm-text-faint);margin-right:6px;user-select:none"
 										>⠿</span>
-									{/if}{stop.name}
+										<button
+											class="tm-stop__open"
+											onclick={() => (carded = pois.find((p) => p.id === stop.poiId) ?? null)}
+										>{stop.name}</button>
+									{:else}{stop.name}{/if}
 								</p>
 								<p class="tm-stop__sub" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
 									<span>
@@ -1634,50 +1667,16 @@
 		{/if}
 
 		{#if carded}
-			{@const held = carded}
-			<div
-				role="presentation"
-				style="position:fixed;inset:0;z-index:60;background:rgba(0,0,0,0.35)"
-				onclick={() => (carded = null)}
-			></div>
-			<div class="tm-sheet" style="position:fixed;z-index:61">
-				<div class="tm-sheet__grip"></div>
-				<p class="tm-card__title">{held.name}</p>
-				<p class="tm-card__meta">
-					{held.category ?? 'place'} · {held.duration_min} min
-					{#if held.pinned} · held where you put it{/if}
-				</p>
-
-				<a
-					class="tm-btn tm-btn--secondary tm-btn--block mt-3"
-					style="text-decoration:none"
-					href="{base}/trip/{tripId}/poi/{held.id}"
-				>
-					Open
-				</a>
-
-				{#if held.pinned}
-					<button
-						class="tm-btn tm-btn--secondary tm-btn--block mt-2"
-						disabled={busy}
-						onclick={() => unpin(held.id)}
-					>
-						Let the plan move it
-					</button>
-				{/if}
-
-				<button
-					class="tm-btn tm-btn--block mt-2"
-					style="background: var(--tm-danger-soft); color: var(--tm-danger-ink)"
-					disabled={busy}
-					onclick={() => forget(held.id)}
-				>
-					Remove from the trip
-				</button>
-				<button class="tm-btn tm-btn--ghost tm-btn--block mt-2" onclick={() => (carded = null)}>
-					Cancel
-				</button>
-			</div>
+			<StopCard
+				poi={carded}
+				{tripId}
+				hotel={row ? { lat: row.hotel_lat, lng: row.hotel_lng, name: row.hotel_name } : null}
+				{people}
+				{busy}
+				onedit={(patch) => editCarded(patch)}
+				onremove={() => forget(carded!.id)}
+				onclose={() => (carded = null)}
+			/>
 		{/if}
 
 		{#if slot}

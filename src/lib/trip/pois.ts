@@ -29,6 +29,8 @@ export type PoiRow = {
 	/** Where this stop lets you out, when that differs from where you got on. */
 	exit_lat: number | null;
 	exit_lng: number | null;
+	/** Who put it on the wishlist. Null once that person has gone. */
+	added_by: string | null;
 	created_at: string;
 	updated_at: string | null;
 };

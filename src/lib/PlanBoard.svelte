@@ -114,7 +114,10 @@
 			const at = own ? top(own.from) : top(startMin);
 			const bounds = own ? { from: own.from, to: own.from + runsFor } : {};
 
-			if (stop.anchor) {
+			// A filled meal slot is still a meal slot. It has a poiId, so it used
+			// to fall through to the ordinary stop card and wear the day's colour
+			// -- a lunch that looked like a sight.
+			if (stop.anchor || stop.anchorKind === 'meal') {
 				const kind = anchorKind(stop, dayIndex);
 				const tone =
 					kind === 'terminal'
@@ -139,7 +142,9 @@
 					// every one of them the same minute.
 					sub: cardTime(stop.timeLabel, hhmmOf(startMin), stop.durationMin),
 					icon: null,
-					stop: null,
+					// A filled slot is a place as well as a container: it can be
+					// dragged and held down on like any other stop.
+					stop: stop.poiId ? stop : null,
 					anchor: stop,
 					day: dayIndex,
 					...bounds

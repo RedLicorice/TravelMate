@@ -19,7 +19,8 @@
 	import { effectiveDayStart, isMeal, latestReady } from '$lib/plan/meals';
 	import { haversineKm } from '$lib/plan/geo';
 	import { isShortMapLink, parseLatLng } from '$lib/poi/manual';
-	import { loadTripProfiles } from '$lib/profile.svelte';
+	import { displayName, loadTripProfiles, type Profile } from '$lib/profile.svelte';
+	import { avatarDataUri } from '$lib/avatar';
 	import { safePhone, safeUrl } from '$lib/poi/photon';
 	import Stars from '$lib/Stars.svelte';
 	import TripMap from '$lib/GoogleMap.svelte';
@@ -45,7 +46,7 @@
 
 	onMount(async () => {
 		try {
-			const [t, p, list, people] = await Promise.all([
+			const [t, p, list, party] = await Promise.all([
 				getTrip(tripId),
 				getPoi(poiId),
 				listPois(tripId),
@@ -54,7 +55,8 @@
 			trip = t;
 			poi = p;
 			all = list;
-			ready = latestReady(people.map((x) => ({ wakeAt: x.wakeAt, prepMin: x.prepMin })));
+			people = party;
+			ready = latestReady(party.map((x) => ({ wakeAt: x.wakeAt, prepMin: x.prepMin })));
 			if (p) {
 				duration = p.duration_min;
 				notes = p.notes ?? '';
@@ -68,6 +70,10 @@
 	});
 
 	let stored = $state<PlanStopRow[]>([]);
+	let people = $state<Profile[]>([]);
+
+	/** Whoever put this on the wishlist, if they are still on the trip. */
+	const addedBy = $derived(people.find((p) => p.userId === poi?.added_by) ?? null);
 
 	const days = $derived(
 		trip
@@ -279,6 +285,19 @@
 		</p>
 
 		<!-- Expected busyness -->
+		{#if addedBy}
+			<div class="mt-4 flex items-center gap-2">
+				<img
+					src={addedBy.avatarUrl ?? avatarDataUri(addedBy.avatarSeed)}
+					alt=""
+					width="22"
+					height="22"
+					style="width:22px;height:22px;border-radius:50%;object-fit:cover"
+				/>
+				<span class="tm-hint">{displayName(addedBy)} added this</span>
+			</div>
+		{/if}
+
 		<h2 class="tm-label mt-6 mb-2">Where it is</h2>
 		<div
 			style="height:180px;border-radius:var(--tm-r-md);overflow:hidden;
