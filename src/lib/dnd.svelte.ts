@@ -20,10 +20,39 @@ export type DropTarget =
 	| { kind: 'gap'; day: number; before: string | null; at: string }
 	| null;
 
+/**
+ * The nearest thing the card is scrolling inside.
+ *
+ * Needed because picking a card up opens the whole day, which pushes what is
+ * under the finger hundreds of pixels down the list.
+ */
+function scrollParent(node: HTMLElement): HTMLElement | null {
+	let el: HTMLElement | null = node.parentElement;
+	while (el) {
+		const overflow = getComputedStyle(el).overflowY;
+		if ((overflow === 'auto' || overflow === 'scroll') && el.scrollHeight > el.clientHeight) {
+			return el;
+		}
+		el = el.parentElement;
+	}
+	return null;
+}
+
 /** Hold before a drag begins, so a scroll is still a scroll. */
 const HOLD_MS = 220;
 /** Movement beyond this during the hold means they meant to scroll. */
 const SLOP_PX = 8;
+/**
+ * How near an edge the finger has to be for the list to start crawling, and
+ * how fast it crawls at the very edge.
+ *
+ * A day with its gaps open is taller than a phone, so most of where a card
+ * could go is off the screen while it is being held. Without this, the only
+ * places reachable are the ones that happened to be visible when it was picked
+ * up -- which is what "I drop it and it does not move" looks like.
+ */
+const EDGE_PX = 90;
+const EDGE_SPEED_PX = 16;
 
 export function createDrag(onDrop: (draggedId: string, target: DropTarget) => void) {
 	const state = $state({
@@ -36,6 +65,28 @@ export function createDrag(onDrop: (draggedId: string, target: DropTarget) => vo
 	let holdTimer: ReturnType<typeof setTimeout> | null = null;
 	let origin = { x: 0, y: 0 };
 	let pending: string | null = null;
+	let scroller: HTMLElement | null = null;
+	let crawling: number | null = null;
+
+	/** Creep the list along while the finger rests near one of its edges. */
+	function crawl() {
+		if (!state.id || !scroller) {
+			crawling = null;
+			return;
+		}
+		const box = scroller.getBoundingClientRect();
+		const fromTop = state.y - box.top;
+		const fromBottom = box.bottom - state.y;
+		let dy = 0;
+		if (fromTop < EDGE_PX) dy = -EDGE_SPEED_PX * (1 - Math.max(0, fromTop) / EDGE_PX);
+		else if (fromBottom < EDGE_PX) dy = EDGE_SPEED_PX * (1 - Math.max(0, fromBottom) / EDGE_PX);
+		if (dy) {
+			scroller.scrollTop += dy;
+			// What is under the finger changed without the finger moving.
+			state.target = targetAt(state.x, state.y);
+		}
+		crawling = requestAnimationFrame(crawl);
+	}
 
 	function targetAt(x: number, y: number): DropTarget {
 		// The dragged clone sits under the finger; hide it so it is not found.
@@ -89,6 +140,9 @@ export function createDrag(onDrop: (draggedId: string, target: DropTarget) => vo
 	function cleanup() {
 		if (holdTimer) clearTimeout(holdTimer);
 		holdTimer = null;
+		if (crawling !== null) cancelAnimationFrame(crawling);
+		crawling = null;
+		scroller = null;
 		pending = null;
 		state.id = null;
 		state.target = null;
@@ -117,10 +171,31 @@ export function createDrag(onDrop: (draggedId: string, target: DropTarget) => vo
 
 			holdTimer = setTimeout(() => {
 				if (pending !== id) return;
+				// Where the card is before the day comes apart. Read now, while
+				// the DOM is still the one the traveller is looking at.
+				const before = node.getBoundingClientRect().top;
+				scroller = scrollParent(node);
 				state.id = id;
+				if (crawling === null) crawling = requestAnimationFrame(crawl);
 				document.body.style.userSelect = 'none';
 				// A short buzz is the only feedback that the item is now held.
 				navigator.vibrate?.(8);
+
+				// Picking a card up opens every gap in the day, which is what
+				// makes the day a place to drop into -- and which would shove the
+				// card itself a few hundred pixels out from under the finger.
+				// Scroll by as much as opened above it, so the card stays exactly
+				// where it was grabbed and what is under the finger is what the
+				// traveller is pointing at. Two frames: one for the layout, one
+				// for anything it in turn moved.
+				requestAnimationFrame(() =>
+					requestAnimationFrame(() => {
+						if (state.id !== id) return;
+						if (!scroller) return;
+						const shift = node.getBoundingClientRect().top - before;
+						if (shift) scroller.scrollTop += shift;
+					})
+				);
 			}, HOLD_MS);
 		}
 

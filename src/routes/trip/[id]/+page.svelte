@@ -811,12 +811,20 @@
 	 * day and its meal, and a day has one lunch, so it stays on its own day.
 	 */
 	async function moveSlot(draggedId: string, target: Parameters<typeof reorder>[2]) {
-		if (!target || target.kind !== 'stop') return;
+		if (!target) return;
 		const [, rawDay, meal] = draggedId.split(':');
 		const day = Number(rawDay);
-		const landed = result?.days[day]?.stops.find((st) => st.poiId === target.id);
-		if (!landed) return;
-		await sayMeal(day, meal as MealName, { at: landed.arrive.toISOString() });
+		// Dropped in a gap, it happens at the moment it was let go; dropped on a
+		// stop, at that stop's moment. A meal is a stop like any other and lands
+		// where it was put.
+		const at =
+			target.kind === 'gap'
+				? target.at
+				: target.kind === 'stop'
+					? result?.days[day]?.stops.find((st) => st.poiId === target.id)?.arrive.toISOString()
+					: null;
+		if (!at) return;
+		await sayMeal(day, meal as MealName, { at });
 	}
 
 	/**
