@@ -15,7 +15,7 @@
 		type TripRow
 	} from '$lib/trip/repo';
 	import TerminalFields from '$lib/TerminalFields.svelte';
-	import BagDrop from '$lib/BagDrop.svelte';
+	import CheckIn from '$lib/CheckIn.svelte';
 	import { fromLocalInput, toLocalInput } from '$lib/trip/days';
 	import { poi as provider, type City } from '$lib/poi';
 	import Autocomplete from '$lib/Autocomplete.svelte';
@@ -161,7 +161,7 @@
 			/>
 		</div>
 
-		<div class="mb-5"><BagDrop bind:terminals /></div>
+		<div class="mb-5"><CheckIn bind:terminals /></div>
 
 		<div class="mb-5 flex gap-3">
 			<div class="tm-field flex-1">

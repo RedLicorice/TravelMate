@@ -3,7 +3,7 @@
 	import { base } from '$app/paths';
 	import { createTrip, noTerminals, type Terminals } from '$lib/trip/repo';
 	import TerminalFields from '$lib/TerminalFields.svelte';
-	import BagDrop from '$lib/BagDrop.svelte';
+	import CheckIn from '$lib/CheckIn.svelte';
 	import { localZone, zoneAt } from '$lib/trip/timezone';
 	import { fromLocalInput } from '$lib/trip/days';
 	import Autocomplete from '$lib/Autocomplete.svelte';
@@ -107,7 +107,7 @@
 		/>
 		<p class="tm-attrib mt-4">{poi.attribution}</p>
 	{:else if step === 2}
-		<div class="mb-5"><BagDrop bind:terminals /></div>
+		<div class="mb-5"><CheckIn bind:terminals /></div>
 
 		<div class="tm-field mb-5">
 			<label class="tm-label" for="arr">Arrival</label>

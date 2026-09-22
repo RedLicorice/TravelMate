@@ -531,7 +531,7 @@
 			background:var(--tm-lilac-soft);border:1px solid var(--tm-border);
 			border-left:3px solid var(--tm-lilac);vertical-align:-1px"
 		></span>
-		bags and getting ready · hold ⠿ to move a stop between days · tap empty time to add
+		check-in and getting ready · hold ⠿ to move a stop between days · tap empty time to add
 	</p>
 </div>
 

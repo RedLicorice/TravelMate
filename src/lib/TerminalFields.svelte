@@ -61,7 +61,7 @@
 		<span>
 			<span class="tm-label">Arriving by plane, train or boat</span>
 			<span class="tm-hint" style="display:block">
-				Day one starts where you land and drops your bags at the hotel. The last day ends in
+				Day one starts where you land and checks in at the hotel. The last day ends in
 				time for the journey out.
 			</span>
 		</span>

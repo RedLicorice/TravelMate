@@ -299,7 +299,7 @@
 
 	const ALLOWANCE_HINT: Record<Allowance, string> = {
 		prep: 'Waking and getting out of the door. Yours, on every trip.',
-		bags: 'Checking in when you arrive, and collecting the bags before you leave.',
+		bags: 'Checking in when you arrive, and checking out before you leave.',
 		out: 'Passport queues and baggage reclaim at the airport you land at.',
 		checkin: 'Standing in the terminal before you leave.'
 	};
@@ -644,7 +644,7 @@
 				// it is called checking in.
 				made.push(
 					await placeAnchor(tripId, 'hotel', i, order++, {
-						name: `${row.hotel_name} check-in`,
+						name: 'Check-in',
 						minutes: row.bag_drop_min
 					})
 				);
@@ -658,7 +658,7 @@
 			// turns out to hold. Replan renumbers these into a tidy run.
 			if (last && row.departure_point_name) {
 				made.push(
-					await placeAnchor(tripId, 'chore', i, 900, { name: 'Collect the bags' })
+					await placeAnchor(tripId, 'chore', i, 900, { name: 'Check-out' })
 				);
 			} else {
 				made.push(await placeAnchor(tripId, 'hotel', i, 901, { minutes: 0 }));

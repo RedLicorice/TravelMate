@@ -81,7 +81,35 @@
 		track('journey.leg.remove', { direction, at: i, legs: legs.length });
 	}
 
-	const field = (e: Event) => (e.currentTarget as HTMLInputElement).value.trim() || null;
+	/**
+	 * What is in a box while it is being typed in.
+	 *
+	 * The box owns its own text until the traveller leaves it. Writing every
+	 * keystroke back into `legs` -- which is where the value was then drawn
+	 * from again -- is what made these unusable: the space in "FR 5410" was
+	 * deleted as it was typed, the caret jumped to the end of the line, and a
+	 * half-typed date was handed back to the browser as an invalid one and
+	 * wiped. Nothing reaches the trip until the box is done with.
+	 */
+	let draft = $state<Record<string, string>>({});
+
+	const keyOf = (i: number, field: string) => `${direction}:${i}:${field}`;
+
+	/** What to show: what they are typing, or what the leg already says. */
+	const shown = (i: number, field: string, stored: string | null) =>
+		draft[keyOf(i, field)] ?? stored ?? '';
+
+	const typing = (i: number, field: string) => (e: Event) => {
+		draft[keyOf(i, field)] = (e.currentTarget as HTMLInputElement).value;
+	};
+
+	/** Done with it: tidy the text and let the trip have it. */
+	const commit = (i: number, field: 'service' | 'bookingRef' | 'departLocal' | 'arriveLocal') =>
+		(e: Event) => {
+			const raw = (e.currentTarget as HTMLInputElement).value.trim();
+			delete draft[keyOf(i, field)];
+			patch(i, { [field]: raw || null });
+		};
 
 	/** The leg whose time the plan is built on. */
 	const planLeg = $derived(direction === 'arrival' ? legs.length - 1 : 0);
@@ -147,9 +175,10 @@
 					<input
 						class="tm-input"
 						id="{direction}-svc-{i}"
-						value={leg.service ?? ''}
+						value={shown(i, 'service', leg.service)}
 						placeholder={SERVICE[mode].eg}
-						oninput={(e) => patch(i, { service: field(e) })}
+						oninput={typing(i, 'service')}
+						onchange={commit(i, 'service')}
 					/>
 				</div>
 				<div class="tm-field">
@@ -157,9 +186,10 @@
 					<input
 						class="tm-input"
 						id="{direction}-ref-{i}"
-						value={leg.bookingRef ?? ''}
+						value={shown(i, 'bookingRef', leg.bookingRef)}
 						placeholder="ABC123"
-						oninput={(e) => patch(i, { bookingRef: field(e) })}
+						oninput={typing(i, 'bookingRef')}
+						onchange={commit(i, 'bookingRef')}
 					/>
 				</div>
 			</div>
@@ -172,8 +202,9 @@
 					class="tm-input"
 					type="datetime-local"
 					id="{direction}-dep-{i}"
-					value={leg.departLocal ?? ''}
-					oninput={(e) => patch(i, { departLocal: field(e) })}
+					value={shown(i, 'departLocal', leg.departLocal)}
+					oninput={typing(i, 'departLocal')}
+					onchange={commit(i, 'departLocal')}
 				/>
 			</div>
 			<div class="tm-field">
@@ -182,8 +213,9 @@
 					class="tm-input"
 					type="datetime-local"
 					id="{direction}-arr-{i}"
-					value={leg.arriveLocal ?? ''}
-					oninput={(e) => patch(i, { arriveLocal: field(e) })}
+					value={shown(i, 'arriveLocal', leg.arriveLocal)}
+					oninput={typing(i, 'arriveLocal')}
+					onchange={commit(i, 'arriveLocal')}
 				/>
 			</div>
 		</div>

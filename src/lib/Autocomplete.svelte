@@ -11,6 +11,15 @@
 
 	let { label, placeholder, hint, disabled = false, search, onpick }: Props = $props();
 
+	/**
+	 * This box's own id.
+	 *
+	 * It used to be the label, so every "From" on a multi-leg journey answered
+	 * to the same name: tapping a label focused the first leg's box, whichever
+	 * leg had been tapped.
+	 */
+	const id = $props.id();
+
 	let query = $state('');
 	let results = $state<T[]>([]);
 	let status = $state<'idle' | 'searching' | 'done'>('idle');
@@ -76,10 +85,10 @@
 </script>
 
 <div class="tm-field">
-	<label class="tm-label" for={label}>{label}</label>
+	<label class="tm-label" for={id}>{label}</label>
 	<input
 		class="tm-input"
-		id={label}
+		{id}
 		{placeholder}
 		{disabled}
 		bind:value={query}
