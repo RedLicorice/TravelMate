@@ -30,7 +30,7 @@
 	let timezoneTouched = $state(false);
 	let terminals = $state<Terminals>(noTerminals());
 
-	const titles = ['Where are you going?', 'Getting in', 'Getting out'];
+	const titles = ['Where are you going?', 'Arrival journey', 'Departure journey'];
 
 	const canAdvance = $derived(
 		step === 1

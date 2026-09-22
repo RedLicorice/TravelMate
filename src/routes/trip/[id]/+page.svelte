@@ -1862,12 +1862,12 @@
 					['Hotel', row.hotel_name],
 					['Arrival', stamp(row.arrival_at, row.timezone)],
 					describeJourney(row.arrival_legs ?? [])
-						? ['Getting there', describeJourney(row.arrival_legs)]
+						? ['Arrival journey', describeJourney(row.arrival_legs)]
 						: null,
 					row.arrival_booking_ref ? ['Arrival booking', row.arrival_booking_ref] : null,
 					['Departure', stamp(row.departure_at, row.timezone)],
 					describeJourney(row.departure_legs ?? [])
-						? ['Getting home', describeJourney(row.departure_legs)]
+						? ['Departure journey', describeJourney(row.departure_legs)]
 						: null,
 					row.departure_booking_ref ? ['Departure booking', row.departure_booking_ref] : null,
 					['Timezone', row.timezone],

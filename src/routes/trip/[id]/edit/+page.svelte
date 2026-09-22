@@ -140,10 +140,10 @@
 				City &amp; hotel
 			</button>
 			<button role="tab" aria-selected={tab === 'in'} onclick={() => (tab = 'in')}>
-				Getting in
+				Arrival
 			</button>
 			<button role="tab" aria-selected={tab === 'out'} onclick={() => (tab = 'out')}>
-				Getting out
+				Departure
 			</button>
 		</div>
 

@@ -84,7 +84,7 @@
 	>
 		<span>
 			<span class="tm-label">
-				{direction === 'arrival' ? 'I am travelling in' : 'I am travelling out'}
+				{direction === 'arrival' ? 'Arrival journey' : 'Departure journey'}
 			</span>
 			<span class="tm-hint" style="display:block">
 				{direction === 'arrival'
