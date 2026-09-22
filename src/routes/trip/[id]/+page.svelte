@@ -38,6 +38,7 @@
 		listPlacements,
 		place,
 		placeAnchor,
+		placeMany,
 		setFurnished,
 		setPlacementMinutes,
 		savePlacements,
@@ -435,16 +436,20 @@
 	 */
 	async function unplace(placementId: string) {
 		carded = null;
-		busy = true;
+		// Gone from the screen at once, and from the day the plan draws. The
+		// write follows; if it fails the trip is read back and the card
+		// returns, which is the only moment the traveller should ever wait.
+		const was = placements;
+		placements = placements.filter((pl) => pl.id !== placementId);
+		const input = planInput();
+		if (input) fresh = schedule({ ...input, travel: known() }).days;
 		try {
 			await dropPlacement(placementId);
-			placements = placements.filter((pl) => pl.id !== placementId);
 			await restore();
 		} catch (e) {
 			error = (e as Error).message;
+			placements = was;
 			placements = await listPlacements(tripId);
-		} finally {
-			busy = false;
 		}
 	}
 
@@ -635,36 +640,35 @@
 	async function furnish() {
 		if (!row || !days.length || days.length <= row.furnished_days) return;
 		const first = row.furnished_days;
-		const made: PlacementRow[] = [];
+		const wanted: Parameters<typeof placeMany>[0] = [];
 		for (let i = first; i < days.length; i++) {
 			const last = i === days.length - 1;
 			let order = 0;
 			if (i === 0 && row.arrival_point_name) {
-				// Arriving at the hotel and dropping the bags are one thing, and
-				// it is called checking in.
-				made.push(
-					await placeAnchor(tripId, 'hotel', i, order++, {
-						name: 'Check-in',
-						minutes: row.bag_drop_min
-					})
-				);
+				// Arriving at the hotel and handing over the bags are one thing,
+				// and it is called checking in.
+				wanted.push({
+					kind: 'hotel',
+					name: 'Check-in',
+					minutes: row.bag_drop_min,
+					dayIndex: i,
+					orderIndex: order++
+				});
 			} else {
-				made.push(await placeAnchor(tripId, 'hotel', i, order++, { minutes: 0 }));
-				made.push(
-					await placeAnchor(tripId, 'chore', i, order++, { name: 'Getting ready' })
-				);
+				wanted.push({ kind: 'hotel', minutes: 0, dayIndex: i, orderIndex: order++ });
+				wanted.push({ kind: 'chore', name: 'Getting ready', dayIndex: i, orderIndex: order++ });
 			}
 			// The end of the day, given room above it for everything the day
 			// turns out to hold. Replan renumbers these into a tidy run.
 			if (last && row.departure_point_name) {
-				made.push(
-					await placeAnchor(tripId, 'chore', i, 900, { name: 'Check-out' })
-				);
+				wanted.push({ kind: 'chore', name: 'Check-out', dayIndex: i, orderIndex: 900 });
 			} else {
-				made.push(await placeAnchor(tripId, 'hotel', i, 901, { minutes: 0 }));
+				wanted.push({ kind: 'hotel', minutes: 0, dayIndex: i, orderIndex: 901 });
 			}
 		}
-		placements = [...placements, ...made];
+		// One insert for the lot, rather than four round trips per day before
+		// the trip will draw anything.
+		placements = [...placements, ...(await placeMany(wanted, tripId))];
 		await setFurnished(tripId, days.length);
 		row = { ...row, furnished_days: days.length };
 	}
@@ -1425,7 +1429,7 @@
 		const target = slot;
 		if (!target || !row) return;
 		slot = null;
-		busy = true;
+		const was = placements;
 		try {
 			const onDay = placements
 				.filter((pl) => pl.day_index === target.day)
@@ -1434,10 +1438,21 @@
 				? onDay.findIndex((pl) => pl.poi_id === target.before)
 				: onDay.length;
 			const at = slotAt < 0 ? onDay.length : slotAt;
-			await placeAnchor(tripId, kind, target.day, at, {
+			const made = await placeAnchor(tripId, kind, target.day, at, {
 				name: kind === 'chore' ? 'Time to yourself' : null,
 				minutes: kind === 'chore' ? 60 : 0
 			});
+			placements = [
+				...placements.map((pl) =>
+					pl.day_index === target.day && pl.order_index >= at
+						? { ...pl, order_index: pl.order_index + 1 }
+						: pl
+				),
+				made
+			];
+			dayIndex = target.day;
+			const input = planInput();
+			if (input) fresh = schedule({ ...input, travel: known() }).days;
 			await savePlacements(
 				tripId,
 				onDay.slice(at).map((pl, i) => ({
@@ -1450,13 +1465,11 @@
 					orderIndex: at + i + 1
 				}))
 			);
-			placements = await listPlacements(tripId);
-			dayIndex = target.day;
 			await restore();
 		} catch (e) {
 			error = (e as Error).message;
-		} finally {
-			busy = false;
+			placements = was;
+			placements = await listPlacements(tripId);
 		}
 	}
 

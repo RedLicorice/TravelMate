@@ -21,6 +21,14 @@ export type JourneyPoint = {
 export type JourneyMode = 'flight' | 'train' | 'coach' | 'ferry' | 'car';
 
 export type JourneyLeg = {
+	/**
+	 * This leg's own identity, for as long as the form is open.
+	 *
+	 * The list used to be drawn by position, so adding a connection in the
+	 * middle tore down every box below it and built it again -- which is what
+	 * a card "not opening instantly" actually was.
+	 */
+	id?: string;
 	from: JourneyPoint | null;
 	to: JourneyPoint | null;
 	/**
@@ -46,6 +54,7 @@ export type JourneyLeg = {
 };
 
 export const emptyLeg = (): JourneyLeg => ({
+	id: crypto.randomUUID(),
 	from: null,
 	to: null,
 	service: null,

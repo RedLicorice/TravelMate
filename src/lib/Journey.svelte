@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { tick } from 'svelte';
 	import { track } from '$lib/telemetry';
 	import Autocomplete from '$lib/Autocomplete.svelte';
 	import { poi as provider, type City, type Terminal } from '$lib/poi';
@@ -74,6 +75,14 @@
 		const fresh = { ...emptyLeg(), from: before?.to ?? null, to: after?.from ?? null };
 		legs = [...legs.slice(0, index), fresh, ...legs.slice(index)];
 		track('journey.leg.add', { direction, at: index, legs: legs.length });
+
+		// Put the traveller in it. A card added below the fold, with nothing
+		// focused, is a card that looks like it never opened.
+		void tick().then(() => {
+			const card = document.getElementById(`${direction}-leg-${fresh.id}`);
+			card?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+			card?.querySelector('input')?.focus();
+		});
 	}
 
 	function removeLeg(i: number) {
@@ -93,7 +102,9 @@
 	 */
 	let draft = $state<Record<string, string>>({});
 
-	const keyOf = (i: number, field: string) => `${direction}:${i}:${field}`;
+	// Keyed by the leg itself: drafts used to belong to a position, so adding a
+	// connection above one moved what was being typed into the leg below it.
+	const keyOf = (i: number, field: string) => `${direction}:${legs[i]?.id ?? i}:${field}`;
 
 	/** What to show: what they are typing, or what the leg already says. */
 	const shown = (i: number, field: string, stored: string | null) =>
@@ -115,7 +126,9 @@
 	const planLeg = $derived(direction === 'arrival' ? legs.length - 1 : 0);
 </script>
 
-{#each legs as leg, i (i)}
+<!-- By the leg, not by where it sits: inserting a connection in the middle
+     used to rebuild every box below it. -->
+{#each legs as leg, i (leg.id ?? i)}
 	{@const mode = modeOf(leg)}
 	{#if i > 0}
 		<!-- Getting between two terminals is itself a leg: the transfer from a
@@ -124,7 +137,11 @@
 			<span aria-hidden="true">+</span> Add a step here
 		</button>
 	{/if}
-	<div class="tm-card mt-3" style="background: var(--tm-surface-2)">
+	<div
+		class="tm-card mt-3"
+		id="{direction}-leg-{leg.id ?? i}"
+		style="background: var(--tm-surface-2)"
+	>
 		<div class="flex items-baseline justify-between gap-3">
 			<span class="tm-label">
 				{legs.length > 1 ? `Leg ${i + 1} of ${legs.length}` : 'The journey'}

@@ -179,3 +179,41 @@ export async function setFurnished(tripId: string, days: number): Promise<void> 
 		.eq('id', tripId);
 	if (error) throw new Error(error.message);
 }
+
+/**
+ * Several at once.
+ *
+ * Furnishing a trip is one insert, not one per card: a new trip used to make
+ * four round trips per day before it would draw anything.
+ */
+export async function placeMany(
+	rows: {
+		poiId?: string | null;
+		kind: PlacementKind;
+		name?: string | null;
+		minutes?: number | null;
+		dayIndex: number;
+		orderIndex: number;
+		pinned?: boolean;
+	}[],
+	tripId: string
+): Promise<PlacementRow[]> {
+	if (!rows.length) return [];
+	const { data, error } = await supabase
+		.from('placements')
+		.insert(
+			rows.map((r) => ({
+				trip_id: tripId,
+				poi_id: r.poiId ?? null,
+				kind: r.kind,
+				name: r.name ?? null,
+				minutes: r.minutes ?? null,
+				day_index: r.dayIndex,
+				order_index: r.orderIndex,
+				pinned: r.pinned ?? false
+			}))
+		)
+		.select('*');
+	if (error) throw new Error(error.message);
+	return (data ?? []) as PlacementRow[];
+}
