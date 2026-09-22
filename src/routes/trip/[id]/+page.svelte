@@ -698,7 +698,15 @@
 			// The end of the day is the hotel it is slept in -- that is what
 			// ends a day. The last one ends at the station instead.
 			if (last && row.departure_point_name) {
-				wanted.push({ kind: 'chore', name: 'Check-out', dayIndex: i, at: end.toISOString() });
+				// Checking out is done before the day is over, not at the end of
+				// it: the day ends when the traveller has to leave for the
+				// station, and standing at the desk then means missing it.
+				wanted.push({
+					kind: 'chore',
+					name: 'Check-out',
+					dayIndex: i,
+					at: new Date(end.getTime() - row.bag_drop_min * 60_000).toISOString()
+				});
 			} else {
 				wanted.push({ kind: 'hotel', minutes: 0, dayIndex: i, at: end.toISOString() });
 			}

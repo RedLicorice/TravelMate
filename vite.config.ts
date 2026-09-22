@@ -22,10 +22,12 @@ export default defineConfig({
 			paths: { base }
 		}),
 		SvelteKitPWA({
-			// 'prompt' names the generated module's behaviour, not ours: it means
-			// the new worker waits for the app to be told to take it, and we never
-			// tell it. There is no prompt -- a traveller is not asked to approve a
-			// refresh -- and there is no reload either. See the layout.
+			// The app decides when to take a new version, and it takes it on
+			// opening. 'prompt' is the generated module's name for "hand the
+			// decision to the app" -- nobody is ever asked anything. See the
+			// layout: a new version found while the app is being opened is taken
+			// at once; one that turns up later waits for the next opening rather
+			// than reloading a page somebody is using.
 			registerType: 'prompt',
 			// The fallback page is not prerendered, so auto-injection has nothing
 			// to write into. Registered from the root layout instead.
@@ -55,11 +57,8 @@ export default defineConfig({
 			},
 			workbox: {
 				globPatterns: ['**/*.{js,css,html,woff2,png,svg}'],
-				// A new version waits. It installs quietly behind whatever the
-				// traveller is doing and takes over the next time the app is
-				// started cold -- it does not seize the page and reload it.
-				// Reloading someone mid-edit to give them a newer build is the
-				// app deciding its own freshness matters more than their work.
+				// The worker never takes the page on its own. The app tells it
+				// to, on opening, and at no other moment.
 				skipWaiting: false,
 				clientsClaim: false,
 				runtimeCaching: [

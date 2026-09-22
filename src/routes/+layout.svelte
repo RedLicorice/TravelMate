@@ -30,12 +30,24 @@
 	});
 
 	onMount(() => {
-		// A new version is fetched without being announced and without being
-		// imposed: no prompt to approve a refresh, and no reload of a page
-		// someone is in the middle of using. It waits, and the next cold start
-		// is the new one. Registered here because the static fallback page gets
-		// no build-time injection.
-		registerSW({ immediate: true });
+		// Opening the app online gets the current version of it.
+		//
+		// The check takes a moment, so "opening" is a short window rather than
+		// an instant -- long enough for the worker to answer on a slow
+		// connection, short enough that the traveller is still looking at the
+		// screen they opened rather than working in it. A new version found
+		// inside that window is taken at once; one that turns up later is not
+		// imposed on a page in use, and is taken the next time the app opens.
+		// Registered here because the static fallback page gets no build-time
+		// injection.
+		const opened = Date.now();
+		const OPENING_MS = 10_000;
+		const update = registerSW({
+			immediate: true,
+			onNeedRefresh() {
+				if (Date.now() - opened < OPENING_MS) void update(true);
+			}
+		});
 		const stopWatching = watchSession();
 		const stopListening = watchForFaults();
 		return () => {

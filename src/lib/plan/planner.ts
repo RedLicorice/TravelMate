@@ -1338,12 +1338,14 @@ export function replan(input: PlanInput): PlanResult {
 
 		// The day ends at the hotel the traveller sleeps at. A day whose last
 		// anchor is not a hotel -- or whose only hotel is the one it opens on
-		// -- gets one drawn at its end.
+		// -- gets one drawn at its end. Not a day that ends in a journey out:
+		// the traveller has checked out and is at the terminal, and does not
+		// sleep at the hotel on the night they fly home.
 		// ponytail: a day with only a closing hotel on it gets a second one.
 		// Tell them apart by clock against the day's midpoint if it matters.
 		const anchors = route.filter(isAnchor).sort(byClock);
 		const last = anchors.at(-1);
-		if (input.hotel && (last?.kind !== 'hotel' || anchors.length < 2)) {
+		if (input.hotel && !day.fixedEnd.length && (last?.kind !== 'hotel' || anchors.length < 2)) {
 			route.push(closingHotel(input.hotel, day, dayIndex));
 		}
 
