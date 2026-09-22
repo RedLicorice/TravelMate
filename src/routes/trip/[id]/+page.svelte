@@ -2405,8 +2405,15 @@
 								data-grab={grabId ? 'yes' : undefined}
 								{@attach grabId ? (node: HTMLElement) => drag.handle(node, grabId) : () => {}}
 							>
-								<span class="tm-stop__from">{t.from}</span>
-								<span class="tm-stop__to">{t.to}</span>
+								<!-- One time when it takes no time. A card that starts and
+								     ends at the same minute wore that minute twice, with a
+								     rule between them. -->
+								{#if t.to === t.from}
+									<span class="tm-stop__at">{t.from}</span>
+								{:else}
+									<span class="tm-stop__from">{t.from}</span>
+									<span class="tm-stop__to">{t.to}</span>
+								{/if}
 							</span>
 							<div>
 								<p class="tm-stop__name">

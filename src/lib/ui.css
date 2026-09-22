@@ -529,8 +529,13 @@ button.tm-slot {
   opacity: 0.55;
 }
 .tm-stop__from,
-.tm-stop__to {
+.tm-stop__to,
+.tm-stop__at {
   white-space: nowrap;
+}
+/* A moment, not a span: no rule to divide, nothing to divide it from. */
+.tm-stop__at {
+  padding: 2px 0;
 }
 .tm-stop__from {
   border-bottom: 1px solid var(--tm-border);
