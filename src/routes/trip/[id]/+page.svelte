@@ -2351,6 +2351,12 @@
 							: stop.anchorKind === 'meal' && !stop.placementId
 								? `${SLOT_DRAG}${dayIndex}:${mealFor(stop) ?? ''}`
 								: stop.placementId}
+						<!-- An empty meal container is a question: what are you eating?
+						     The whole card asks it, not the four words of its name. -->
+						{@const emptyMeal = stop.anchorKind === 'meal' && !stop.poiId}
+						{@const after = emptyMeal
+							? current.stops.slice(i + 1).find((x) => x.poiId)
+							: undefined}
 						{@const t = cardTimes(
 							stop.timeLabel,
 							hhmm(stop.arrive, row.timezone),
@@ -2370,6 +2376,7 @@
 								source={stop.legIn.source}
 							/>
 						{/if}
+						<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 						<div
 							class="tm-stop"
 							class:tm-stop--anchor={stop.anchor}
@@ -2390,6 +2397,18 @@
 							data-slot-index={i}
 							data-slot-day={dayIndex}
 							style={grabId && drag.state.id === grabId ? 'opacity:0.35' : ''}
+							role={emptyMeal ? 'button' : undefined}
+							tabindex={emptyMeal ? 0 : undefined}
+							onclick={emptyMeal
+								? () => (slot = { day: dayIndex, before: after?.poiId ?? null, meal: stop.name })
+								: undefined}
+							onkeydown={emptyMeal
+								? (e: KeyboardEvent) => {
+										if (e.key !== 'Enter' && e.key !== ' ') return;
+										e.preventDefault();
+										slot = { day: dayIndex, before: after?.poiId ?? null, meal: stop.name };
+									}
+								: undefined}
 						>
 							<!-- The time is the handle. It is the part of a card that is
 							     about when, which is what dragging one changes, and it
