@@ -20,7 +20,6 @@
 	import {
 		addPoi,
 		listPois,
-		removePoi,
 		saveAssignments,
 		toPlanPoi,
 		updatePoi,
@@ -295,12 +294,24 @@
 		}
 	}
 
-	async function forget(poiId: string) {
+	/**
+	 * Take a place off the plan, leaving it on the wishlist.
+	 *
+	 * Not the same as deleting it: a stop taken out of a day is one the
+	 * traveller does not want on that day, and it used to be removed from the
+	 * trip altogether -- the place gone from the wishlist too, with nothing
+	 * said. Deleting for good is on the place's own page, behind a
+	 * confirmation.
+	 */
+	async function unplace(poiId: string) {
 		carded = null;
 		busy = true;
 		try {
-			await removePoi(poiId);
-			pois = pois.filter((p) => p.id !== poiId);
+			await saveAssignments([{ id: poiId, dayIndex: null, orderIndex: null }]);
+			await updatePoi(poiId, { pinned: false });
+			pois = pois.map((p) =>
+				p.id === poiId ? { ...p, day_index: null, order_index: null, pinned: false } : p
+			);
 			await restore();
 		} catch (e) {
 			error = (e as Error).message;
@@ -2189,7 +2200,8 @@
 				{people}
 				{busy}
 				onedit={(patch) => editCarded(patch)}
-				onremove={() => forget(carded!.id)}
+				placed={dayOf.has(carded!.id)}
+				onunplace={() => unplace(carded!.id)}
 				onclose={() => (carded = null)}
 			/>
 		{/if}

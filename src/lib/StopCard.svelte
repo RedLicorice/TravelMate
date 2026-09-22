@@ -22,11 +22,24 @@
 			pinned?: boolean;
 			notes?: string | null;
 		}) => void;
-		onremove: () => void;
+		/** Take it off the plan. It stays on the wishlist, where it came from. */
+		onunplace: () => void;
+		/** Whether it is on the plan at all: a wishlist row has nowhere to come off. */
+		placed?: boolean;
 		onclose: () => void;
 	};
 
-	let { poi, tripId, hotel, people, busy = false, onedit, onremove, onclose }: Props = $props();
+	let {
+		poi,
+		tripId,
+		hotel,
+		people,
+		busy = false,
+		placed = true,
+		onedit,
+		onunplace,
+		onclose
+	}: Props = $props();
 
 	const STEPS = [15, 30, 45, 60, 90, 120, 180];
 
@@ -157,14 +170,24 @@
 			Everything about it
 		</a>
 
-		<button
-			class="tm-btn tm-btn--block mt-2"
-			style="background: var(--tm-danger-soft); color: var(--tm-danger-ink)"
-			disabled={busy}
-			onclick={onremove}
-		>
-			Remove from the trip
-		</button>
+		<!-- Off the plan, not off the trip. Taking a place out of a day is
+		     saying "not this day", not "never mind" -- and the two were the
+		     same button, so a stop removed from the plan vanished from the
+		     wishlist as well. Deleting it for good lives on its own page,
+		     behind a confirmation, which is where something irreversible
+		     belongs. -->
+		{#if placed}
+			<button
+				class="tm-btn tm-btn--secondary tm-btn--block mt-2"
+				disabled={busy}
+				onclick={onunplace}
+			>
+				Take it off the plan
+			</button>
+			<p class="tm-hint mt-1" style="text-align:center">
+				Back to the wishlist. Everything about it has the delete.
+			</p>
+		{/if}
 		<button class="tm-btn tm-btn--ghost tm-btn--block mt-2" onclick={onclose}>Close</button>
 	</div>
 </div>
