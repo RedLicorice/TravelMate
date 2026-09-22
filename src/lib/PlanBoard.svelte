@@ -20,6 +20,8 @@
 		onholdanchor?: (stop: PlannedStop, dayIndex: number) => void;
 		/** A meal container dragged to a new time, in minutes past midnight. */
 		onmovemeal?: (stop: PlannedStop, dayIndex: number, minutes: number) => void;
+		/** An empty meal container tapped: it wants filling. */
+		onfillmeal?: (stop: PlannedStop, dayIndex: number) => void;
 		/** Tapped empty time. `beforeId` is the stop the new one should precede. */
 		onadd?: (dayIndex: number, beforeId: string | null) => void;
 	};
@@ -36,6 +38,7 @@
 		onpin,
 		onholdanchor,
 		onmovemeal,
+		onfillmeal,
 		onadd
 	}: Props = $props();
 
@@ -377,6 +380,10 @@
 
 			{#if o.stop?.poiId}
 				<button class="tm-board-title" onclick={() => onpick?.(o.stop!.poiId!)}>{o.title}</button>
+			{:else if o.anchor?.anchorKind === 'meal' && onfillmeal}
+				<button class="tm-board-title" onclick={() => onfillmeal(o.anchor!, o.day ?? 0)}>
+					{o.title}
+				</button>
 			{:else}
 				<span class="tm-board-title">{o.title}</span>
 			{/if}

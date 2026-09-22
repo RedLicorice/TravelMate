@@ -1437,6 +1437,8 @@
 						onholdanchor={(stop, dayIdx) =>
 							stop.anchorKind === 'meal' ? holdMeal(stop, dayIdx) : holdAllowance(stop, dayIdx)}
 						onmovemeal={(stop, dayIdx, minutes) => moveMeal(stop, dayIdx, minutes)}
+						onfillmeal={(stop, dayIdx) =>
+							(slot = { day: dayIdx, before: null, meal: stop.name })}
 						onadd={(dayIdx, beforeId) => (slot = { day: dayIdx, before: beforeId })}
 					/>
 				{/if}
@@ -1534,20 +1536,6 @@
 							<span class="tm-stop__time">
 								{cardTime(stop.timeLabel, hhmm(stop.arrive, row.timezone), stop.durationMin)}
 							</span>
-							{#if stop.anchorKind === 'meal'}
-								{@const after = current.stops.slice(i + 1).find((x) => x.poiId)}
-								<button
-									class="tm-meal-swap"
-									onclick={() =>
-										(slot = {
-											day: dayIndex,
-											before: after?.poiId ?? null,
-											meal: stop.name
-										})}
-								>
-									Pick a place
-								</button>
-							{/if}
 							<div>
 								<p class="tm-stop__name">
 									{#if stop.poiId}
@@ -1562,6 +1550,13 @@
 										<button
 											class="tm-stop__open"
 											onclick={() => (carded = pois.find((p) => p.id === stop.poiId) ?? null)}
+										>{stop.name}</button>
+									{:else if stop.anchorKind === 'meal'}
+										{@const after = current.stops.slice(i + 1).find((x) => x.poiId)}
+										<button
+											class="tm-stop__open"
+											onclick={() =>
+												(slot = { day: dayIndex, before: after?.poiId ?? null, meal: stop.name })}
 										>{stop.name}</button>
 									{:else}{stop.name}{/if}
 								</p>

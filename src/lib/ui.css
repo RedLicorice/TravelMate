@@ -196,14 +196,6 @@ button.tm-slot { width: 100%; background: none; cursor: pointer; font-family: in
 }
 
 
-/* Offered on a meal the plan invented: the traveller can name the place. */
-.tm-meal-swap {
-  grid-column: 1; justify-self: start;
-  margin-top: 4px; padding: 3px 7px;
-  font: 600 var(--tm-text-xs)/1 var(--tm-font);
-  color: var(--tm-blush-ink); background: var(--tm-surface);
-  border: 1px solid var(--tm-blush); border-radius: 999px; cursor: pointer;
-}
 
 /* How many times a place is already on the trip. Only shown past one, because
    "x1" is noise on every row that has ever been added. */
