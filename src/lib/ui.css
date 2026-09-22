@@ -137,7 +137,9 @@
 /* ---- timeline ---- */
 .tm-stop {
   display: grid;
-  grid-template-columns: 54px 1fr;
+  /* The time sizes itself and the name gives way. A fixed track squeezed
+     08:48-09:18 into four wrapped lines on a narrow phone. */
+  grid-template-columns: auto minmax(0, 1fr);
   gap: var(--tm-space-3);
   background: var(--tm-surface);
   border: 1px solid var(--tm-border);
@@ -147,6 +149,7 @@
 }
 .tm-stop__name {
   font: 600 var(--tm-text-base)/1.25 var(--tm-font);
+  overflow-wrap: anywhere;
 }
 .tm-stop__sub {
   font: 400 var(--tm-text-sm)/1.4 var(--tm-font);
