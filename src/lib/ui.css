@@ -222,6 +222,21 @@ button.tm-slot { width: 100%; background: none; cursor: pointer; font-family: in
 }
 
 /* The time doubles as the grab handle. Not the whole card: the card is a tap
-   target and a scroll surface, and taking both makes the list unscrollable. */
-.tm-stop__time--grab { cursor: grab; touch-action: none; user-select: none; }
-.tm-stop__time--grab:active { cursor: grabbing; }
+   target and a scroll surface, and taking both makes the list unscrollable.
+   It has to look like a control, because on a phone there is no cursor to
+   discover that it is one. */
+.tm-stop__time--grab {
+  cursor: grab; touch-action: none; user-select: none;
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 5px; margin: -3px -5px;
+  border-radius: var(--tm-r-sm, 6px);
+  background: var(--tm-surface-2);
+  border: 1px solid var(--tm-border);
+}
+.tm-stop__time--grab::before {
+  content: '⠿';
+  font-size: 11px;
+  line-height: 1;
+  color: var(--tm-text-faint);
+}
+.tm-stop__time--grab:active { cursor: grabbing; border-color: var(--tm-primary); }
