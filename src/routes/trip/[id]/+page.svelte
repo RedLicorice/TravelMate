@@ -611,31 +611,62 @@
 	 */
 	async function applyMove(draggedId: string, target: Parameters<typeof reorder>[2]) {
 		if (draggedId.startsWith(SLOT_DRAG)) return moveSlot(draggedId, target);
+
+		// Order the move the way the traveller sees it. A stop's stored order is
+		// what the planner was last given, not what it decided: the day on
+		// screen has since been routed, re-timed and threaded with meals. Read
+		// in stored order, a drop onto the third card landed in some unrelated
+		// place -- which is what made moving a card look random.
+		const seen = new Map<string, { day: number; rank: number }>();
+		(result?.days ?? []).forEach((d, day) => {
+			let rank = 0;
+			for (const st of d.stops) if (st.poiId) seen.set(st.poiId, { day, rank: rank++ });
+		});
+
 		const rows = reorder(
-			pois.map((p) => ({ id: p.id, dayIndex: p.day_index, orderIndex: p.order_index })),
+			pois.map((p) => ({
+				id: p.id,
+				dayIndex: seen.get(p.id)?.day ?? p.day_index,
+				orderIndex: seen.get(p.id)?.rank ?? p.order_index
+			})),
 			draggedId,
 			target
 		);
 		if (!rows.length) return;
 
+		// Held, but not to a time. A drag states an order: this stop before that
+		// one. Minting a pinned_at from where the card happened to land states a
+		// moment as well, and the first refinement that lengthens a leg can no
+		// longer slide the stop -- it warns instead, about a time nobody chose.
+		const held = { pinned: true };
+
 		// Follow the stop to its new day. Without this it simply vanishes from
 		// the day on screen and the move looks like a deletion.
 		const landedOn = rows.find((r) => r.id === draggedId)?.dayIndex;
 		if (landedOn !== null && landedOn !== undefined) dayIndex = landedOn;
-		// Update locally first so the timeline moves under the finger rather
-		// than after a round trip.
+
 		const byId = new Map(rows.map((r) => [r.id, r]));
-		pois = pois.map((p) =>
-			byId.has(p.id)
-				? { ...p, day_index: byId.get(p.id)!.dayIndex, order_index: byId.get(p.id)!.orderIndex }
-				: p
-		);
+		pois = pois.map((p) => ({
+			...p,
+			...(byId.has(p.id)
+				? { day_index: byId.get(p.id)!.dayIndex, order_index: byId.get(p.id)!.orderIndex }
+				: {}),
+			...(p.id === draggedId ? held : {})
+		}));
+
+		// Show the move now, from what is already known. The same scheduler the
+		// round trips will run, on the travel times already in hand: the card
+		// lands under the finger instead of after a write, a re-time and a call
+		// to a routing service.
+		const input = planInput();
+		if (input) fresh = schedule({ ...input, travel }).days;
+
 		try {
 			await saveAssignments(rows);
-			// Moved by hand is held by hand: Regenerate plans around it.
-			await updatePoi(draggedId, { pinned: true });
-			pois = pois.map((p) => (p.id === draggedId ? { ...p, pinned: true } : p));
-			await restore({ hold: draggedId });
+			await updatePoi(draggedId, held);
+			// Refine in the background: real road times may shift the day by a
+			// few minutes, and that is not worth a frozen screen.
+			await restore();
 		} catch (e) {
 			error = (e as Error).message;
 			pois = await listPois(tripId);
@@ -690,9 +721,10 @@
 		}
 	}
 
-	async function retime(opts: { hold?: string } = {}) {
-		if (!row || !days.length) return;
-		const input = {
+	/** The trip as the scheduler wants it told. */
+	function planInput() {
+		if (!row || !days.length) return null;
+		return {
 			pois: pois.map(toPlanPoi),
 			days,
 			allowedModes: row.allowed_modes as Mode[],
@@ -701,6 +733,11 @@
 			curves,
 			meals: mealPlan
 		};
+	}
+
+	async function retime(opts: { hold?: string } = {}) {
+		const input = planInput();
+		if (!input) return;
 		const first = schedule({ ...input, travel });
 		const routed = firstOf([await routedTable(first.days), ...(travel ? [travel] : [])]);
 		const next = schedule({ ...input, travel: routed });
