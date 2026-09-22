@@ -53,18 +53,6 @@ export default defineConfig({
 				globPatterns: ['**/*.{js,css,html,woff2,png,svg}'],
 				runtimeCaching: [
 					{
-						// Map tiles: show the last-seen city rather than grey squares
-						// when the traveller is abroad with no signal. Capped so a
-						// week of panning does not fill the device.
-						urlPattern: /^https:\/\/tile\.openstreetmap\.org\/.*/i,
-						handler: 'CacheFirst',
-						options: {
-							cacheName: 'osm-tiles',
-							expiration: { maxEntries: 300, maxAgeSeconds: 60 * 60 * 24 * 30 },
-							cacheableResponse: { statuses: [0, 200] }
-						}
-					},
-					{
 						// Trip data: serve from cache immediately, refresh behind it.
 						// A stale plan beats a spinner on a hot street.
 						urlPattern: /^https:\/\/[a-z0-9]+\.supabase\.co\/rest\/v1\/.*/i,

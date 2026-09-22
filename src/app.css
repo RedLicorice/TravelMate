@@ -42,12 +42,6 @@ textarea,
 	user-select: text;
 }
 
-/* Leaflet handles pinch, drag and double-tap itself and needs the raw touch
-   stream; `manipulation` above would swallow part of it. */
-.leaflet-container {
-	touch-action: none;
-}
-
 /* Safe areas: the notch and the home indicator. Applied to the docks rather
    than the body so scrolling content still runs edge to edge. */
 .tm-safe-top {
