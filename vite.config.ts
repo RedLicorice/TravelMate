@@ -22,6 +22,11 @@ export default defineConfig({
 			paths: { base }
 		}),
 		SvelteKitPWA({
+			// The integration does not read SvelteKit's config: without this it
+			// assumes a site at the domain root with no fallback page, leaves
+			// 404.html out of the precache and binds the navigation fallback to
+			// '/'. Offline that is a blank screen at every URL.
+			kit: { adapterFallback: '404.html', spa: true },
 			// The app decides when to take a new version, and it takes it on
 			// opening. 'prompt' is the generated module's name for "hand the
 			// decision to the app" -- nobody is ever asked anything. See the
