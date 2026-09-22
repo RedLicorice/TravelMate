@@ -982,15 +982,11 @@
 			const from = prev.depart < next.arrive ? prev.depart : prev.arrive;
 			return between(from, next.arrive);
 		}
-		// Beyond the one card there is -- but never outside the day. Before it
-		// begins the traveller is still on the way in, and after it ends they
-		// are asleep or on the way out: nothing goes there, by hand either.
-		// Put above the card the day opens with, it takes the day's first
-		// free minute; below the one it closes with, the last minute before it.
-		const start = days[day]?.start.getTime() ?? -Infinity;
-		const end = days[day]?.end.getTime() ?? Infinity;
-		if (prev) return new Date(Math.min(prev.depart.getTime() + 15 * 60_000, end - 60_000)).toISOString();
-		if (next) return new Date(Math.max(next.arrive.getTime() - 60 * 60_000, start)).toISOString();
+		// Beyond the one card there is, wherever that falls: the day's window is
+		// the automatic plan's to respect, and a card put by hand goes where
+		// the traveller put it.
+		if (prev) return new Date(prev.depart.getTime() + 15 * 60_000).toISOString();
+		if (next) return new Date(next.arrive.getTime() - 60 * 60_000).toISOString();
 		return (days[day]?.start ?? new Date()).toISOString();
 	}
 
