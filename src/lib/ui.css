@@ -9,238 +9,476 @@
   padding: 0 var(--tm-space-5);
   border-radius: var(--tm-r-md);
   border: 1px solid transparent;
-  display: inline-flex; align-items: center; justify-content: center; gap: var(--tm-space-2);
-  cursor: pointer; transition: background var(--tm-motion), border-color var(--tm-motion);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--tm-space-2);
+  cursor: pointer;
+  transition:
+    background var(--tm-motion),
+    border-color var(--tm-motion);
 }
-.tm-btn--primary   { background: var(--tm-primary); color: var(--tm-primary-ink); }
-.tm-btn--primary:hover { background: var(--tm-primary-hover); }
-.tm-btn--secondary { background: var(--tm-surface); color: var(--tm-text); border-color: var(--tm-border-strong); }
-.tm-btn--ghost     { background: transparent; color: var(--tm-text-muted); }
-.tm-btn:disabled   { opacity: 0.4; cursor: not-allowed; }
+.tm-btn--primary {
+  background: var(--tm-primary);
+  color: var(--tm-primary-ink);
+}
+.tm-btn--primary:hover {
+  background: var(--tm-primary-hover);
+}
+.tm-btn--secondary {
+  background: var(--tm-surface);
+  color: var(--tm-text);
+  border-color: var(--tm-border-strong);
+}
+.tm-btn--ghost {
+  background: transparent;
+  color: var(--tm-text-muted);
+}
+.tm-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
 /* display:flex, not the inherited inline-flex: an inline-level box ignores
    auto margins, so a capped-width block button would not centre. */
-.tm-btn--block     { width: 100%; display: flex; }
+.tm-btn--block {
+  width: 100%;
+  display: flex;
+}
 
-.tm-field { display: flex; flex-direction: column; gap: var(--tm-space-2); min-width: 0; }
+.tm-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tm-space-2);
+  min-width: 0;
+}
 /* A date or time input carries an intrinsic width wider than a phone's column.
    Without this it pushes its card past the screen edge instead of fitting. */
-.tm-field > .tm-input { min-width: 0; max-width: 100%; }
-.tm-label { font: 600 var(--tm-text-sm)/1 var(--tm-font); color: var(--tm-text); }
+.tm-field > .tm-input {
+  min-width: 0;
+  max-width: 100%;
+}
+.tm-label {
+  font: 600 var(--tm-text-sm)/1 var(--tm-font);
+  color: var(--tm-text);
+}
 .tm-input {
   font: 400 var(--tm-text-base)/1 var(--tm-font);
   min-height: var(--tm-tap-min);
   padding: 0 var(--tm-space-4);
-  background: var(--tm-surface); color: var(--tm-text);
-  border: 1px solid var(--tm-border-strong); border-radius: var(--tm-r-md);
+  background: var(--tm-surface);
+  color: var(--tm-text);
+  border: 1px solid var(--tm-border-strong);
+  border-radius: var(--tm-r-md);
 }
-.tm-input::placeholder { color: var(--tm-text-faint); }
-.tm-input:focus-visible { outline: 2px solid var(--tm-primary); outline-offset: 1px; }
-.tm-input[aria-invalid='true'] { border-color: var(--tm-danger-ink); }
-.tm-hint { font: 400 var(--tm-text-sm)/1.4 var(--tm-font); color: var(--tm-text-faint); }
-.tm-hint--error { color: var(--tm-danger-ink); }
+.tm-input::placeholder {
+  color: var(--tm-text-faint);
+}
+.tm-input:focus-visible {
+  outline: 2px solid var(--tm-primary);
+  outline-offset: 1px;
+}
+.tm-input[aria-invalid="true"] {
+  border-color: var(--tm-danger-ink);
+}
+.tm-hint {
+  font: 400 var(--tm-text-sm)/1.4 var(--tm-font);
+  color: var(--tm-text-faint);
+}
+.tm-hint--error {
+  color: var(--tm-danger-ink);
+}
 
 .tm-card {
-  background: var(--tm-surface); border: 1px solid var(--tm-border);
-  border-radius: var(--tm-r-lg); padding: var(--tm-space-4);
+  background: var(--tm-surface);
+  border: 1px solid var(--tm-border);
+  border-radius: var(--tm-r-lg);
+  padding: var(--tm-space-4);
 }
-.tm-card__title { font: 600 var(--tm-text-lg)/var(--tm-leading-tight) var(--tm-font); }
-.tm-card__meta  { font: 400 var(--tm-text-sm)/1.4 var(--tm-font); color: var(--tm-text-muted); margin-top: 2px; }
+.tm-card__title {
+  font: 600 var(--tm-text-lg)/var(--tm-leading-tight) var(--tm-font);
+}
+.tm-card__meta {
+  font: 400 var(--tm-text-sm)/1.4 var(--tm-font);
+  color: var(--tm-text-muted);
+  margin-top: 2px;
+}
 
 .tm-chip {
-  display: inline-flex; align-items: center; gap: 5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   font: 600 var(--tm-text-xs)/1 var(--tm-font);
-  padding: 6px 10px; border-radius: var(--tm-r-full);
-  background: var(--tm-surface-2); color: var(--tm-text-muted);
+  padding: 6px 10px;
+  border-radius: var(--tm-r-full);
+  background: var(--tm-surface-2);
+  color: var(--tm-text-muted);
 }
-.tm-chip--warn  { background: var(--tm-warn-soft);  color: var(--tm-warn-ink); }
-.tm-chip--ok    { background: var(--tm-ok-soft);    color: var(--tm-ok-ink); }
-.tm-chip--peach { background: var(--tm-peach-soft); color: var(--tm-peach-ink); }
-.tm-chip--mint  { background: var(--tm-mint-soft);  color: var(--tm-mint-ink); }
-.tm-chip--sky   { background: var(--tm-sky-soft);   color: var(--tm-sky-ink); }
+.tm-chip--warn {
+  background: var(--tm-warn-soft);
+  color: var(--tm-warn-ink);
+}
+.tm-chip--ok {
+  background: var(--tm-ok-soft);
+  color: var(--tm-ok-ink);
+}
+.tm-chip--peach {
+  background: var(--tm-peach-soft);
+  color: var(--tm-peach-ink);
+}
+.tm-chip--mint {
+  background: var(--tm-mint-soft);
+  color: var(--tm-mint-ink);
+}
+.tm-chip--sky {
+  background: var(--tm-sky-soft);
+  color: var(--tm-sky-ink);
+}
 
 /* ---- timeline ---- */
 .tm-stop {
-  display: grid; grid-template-columns: 46px 1fr; gap: var(--tm-space-3);
-  background: var(--tm-surface); border: 1px solid var(--tm-border);
-  border-radius: var(--tm-r-md); padding: var(--tm-space-3);
+  display: grid;
+  grid-template-columns: 54px 1fr;
+  gap: var(--tm-space-3);
+  background: var(--tm-surface);
+  border: 1px solid var(--tm-border);
+  border-radius: var(--tm-r-md);
+  padding: var(--tm-space-3);
   border-left: 3px solid var(--tm-stop-day, var(--tm-day-none));
 }
-.tm-stop__time {
-  font: 600 var(--tm-text-sm)/1.3 var(--tm-font-num); color: var(--tm-text-muted);
-  padding-top: 2px; overflow-wrap: anywhere;
+.tm-stop__name {
+  font: 600 var(--tm-text-base)/1.25 var(--tm-font);
 }
-.tm-stop__name { font: 600 var(--tm-text-base)/1.25 var(--tm-font); }
-.tm-stop__sub  { font: 400 var(--tm-text-sm)/1.4 var(--tm-font); color: var(--tm-text-faint); margin-top: 2px; }
+.tm-stop__sub {
+  font: 400 var(--tm-text-sm)/1.4 var(--tm-font);
+  color: var(--tm-text-faint);
+  margin-top: 2px;
+}
 /* Every card on the plan is the same card. The left accent is the only thing
    that differs -- no dashes, no other fill, no muted text. */
-.tm-stop--anchor   { border-left-color: var(--tm-sky);   background: var(--tm-sky-soft); }
-.tm-stop--terminal { border-left-color: var(--tm-peach); background: var(--tm-peach-soft); }
-.tm-stop--service  { border-left-color: var(--tm-mint);  background: var(--tm-mint-soft); }
-.tm-stop--chore    { border-left-color: var(--tm-lilac); background: var(--tm-lilac-soft); }
-.tm-stop--meal     { border-left-color: var(--tm-blush); background: var(--tm-blush-soft); }
+.tm-stop--anchor {
+  border-left-color: var(--tm-sky);
+  background: var(--tm-sky-soft);
+}
+.tm-stop--terminal {
+  border-left-color: var(--tm-peach);
+  background: var(--tm-peach-soft);
+}
+.tm-stop--service {
+  border-left-color: var(--tm-mint);
+  background: var(--tm-mint-soft);
+}
+.tm-stop--chore {
+  border-left-color: var(--tm-lilac);
+  background: var(--tm-lilac-soft);
+}
+.tm-stop--meal {
+  border-left-color: var(--tm-blush);
+  background: var(--tm-blush-soft);
+}
 
 /* Full-strength text on a tinted card. The faint greys are tuned for the plain
    surface and go washed out on a pastel. */
 .tm-stop--anchor .tm-stop__sub,
-.tm-stop--anchor .tm-stop__time { color: var(--tm-text); }
+.tm-stop--anchor .tm-stop__time {
+  color: var(--tm-text);
+}
 
 /* The leg is a connector, not a card: it reads as the gap between two stops. */
 .tm-leg {
-  display: flex; align-items: center; gap: 7px;
-  font: 500 var(--tm-text-xs)/1 var(--tm-font); color: var(--tm-text-faint);
-  padding: 7px 0 7px 22px; position: relative;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font: 500 var(--tm-text-xs)/1 var(--tm-font);
+  color: var(--tm-text-faint);
+  padding: 7px 0 7px 22px;
+  position: relative;
 }
 .tm-leg::before {
-  content: ''; position: absolute; left: 9px; top: 0; bottom: 0;
+  content: "";
+  position: absolute;
+  left: 9px;
+  top: 0;
+  bottom: 0;
   border-left: 2px dotted var(--tm-border-strong);
 }
 
 /* ---- POI search ---- */
 .tm-seg {
-  display: flex; gap: 2px; padding: 3px;
-  background: var(--tm-surface-2); border-radius: var(--tm-r-full);
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--tm-surface-2);
+  border-radius: var(--tm-r-full);
 }
 .tm-seg button {
-  flex: 1; border: none; cursor: pointer;
+  flex: 1;
+  border: none;
+  cursor: pointer;
   font: 600 var(--tm-text-sm)/1 var(--tm-font);
-  padding: 9px 0; border-radius: var(--tm-r-full);
-  background: transparent; color: var(--tm-text-muted);
+  padding: 9px 0;
+  border-radius: var(--tm-r-full);
+  background: transparent;
+  color: var(--tm-text-muted);
 }
-.tm-seg button[aria-selected='true'] { background: var(--tm-surface); color: var(--tm-text); }
+.tm-seg button[aria-selected="true"] {
+  background: var(--tm-surface);
+  color: var(--tm-text);
+}
 
 .tm-search {
-  display: flex; align-items: center; gap: var(--tm-space-2);
-  background: var(--tm-surface); border: 1px solid var(--tm-border-strong);
-  border-radius: var(--tm-r-md); padding: 0 var(--tm-space-3); min-height: 40px;
+  display: flex;
+  align-items: center;
+  gap: var(--tm-space-2);
+  background: var(--tm-surface);
+  border: 1px solid var(--tm-border-strong);
+  border-radius: var(--tm-r-md);
+  padding: 0 var(--tm-space-3);
+  min-height: 40px;
   color: var(--tm-text-faint);
 }
 .tm-search input {
-  flex: 1; border: none; outline: none; background: none;
-  font: 400 var(--tm-text-base)/1 var(--tm-font); color: var(--tm-text); min-width: 0;
+  flex: 1;
+  border: none;
+  outline: none;
+  background: none;
+  font: 400 var(--tm-text-base)/1 var(--tm-font);
+  color: var(--tm-text);
+  min-width: 0;
 }
 
-.tm-filters { display: flex; gap: 6px; overflow-x: auto; }
-.tm-filters .tm-chip { cursor: pointer; white-space: nowrap; }
-.tm-filters .tm-chip[aria-pressed='true'] { background: var(--tm-peach-soft); color: var(--tm-peach-ink); }
+.tm-filters {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+}
+.tm-filters .tm-chip {
+  cursor: pointer;
+  white-space: nowrap;
+}
+.tm-filters .tm-chip[aria-pressed="true"] {
+  background: var(--tm-peach-soft);
+  color: var(--tm-peach-ink);
+}
 
 /* A result is a row, not a card: a list of ten cards is a wall. */
 .tm-result {
-  display: grid; grid-template-columns: 1fr auto; gap: var(--tm-space-3);
-  align-items: center; padding: 10px 0;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--tm-space-3);
+  align-items: center;
+  padding: 10px 0;
   border-bottom: 1px solid var(--tm-border);
 }
 /* The same row as a control: the whole row is the target, not the glyph at the
    end of it. A button does not stretch or align like the anchor this class was
    written for, so both are stated. */
 button.tm-result {
-  width: 100%; min-height: var(--tm-tap-min); text-align: left;
-  padding: 10px var(--tm-space-2); border: none;
+  width: 100%;
+  min-height: var(--tm-tap-min);
+  text-align: left;
+  padding: 10px var(--tm-space-2);
+  border: none;
   border-bottom: 1px solid var(--tm-border);
   border-radius: var(--tm-r-md);
-  background: none; color: inherit; font: inherit; cursor: pointer;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
   transition: background var(--tm-motion);
 }
-button.tm-result:hover, button.tm-result:focus-visible { background: var(--tm-surface-2); }
-.tm-result__name { font: 600 var(--tm-text-base)/1.25 var(--tm-font); }
-.tm-result__meta { font: 400 var(--tm-text-sm)/1.4 var(--tm-font); color: var(--tm-text-faint); margin-top: 2px; }
+button.tm-result:hover,
+button.tm-result:focus-visible {
+  background: var(--tm-surface-2);
+}
+.tm-result__name {
+  font: 600 var(--tm-text-base)/1.25 var(--tm-font);
+}
+.tm-result__meta {
+  font: 400 var(--tm-text-sm)/1.4 var(--tm-font);
+  color: var(--tm-text-faint);
+  margin-top: 2px;
+}
 .tm-add {
-  width: 34px; height: 34px; border-radius: var(--tm-r-full); cursor: pointer;
-  border: 1px solid var(--tm-border-strong); background: var(--tm-surface);
-  color: var(--tm-text); display: grid; place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--tm-r-full);
+  cursor: pointer;
+  border: 1px solid var(--tm-border-strong);
+  background: var(--tm-surface);
+  color: var(--tm-text);
+  display: grid;
+  place-items: center;
   font: 600 16px/1 var(--tm-font);
 }
-.tm-add[aria-pressed='true'] { background: var(--tm-ok-soft); border-color: transparent; color: var(--tm-ok-ink); }
+.tm-add[aria-pressed="true"] {
+  background: var(--tm-ok-soft);
+  border-color: transparent;
+  color: var(--tm-ok-ink);
+}
 
 /* Bottom sheet: the map's detail surface. Sits over the map, never replaces it —
    losing sight of where a place is defeats the point of the map view. */
 .tm-sheet {
-  position: absolute; left: 0; right: 0; bottom: 0;
-  background: var(--tm-surface); border-top: 1px solid var(--tm-border);
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--tm-surface);
+  border-top: 1px solid var(--tm-border);
   border-radius: var(--tm-r-lg) var(--tm-r-lg) 0 0;
   padding: var(--tm-space-3) var(--tm-space-4) var(--tm-space-4);
 }
 .tm-sheet__grip {
-  width: 34px; height: 4px; border-radius: 2px; background: var(--tm-border-strong);
+  width: 34px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--tm-border-strong);
   margin: 0 auto var(--tm-space-3);
 }
-.tm-attrib { font: 400 10px/1 var(--tm-font); color: var(--tm-text-faint); }
+.tm-attrib {
+  font: 400 10px/1 var(--tm-font);
+  color: var(--tm-text-faint);
+}
 
 /* A pin control on a stop: quiet until it is on, because most stops are not. */
 .tm-pin {
-  display: inline-flex; align-items: center; gap: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font: 600 var(--tm-text-xs)/1 var(--tm-font);
-  padding: 4px 8px; border-radius: 999px; cursor: pointer;
-  background: transparent; color: var(--tm-text-faint);
+  padding: 4px 8px;
+  border-radius: 999px;
+  cursor: pointer;
+  background: transparent;
+  color: var(--tm-text-faint);
   border: 1px solid var(--tm-border);
-  transition: color var(--tm-motion), border-color var(--tm-motion), background var(--tm-motion);
+  transition:
+    color var(--tm-motion),
+    border-color var(--tm-motion),
+    background var(--tm-motion);
 }
-.tm-pin:hover { color: var(--tm-text-muted); border-color: var(--tm-border-strong); }
+.tm-pin:hover {
+  color: var(--tm-text-muted);
+  border-color: var(--tm-border-strong);
+}
 .tm-pin--on {
-  background: var(--tm-butter-soft); color: var(--tm-butter-ink); border-color: var(--tm-butter);
+  background: var(--tm-butter-soft);
+  color: var(--tm-butter-ink);
+  border-color: var(--tm-butter);
 }
 
 /* The gap between two stops, offered as a place to add one. Deliberately faint:
    there is one after every stop, and they must not read as content. */
-button.tm-slot { width: 100%; background: none; cursor: pointer; font-family: inherit; }
+button.tm-slot {
+  width: 100%;
+  background: none;
+  cursor: pointer;
+  font-family: inherit;
+}
 .tm-slot {
-  display: flex; align-items: center; justify-content: center; gap: 6px;
-  min-height: 34px; margin: 2px 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 34px;
+  margin: 2px 0;
   font: 600 var(--tm-text-xs)/1 var(--tm-font);
-  color: var(--tm-text-faint); text-decoration: none;
-  border: 1px dashed var(--tm-border); border-radius: var(--tm-r-md);
+  color: var(--tm-text-faint);
+  text-decoration: none;
+  border: 1px dashed var(--tm-border);
+  border-radius: var(--tm-r-md);
   opacity: 0.55;
-  transition: opacity var(--tm-motion), border-color var(--tm-motion), color var(--tm-motion);
+  transition:
+    opacity var(--tm-motion),
+    border-color var(--tm-motion),
+    color var(--tm-motion);
 }
-.tm-slot:hover, .tm-slot:focus-visible {
-  opacity: 1; color: var(--tm-text-muted); border-color: var(--tm-border-strong);
+.tm-slot:hover,
+.tm-slot:focus-visible {
+  opacity: 1;
+  color: var(--tm-text-muted);
+  border-color: var(--tm-border-strong);
 }
-
-
 
 /* How many times a place is already on the trip. Only shown past one, because
    "x1" is noise on every row that has ever been added. */
 .tm-count {
-  margin-left: 6px; padding: 1px 6px; border-radius: 999px;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
   font: 700 var(--tm-text-xs)/1.4 var(--tm-font-num);
-  background: var(--tm-mint-soft); color: var(--tm-mint-ink);
+  background: var(--tm-mint-soft);
+  color: var(--tm-mint-ink);
 }
 
 /* The stop's name as the way into its card. A button rather than a link: the
    card opens over the plan, so the traveller keeps their place in the day. */
 .tm-stop__open {
-  background: none; border: none; padding: 0; margin: 0;
-  font: inherit; color: inherit; text-align: left; cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
 }
-.tm-stop__open:hover { text-decoration: underline; }
+.tm-stop__open:hover {
+  text-decoration: underline;
+}
 
 /* The day's own line, drawn behind its cards. Off by default: a plain list is
    the usual way to read a day, and the line is for placing things in it. */
-.tm-rails { position: relative; }
-.tm-rails--on { padding-left: 26px; }
+.tm-rails {
+  position: relative;
+}
+.tm-rails--on {
+  padding-left: 26px;
+}
 .tm-rails__here {
-  position: absolute; top: 0; bottom: 0; left: 8px; width: 10px;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 8px;
+  width: 10px;
 }
 
-/* The time doubles as the grab handle. Not the whole card: the card is a tap
-   target and a scroll surface, and taking both makes the list unscrollable.
-   It has to look like a control, because on a phone there is no cursor to
-   discover that it is one. */
-.tm-stop__time--grab {
-  cursor: grab; touch-action: none; user-select: none;
-  display: inline-flex; align-items: center; gap: 4px;
-  padding: 3px 5px; margin: -3px -5px;
-  border-radius: var(--tm-r-sm, 6px);
-  background: var(--tm-surface-2);
+/* Both of a card's times, stacked with a rule between them. The same shape
+   whether or not it can be moved: a handle is a thing you can grab, not a
+   thing that looks different. */
+.tm-stop__time {
+  display: grid;
+  justify-items: stretch;
+  text-align: center;
+  align-self: start;
+  gap: 2px;
+  padding: 3px 4px;
   border: 1px solid var(--tm-border);
-  /* No text selection and no iOS callout: both fire on the press that starts
-     a drag, and both put something on screen over the card being moved. */
+  border-radius: var(--tm-r-md);
+  background: transparent;
+  font: 600 11px/1.15 var(--tm-font-num);
+  color: var(--tm-text);
+  /* A card that cannot be moved wears the same block, half there: the
+     difference between them is what you can do, not what you can read. */
+  opacity: 0.55;
+}
+.tm-stop__from,
+.tm-stop__to {
+  white-space: nowrap;
+}
+.tm-stop__from {
+  border-bottom: 1px solid var(--tm-border);
+  padding-bottom: 2px;
+}
+.tm-stop__time--grab {
+  opacity: 1;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
 }
-.tm-stop__time--grab::before {
-  content: '⠿';
-  font-size: 11px;
-  line-height: 1;
-  color: var(--tm-text-faint);
+.tm-stop__time--grab:active {
+  cursor: grabbing;
+  border-color: var(--tm-primary);
 }
-.tm-stop__time--grab:active { cursor: grabbing; border-color: var(--tm-primary); }

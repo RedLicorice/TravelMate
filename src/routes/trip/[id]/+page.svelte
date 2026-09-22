@@ -80,7 +80,7 @@
 	import LegDetail from '$lib/LegDetail.svelte';
 	import { dayTruncated, dayUrl, routePoints } from '$lib/maps';
 	import { createDrag, insertInto, reorder } from '$lib/dnd.svelte';
-	import { cardTime } from '$lib/board';
+	import { cardTimes } from '$lib/board';
 	import { haversineKm } from '$lib/plan/geo';
 	import { longPress } from '$lib/longpress.svelte';
 	import PlanBoard from '$lib/PlanBoard.svelte';
@@ -606,6 +606,7 @@
 	 * assignment and the order, and re-clustering would undo the drag.
 	 */
 	async function applyMove(draggedId: string, target: Parameters<typeof reorder>[2]) {
+		if (draggedId.startsWith(SLOT_DRAG)) return moveSlot(draggedId, target);
 		const rows = reorder(
 			pois.map((p) => ({ id: p.id, dayIndex: p.day_index, orderIndex: p.order_index })),
 			draggedId,
@@ -635,6 +636,24 @@
 			error = (e as Error).message;
 			pois = await listPois(tripId);
 		}
+	}
+
+	/**
+	 * A meal container is dragged as itself, not as whatever fills it: moving
+	 * a slot is moving the meal, and the place inside comes with it.
+	 *
+	 * It cannot be reordered the way a stop is -- it owns no row in the
+	 * wishlist and its whole position is the hour it is told to sit at. So a
+	 * drop takes the moment of whatever it landed on. A slot is keyed by its
+	 * day and its meal, and a day has one lunch, so it stays on its own day.
+	 */
+	async function moveSlot(draggedId: string, target: Parameters<typeof reorder>[2]) {
+		if (!target || target.kind !== 'stop') return;
+		const [, rawDay, meal] = draggedId.split(':');
+		const day = Number(rawDay);
+		const landed = result?.days[day]?.stops.find((st) => st.poiId === target.id);
+		if (!landed) return;
+		await sayMeal(day, meal as MealName, { at: landed.arrive.toISOString() });
 	}
 
 	/**
@@ -711,6 +730,9 @@
 		}
 		stored = await loadPlan(tripId);
 	}
+
+	/** What a meal container is called while it is being dragged. */
+	const SLOT_DRAG = 'meal:';
 
 	const drag = createDrag((id, target) => applyMove(id, target));
 
@@ -1531,6 +1553,17 @@
 					</div>
 				{:else if current}
 					{#each current.stops as stop, i (stop.name + i)}
+						<!-- A meal container drags as itself: it owns no row in the
+						     wishlist, so its name while held is its day and its meal. -->
+						{@const grabId =
+							stop.anchorKind === 'meal'
+								? `${SLOT_DRAG}${dayIndex}:${mealFor(stop) ?? ''}`
+								: stop.poiId}
+						{@const t = cardTimes(
+							stop.timeLabel,
+							hhmm(stop.arrive, row.timezone),
+							stop.durationMin
+						)}
 						<!-- A leg of no length is two cards standing in the same
 						     place: the journey chain, where nothing is travelled. -->
 						{#if stop.legIn && stop.legIn.minutes > 0 && i > 0}
@@ -1559,7 +1592,7 @@
 									: allowanceOf(stop, dayIndex)
 										? longPress(() => holdAllowance(stop, dayIndex))
 										: () => {}}
-							style={stop.poiId && drag.state.id === stop.poiId
+							style={grabId && drag.state.id === grabId
 								? 'opacity:0.35'
 								: stop.poiId &&
 									  drag.state.target?.kind === 'stop' &&
@@ -1572,13 +1605,12 @@
 							     saves a glyph nobody could find. -->
 							<span
 								class="tm-stop__time"
-								class:tm-stop__time--grab={!!stop.poiId}
-								data-grab={stop.poiId ? 'yes' : undefined}
-								{@attach stop.poiId
-									? (node: HTMLElement) => drag.handle(node, stop.poiId!)
-									: () => {}}
+								class:tm-stop__time--grab={!!grabId}
+								data-grab={grabId ? 'yes' : undefined}
+								{@attach grabId ? (node: HTMLElement) => drag.handle(node, grabId) : () => {}}
 							>
-								{cardTime(stop.timeLabel, hhmm(stop.arrive, row.timezone), stop.durationMin)}
+								<span class="tm-stop__from">{t.from}</span>
+								<span class="tm-stop__to">{t.to}</span>
 							</span>
 							<div>
 								<p class="tm-stop__name">
@@ -1923,7 +1955,9 @@
 				border-radius:var(--tm-r-md);padding:6px 12px;font:600 var(--tm-text-sm)/1 var(--tm-font);
 				box-shadow:0 6px 20px rgba(0,0,0,0.18)"
 			>
-				{pois.find((p) => p.id === drag.state.id)?.name ?? 'Moving'}
+				{drag.state.id.startsWith(SLOT_DRAG)
+					? MEAL_LABEL[drag.state.id.split(':')[2] as MealName]
+					: (pois.find((p) => p.id === drag.state.id)?.name ?? 'Moving')}
 			</div>
 			<p
 				class="tm-hint"
