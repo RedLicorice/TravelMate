@@ -134,7 +134,19 @@ function dateRange(from: string, to: string): string[] {
 	return out;
 }
 
-export function tripDays(trip: Trip): Day[] {
+/**
+ * What the traveller has taken out of a day.
+ *
+ * Keyed `<day index>:<anchor>`, where an anchor is one of the pieces of
+ * furniture below. A day with none of these is drawn the way every day is
+ * drawn, which is what most days are.
+ */
+export type DaySkips = ReadonlySet<string>;
+
+/** The pieces a day is drawn with, and may be drawn without. */
+export type DayAnchor = 'hotel-start' | 'hotel-end' | 'prep' | 'check-in' | 'bags-collect';
+
+export function tripDays(trip: Trip, skips: DaySkips = new Set()): Day[] {
 	const tz = trip.timezone;
 	const arrival = new Date(trip.arrivalAt);
 	const departure = new Date(trip.departureAt);
@@ -232,6 +244,8 @@ export function tripDays(trip: Trip): Day[] {
 		return out;
 	};
 
+	const kept = (i: number, anchor: DayAnchor) => !skips.has(`${i}:${anchor}`);
+
 	return dates.map((date, i) => {
 		const windowStart = zonedInstant(date, trip.dayStart, tz);
 		// A day that ends before it starts ends tomorrow: 02:00 means two in the
@@ -296,17 +310,19 @@ export function tripDays(trip: Trip): Day[] {
 			// is called checking in. Two cards said the traveller went to the
 			// hotel, stood there for no time at all, and then spent half an
 			// hour dropping bags at it.
-			fixedStart.push({
-				name: `${trip.hotelName} check-in`,
-				at: trip.hotel,
-				dwellMin: trip.bagDropMin,
-				kind: 'hotel'
-			});
+			if (kept(i, 'check-in')) {
+				fixedStart.push({
+					name: `${trip.hotelName} check-in`,
+					at: trip.hotel,
+					dwellMin: trip.bagDropMin,
+					kind: 'hotel'
+				});
+			}
 		} else {
-			fixedStart.push(hotelStop(0));
+			if (kept(i, 'hotel-start')) fixedStart.push(hotelStop(0));
 			// Real time, not a label: the day opens when the traveller wakes and
 			// the first half hour of it is spent getting out of the door.
-			if (trip.prep && trip.prep.prepMin > 0) {
+			if (trip.prep && trip.prep.prepMin > 0 && kept(i, 'prep')) {
 				fixedStart.push(choreStop('Getting ready', trip.prep.prepMin));
 			}
 		}
@@ -314,8 +330,10 @@ export function tripDays(trip: Trip): Day[] {
 		const fixedEnd: Waypoint[] = [];
 		if (i === lastIndex && trip.departurePoint) {
 			// Back to the hotel, then the bags. They happen in that order.
-			fixedEnd.push(hotelStop(0));
-			if (trip.bagDropMin > 0) fixedEnd.push(choreStop('Collect the bags', trip.bagDropMin));
+			if (kept(i, 'hotel-end')) fixedEnd.push(hotelStop(0));
+			if (trip.bagDropMin > 0 && kept(i, 'bags-collect')) {
+				fixedEnd.push(choreStop('Collect the bags', trip.bagDropMin));
+			}
 			const journey = journeyStops(trip.departureLegs, trip.departurePoint.at);
 			if (journey.length) {
 				// Checking in happens at the airport they leave from, which is
@@ -333,7 +351,10 @@ export function tripDays(trip: Trip): Day[] {
 			} else {
 				fixedEnd.push(placeStop(trip.departurePoint, trip.departureBufferMin));
 			}
-		} else {
+		} else if (kept(i, 'hotel-end')) {
+			// A night that does not end at the hotel: the traveller said so, and
+			// the evening is theirs to spend rather than arranged around a
+			// return they are not making.
 			fixedEnd.push(hotelStop(0));
 		}
 

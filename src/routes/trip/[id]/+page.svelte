@@ -41,7 +41,8 @@
 		unplace as dropPlacement,
 		type PlacementRow
 	} from '$lib/trip/placements';
-	import { tripDays, zonedInstant, type Day } from '$lib/trip/days';
+	import { tripDays, zonedInstant, type Day, type DayAnchor } from '$lib/trip/days';
+	import { keepAnchor, loadSkips, skipAnchor } from '$lib/trip/skips';
 	import {
 		replan,
 		schedule,
@@ -184,6 +185,8 @@
 		slotQuery = '';
 	});
 	let allowanced = $state<{ kind: Allowance; name: string; minutes: number } | null>(null);
+	/** A piece of the day's furniture the traveller is holding down on. */
+	let anchored = $state<{ day: number; anchor: DayAnchor; name: string } | null>(null);
 	/** A meal container the traveller is holding down on. */
 	let mealed = $state<{ day: number; meal: MealName; name: string; poiId: string | null } | null>(
 		null
@@ -243,6 +246,33 @@
 			busy = false;
 		}
 	}
+
+	/** What each piece of a day's furniture is for, in the sheet that offers to
+	    take it out. */
+	const ANCHOR_HINT: Record<DayAnchor, string> = {
+		'hotel-start': 'Every day starts where you slept. Say otherwise if this one does not.',
+		'hotel-end':
+			'Every day ends back at the hotel. Take it off and the evening is yours -- nothing is arranged around going back.',
+		prep: 'Waking and getting out of the door, on this day only.',
+		'check-in': 'Arriving at the hotel and dropping the bags.',
+		'bags-collect': 'Picking the bags up before you leave.'
+	};
+
+	/** What to call putting each one back. */
+	const ANCHOR_BACK: Record<DayAnchor, string> = {
+		'hotel-start': '+ start at the hotel',
+		'hotel-end': '+ end at the hotel',
+		prep: '+ getting ready',
+		'check-in': '+ hotel check-in',
+		'bags-collect': '+ collect the bags'
+	};
+
+	/** Which of these also has a length worth changing. */
+	const ALLOWANCE_OF_ANCHOR: Partial<Record<DayAnchor, Allowance>> = {
+		prep: 'prep',
+		'check-in': 'bags',
+		'bags-collect': 'bags'
+	};
 
 	const ALLOWANCE_HINT: Record<Allowance, string> = {
 		prep: 'Waking and getting out of the door. Yours, on every trip.',
@@ -561,6 +591,7 @@
 				loadMeals(tripId)
 			]);
 			if (!row) return;
+			skips = await loadSkips(tripId);
 			planAt = row.plan_generated_at;
 			// Coming back from adding into a slot: open on the day it landed on.
 			const asked = Number(page.url.searchParams.get('day'));
@@ -595,18 +626,62 @@
 	/** Whoever is ready last, and their own hours -- wake time and prep. */
 	const prep = $derived(latestPrep(people.map((p) => ({ wakeAt: p.wakeAt, prepMin: p.prepMin }))));
 
+	/** Furniture the traveller has taken out of a day, by `<day>:<anchor>`. */
+	let skips = $state<Set<string>>(new Set());
+
+	/** What the day on screen has been drawn without, and can have back. */
+	const takenOut = $derived(
+		[...skips]
+			.filter((key) => key.startsWith(`${dayIndex}:`))
+			.map((key) => key.slice(key.indexOf(':') + 1) as DayAnchor)
+	);
+
 	const days = $derived<Day[]>(
 		row
-			? tripDays({
-					...toTrip(row),
-					// The day opens when the party wakes, not when they are dressed:
-					// getting ready is a card on the plan that spends the half
-					// hour, rather than half an hour the plan never mentions.
-					dayStart: effectiveDayStart(toTrip(row).dayStart, prep?.wakeAt ?? null),
-					prep
-				})
+			? tripDays(
+					{
+						...toTrip(row),
+						// The day opens when the party wakes, not when they are
+						// dressed: getting ready is a card on the plan that spends
+						// the half hour, rather than half an hour the plan never
+						// mentions.
+						dayStart: effectiveDayStart(toTrip(row).dayStart, prep?.wakeAt ?? null),
+						prep
+					},
+					skips
+				)
 			: []
 	);
+
+	/**
+	 * Which piece of furniture a card is, when it is one.
+	 *
+	 * Only these can be taken out of a day: the journeys are what the trip is,
+	 * and a stop is the traveller's own and comes off by being taken off.
+	 */
+	function anchorOf(stop: PlannedStop, dayIdx: number, index: number): DayAnchor | null {
+		if (stop.anchorKind === 'chore' && stop.name === 'Getting ready') return 'prep';
+		if (stop.anchorKind === 'chore' && stop.name === 'Collect the bags') return 'bags-collect';
+		if (stop.anchorKind !== 'hotel') return null;
+		if (stop.name.endsWith('check-in')) return 'check-in';
+		return index === 0 ? 'hotel-start' : 'hotel-end';
+	}
+
+	/** Take a piece of furniture out of this day, or put it back. */
+	async function setAnchor(dayIdx: number, anchor: DayAnchor, keep: boolean) {
+		anchored = null;
+		busy = true;
+		try {
+			if (keep) await keepAnchor(tripId, dayIdx, anchor);
+			else await skipAnchor(tripId, dayIdx, anchor);
+			skips = await loadSkips(tripId);
+			await restore();
+		} catch (e) {
+			error = (e as Error).message;
+		} finally {
+			busy = false;
+		}
+	}
 
 	/**
 	 * Busyness is resolved here, before the planner runs, and handed in as a
@@ -1736,6 +1811,22 @@
 				</div>
 			</div>
 
+			<!-- What this day has been drawn without. A card that is not there
+			     cannot be held down, so this is the way back. -->
+			{#if takenOut.length}
+				<div class="flex flex-wrap items-center gap-1.5">
+					{#each takenOut as anchor (anchor)}
+						<button
+							class="tm-chip"
+							disabled={busy}
+							onclick={() => setAnchor(dayIndex, anchor, true)}
+						>
+							{ANCHOR_BACK[anchor]}
+						</button>
+					{/each}
+				</div>
+			{/if}
+
 			<!-- Said once, not per stop: the wishlist already marks which stop
 			     is which. This only has to answer "is the plan behind". -->
 			{#if stale > 0}
@@ -2136,9 +2227,14 @@
 								? longPress(() => openCard(stop.placementId ?? stop.poiId!))
 								: stop.anchorKind === 'meal'
 									? longPress(() => holdMeal(stop, dayIndex))
-									: allowanceOf(stop, dayIndex)
-										? longPress(() => holdAllowance(stop, dayIndex))
-										: () => {}}
+									: anchorOf(stop, dayIndex, i)
+										? longPress(() => {
+												const anchor = anchorOf(stop, dayIndex, i)!;
+												anchored = { day: dayIndex, anchor, name: stop.name };
+											})
+										: allowanceOf(stop, dayIndex)
+											? longPress(() => holdAllowance(stop, dayIndex))
+											: () => {}}
 							class:tm-stop--above={landing === i}
 							class:tm-stop--below={landing === i + 1 && i === current.stops.length - 1}
 							data-slot-index={i}
@@ -2302,6 +2398,53 @@
 					Skip {m.name.toLowerCase()} this day
 				</button>
 				<button class="tm-btn tm-btn--ghost tm-btn--block mt-2" onclick={() => (mealed = null)}>
+					Cancel
+				</button>
+			</div>
+		{/if}
+
+		{#if anchored}
+			{@const a = anchored}
+			<div
+				role="presentation"
+				style="position:fixed;inset:0;z-index:60;background:rgba(0,0,0,0.35)"
+				onclick={() => (anchored = null)}
+			></div>
+			<div class="tm-sheet" style="position:fixed;z-index:61">
+				<div class="tm-sheet__grip"></div>
+				<p class="tm-card__title">{a.name}</p>
+				<p class="tm-card__meta">
+					{ANCHOR_HINT[a.anchor]}
+				</p>
+				<button
+					class="tm-btn tm-btn--secondary tm-btn--block mt-3"
+					disabled={busy}
+					onclick={() => setAnchor(a.day, a.anchor, false)}
+				>
+					Not on this day
+				</button>
+				{#if ALLOWANCE_OF_ANCHOR[a.anchor]}
+					<button
+						class="tm-btn tm-btn--ghost tm-btn--block mt-2"
+						disabled={busy}
+						onclick={() => {
+							const kind = ALLOWANCE_OF_ANCHOR[a.anchor]!;
+							anchored = null;
+							allowanced = {
+								kind,
+								name: a.name,
+								minutes:
+									kind === 'prep' ? (prep?.prepMin ?? 0) : (row?.bag_drop_min ?? 0)
+							};
+						}}
+					>
+						How long it takes
+					</button>
+				{/if}
+				<button
+					class="tm-btn tm-btn--ghost tm-btn--block mt-2"
+					onclick={() => (anchored = null)}
+				>
 					Cancel
 				</button>
 			</div>
