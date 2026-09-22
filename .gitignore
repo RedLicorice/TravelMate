@@ -19,3 +19,4 @@ vite.config.ts.timestamp-*
 .wrangler
 dev-dist/
 .env.local
+.env.*.local

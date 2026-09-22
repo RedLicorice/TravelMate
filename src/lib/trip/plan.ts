@@ -42,11 +42,30 @@ export type PlanStopRow = {
  * What makes a stop the same stop between one save and the next.
  *
  * A real stop is its wishlist place, wherever it is moved to. An anchor has no
- * wishlist row, so it is the day it belongs to, what kind of anchor it is, and
- * what it is called -- all three of which the day itself decides.
+ * wishlist row, so it is the day it belongs to, what kind of anchor it is, what
+ * it is called -- and which time it says that, because a day starts and ends at
+ * the hotel. Without the count both of those are "0:hotel:Hotel Artemide", the
+ * same stored row is claimed twice, and the whole save is refused.
  */
-const identity = (dayIndex: number, s: { poiId: string | null; anchorKind?: string | null; name: string }) =>
-	s.poiId ?? `${dayIndex}:${s.anchorKind ?? ''}:${s.name}`;
+const identity = (
+	dayIndex: number,
+	s: { poiId: string | null; anchorKind?: string | null; name: string },
+	nth = 0
+) => s.poiId ?? `${dayIndex}:${s.anchorKind ?? ''}:${s.name}:${nth}`;
+
+/** Identity, counting repeats of the same anchor within its day. */
+function identities<T extends { poiId: string | null; anchorKind?: string | null; name: string }>(
+	dayIndex: number,
+	stops: T[]
+): string[] {
+	const seen = new Map<string, number>();
+	return stops.map((s) => {
+		const base = identity(dayIndex, s);
+		const nth = seen.get(base) ?? 0;
+		seen.set(base, nth + 1);
+		return s.poiId ?? identity(dayIndex, s, nth);
+	});
+}
 
 const toRow = (
 	tripId: string,
@@ -104,10 +123,32 @@ export async function savePlan(
 	result: PlanResult,
 	known: PlanStopRow[] = []
 ): Promise<string> {
-	const ids = new Map(known.map((r) => [identity(r.day_index, { poiId: r.poi_id, anchorKind: r.anchor_kind, name: r.name }), r.id]));
-	const rows = result.days.flatMap((d) =>
-		d.stops.map((s, i) => toRow(tripId, d.index, i, s, s.id ?? ids.get(identity(d.index, s)) ?? null))
-	);
+	const ids = new Map<string, string>();
+	const byDay = new Map<number, PlanStopRow[]>();
+	for (const r of known) byDay.set(r.day_index, [...(byDay.get(r.day_index) ?? []), r]);
+	for (const [day, rows] of byDay) {
+		const ordered = [...rows].sort((a, b) => a.order_index - b.order_index);
+		const keys = identities(
+			day,
+			ordered.map((r) => ({ poiId: r.poi_id, anchorKind: r.anchor_kind, name: r.name }))
+		);
+		keys.forEach((key, i) => ids.set(key, ordered[i].id));
+	}
+
+	const rows = result.days.flatMap((d) => {
+		const keys = identities(d.index, d.stops);
+		return d.stops.map((s, i) => toRow(tripId, d.index, i, s, s.id ?? ids.get(keys[i]) ?? null));
+	});
+
+	// One stored row cannot be two stops. If the same id is claimed twice --
+	// two days that both once ended at the hotel, say -- the later claim is a
+	// new row rather than a save the database refuses outright.
+	const claimed = new Set<string>();
+	for (const row of rows) {
+		if (!row.id) continue;
+		if (claimed.has(row.id)) row.id = null;
+		else claimed.add(row.id);
+	}
 
 	const { error: writeError } = await supabase.rpc('save_plan', {
 		trip: tripId,
