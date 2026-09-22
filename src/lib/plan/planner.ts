@@ -795,12 +795,18 @@ function walkClock(
 		const busyness = anchor || !poiId ? null : curves.at(poiId, arrive, timezone);
 		if (busyness !== null) crowdSum += busyness;
 
+		// A day whose window is empty -- landing at 19:35 when the traveller's
+		// evening ends at 19:00 -- is past its end before it begins. Saying so
+		// on every card is noise about something they already know, and hides
+		// the cards that are genuinely running long on an ordinary day.
+		const dayIsOver = dayEndMs <= day.start.getTime();
+
 		const warnings: Warning[] = [];
 		// One overflow warning, not two. A card can both run past the end of the
 		// day and be one the day never reaches, and saying so twice told the
 		// traveller nothing they did not know -- while the screen, which draws
 		// warnings keyed by kind, refused to render the trip at all.
-		if (runsLate || late) {
+		if ((runsLate || late) && !dayIsOver) {
 			warnings.push({
 				kind: 'overflow',
 				message: runsLate ? 'Runs past the end of the day' : 'The day does not reach this in time'

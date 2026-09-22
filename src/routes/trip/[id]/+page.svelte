@@ -188,8 +188,11 @@
 			priority: 3,
 			dayIndex: pl.day_index,
 			orderIndex: pl.order_index,
-			pinned: true,
-			pinnedAt: heldAt,
+			// Held in place by being an anchor, not by a pin. A pin would also
+			// hold the moment -- whatever the clock said last time -- and a
+			// time that is wrong once would then stay wrong for ever.
+			pinned: pl.pinned,
+			pinnedAt: pl.pinned ? heldAt : null,
 			branches: null,
 			exitAt: null
 		};

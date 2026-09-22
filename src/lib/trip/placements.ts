@@ -75,8 +75,12 @@ export async function place(
  * Put a piece of the day's own furniture on a day: back to the hotel in the
  * afternoon, a nap, an errand, the bags.
  *
- * Held from the moment it is placed. The traveller said where this goes, and
- * Replan rearranging the sights around it is the point -- moving it is not.
+ * Not pinned. Where it goes is already fixed -- the planner holds an anchor
+ * in the position it was placed in and arranges the sights around it -- and a
+ * pin would fix WHEN as well, at whatever the clock said the last time the
+ * day was walked. That is how a check-in card ended up frozen at ten past
+ * midnight with two hours of nothing in front of it: the time was wrong once,
+ * and the pin kept it wrong.
  */
 export async function placeAnchor(
 	tripId: string,
@@ -95,7 +99,7 @@ export async function placeAnchor(
 			minutes: opts.minutes ?? null,
 			day_index: dayIndex,
 			order_index: orderIndex,
-			pinned: true
+			pinned: false
 		})
 		.select('*')
 		.single();
