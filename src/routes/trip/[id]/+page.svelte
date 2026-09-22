@@ -109,6 +109,7 @@
 	import TripAvatar from '$lib/TripAvatar.svelte';
 	import { supabase } from '$lib/supabase';
 	import { session } from '$lib/session.svelte';
+	import { track, watching } from '$lib/telemetry';
 	import { zoneAt } from '$lib/trip/timezone';
 	import TripMap from '$lib/GoogleMap.svelte';
 	import { poi as provider, type City } from '$lib/poi';
@@ -670,6 +671,7 @@
 
 	// Its own onMount: an async one cannot hand back a cleanup.
 	onMount(watchPlan);
+	onMount(() => watching(tripId));
 
 	onMount(async () => {
 		try {
@@ -935,6 +937,12 @@
 	 * assignment and the order, and re-clustering would undo the drag.
 	 */
 	async function applyMove(draggedId: string, target: Parameters<typeof reorder>[2]) {
+		track('drag.drop', {
+			dragged: draggedId,
+			target: target?.kind ?? 'none',
+			day: target && 'day' in target ? target.day : null,
+			index: target && 'index' in target ? target.index : null
+		});
 		if (draggedId.startsWith(SLOT_DRAG)) return moveSlot(draggedId, target);
 
 		// Order the move the way the traveller sees it. A stop's stored order is
@@ -1662,6 +1670,13 @@
 			const settled = schedule({ ...input, pois: everyVisit(), travel: known() });
 			planAt = await savePlan(tripId, settled, stored);
 			fresh = settled.days;
+			track('plan.replan', {
+				days: settled.days.length,
+				cards: settled.days.reduce((n, d) => n + d.stops.length, 0),
+				unplaced: settled.unplaced.length,
+				placements: placements.length,
+				wishlist: pois.length
+			});
 			// Without this the stored rows stay a plan behind, and the effect
 			// that re-times a newly placed stop fires on a phantom difference.
 			stored = await loadPlan(tripId);

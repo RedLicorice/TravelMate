@@ -134,13 +134,40 @@
 		return el;
 	}
 
+	/**
+	 * The pins on the map, by the id of what they stand for.
+	 *
+	 * Kept between draws. Every pin used to be torn down and built again
+	 * whenever anything about the markers changed -- which, while somebody is
+	 * typing a search, is every few keystrokes, and on the plan is every drag.
+	 * A marker element is a DOM node and a listener; making fifty of them over
+	 * and over is what made the search box feel like treacle.
+	 */
+	let placed = new Map<string, google.maps.marker.AdvancedMarkerElement>();
+
 	function draw() {
 		if (!map || !window.google?.maps) return;
 
-		for (const p of pins) p.map = null;
 		const Marker = Pin;
 		if (!Marker) return;
+
+		const wanted = new Set(markers.map((m) => m.id));
+		for (const [id, pin] of placed) {
+			if (!wanted.has(id)) {
+				pin.map = null;
+				placed.delete(id);
+			}
+		}
+
 		pins = markers.map((m) => {
+			const had = placed.get(m.id);
+			if (had) {
+				// Moving a pin is a property; replacing it is a new element, a
+				// new listener and a repaint.
+				had.position = { lat: m.lat, lng: m.lng };
+				had.content = pinFor(m);
+				return had;
+			}
 			const pin = new Marker({
 				map,
 				position: { lat: m.lat, lng: m.lng },
@@ -148,6 +175,7 @@
 				title: m.id
 			});
 			if (onselect) pin.addListener('click', () => onselect(m.id));
+			placed.set(m.id, pin);
 			return pin;
 		});
 
@@ -239,11 +267,23 @@
 		if (ready) draw();
 	});
 
+	/**
+	 * Centre the map when the centre actually changes.
+	 *
+	 * `center` is built fresh by the caller on every recompute, so this used to
+	 * fire on every keystroke in the search box and re-centre a map nobody had
+	 * asked to move -- which also fetched tiles for the journey.
+	 */
+	let centred: { lat: number; lng: number } | null = null;
 	$effect(() => {
-		if (ready && map) map.setCenter(center);
+		if (!ready || !map) return;
+		if (centred && centred.lat === center.lat && centred.lng === center.lng) return;
+		centred = { lat: center.lat, lng: center.lng };
+		map.setCenter(center);
 	});
 
 	onDestroy(() => {
+		placed.clear();
 		for (const p of pins) p.map = null;
 		for (const l of lines) l.setMap(null);
 	});

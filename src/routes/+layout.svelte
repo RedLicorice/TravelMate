@@ -7,6 +7,7 @@
 	import { session, takeNext, watchSession } from '$lib/session.svelte';
 	import { redirectTarget, safeNext } from '$lib/guard';
 	import { registerSW } from 'virtual:pwa-register';
+	import { watchForFaults } from '$lib/telemetry';
 
 	let { children } = $props();
 
@@ -15,7 +16,12 @@
 		// a trip planner. Registered here because the static fallback page gets
 		// no build-time injection.
 		registerSW({ immediate: true });
-		return watchSession();
+		const stopWatching = watchSession();
+		const stopListening = watchForFaults();
+		return () => {
+			stopWatching();
+			stopListening();
+		};
 	});
 
 	$effect(() => {

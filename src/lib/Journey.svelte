@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { track } from '$lib/telemetry';
 	import Autocomplete from '$lib/Autocomplete.svelte';
 	import { poi as provider, type City, type Terminal } from '$lib/poi';
 	import { emptyLeg, modeOf, type JourneyLeg, type JourneyMode, type JourneyPoint } from '$lib/trip/journey';
@@ -44,6 +45,19 @@
 
 	function patch(i: number, change: Partial<JourneyLeg>) {
 		legs = legs.map((leg, j) => (j === i ? { ...leg, ...change } : leg));
+		// Written down because a leg that never appears on the plan is a fault
+		// nobody can describe afterwards: this says what was actually set.
+		track('journey.leg.patch', {
+			direction,
+			leg: i,
+			legs: legs.length,
+			changed: Object.keys(change),
+			from: legs[i]?.from?.name ?? null,
+			to: legs[i]?.to?.name ?? null,
+			mode: legs[i]?.mode ?? null,
+			departLocal: legs[i]?.departLocal ?? null,
+			arriveLocal: legs[i]?.arriveLocal ?? null
+		});
 	}
 
 	/**
@@ -59,10 +73,12 @@
 		const after = legs[index];
 		const fresh = { ...emptyLeg(), from: before?.to ?? null, to: after?.from ?? null };
 		legs = [...legs.slice(0, index), fresh, ...legs.slice(index)];
+		track('journey.leg.add', { direction, at: index, legs: legs.length });
 	}
 
 	function removeLeg(i: number) {
 		legs = legs.filter((_, j) => j !== i);
+		track('journey.leg.remove', { direction, at: i, legs: legs.length });
 	}
 
 	const field = (e: Event) => (e.currentTarget as HTMLInputElement).value.trim() || null;

@@ -1,4 +1,5 @@
 <script lang="ts" generics="T extends { name: string; label: string }">
+	import { track } from '$lib/telemetry';
 	type Props = {
 		label: string;
 		placeholder?: string;
@@ -38,18 +39,34 @@
 		timer = setTimeout(async () => {
 			const controller = new AbortController();
 			inflight = controller;
+			const asked = query.trim();
+			const started = performance.now();
 			try {
-				results = await search(query.trim(), controller.signal);
+				results = await search(asked, controller.signal);
 				status = 'done';
+				track('search', {
+					label,
+					query: asked,
+					found: results.length,
+					ms: Math.round(performance.now() - started),
+					first: results[0]?.name ?? null
+				});
 			} catch (e) {
 				if ((e as Error).name === 'AbortError') return;
 				error = (e as Error).message;
 				status = 'done';
+				track('search.failed', {
+					label,
+					query: asked,
+					ms: Math.round(performance.now() - started),
+					error: String((e as Error).message).slice(0, 200)
+				});
 			}
 		}, 250);
 	}
 
 	function choose(item: T) {
+		track('search.picked', { label, name: item.name });
 		onpick(item);
 		query = item.name;
 		results = [];
