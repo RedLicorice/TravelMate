@@ -321,7 +321,10 @@ const announce = (kind: 'changed' | 'synced', name?: string) =>
 
 /** Everything this device held for the account that is leaving it. */
 export async function forgetAll(): Promise<void> {
-	await forget();
+	// Under the lock a send or a pull holds, so one already on its way lands
+	// before the clearing and not after it, which would put the leaving
+	// account's rows back on the device.
+	await navigator.locks.request(SYNC_LOCK, forget);
 	confirmed = new Map();
 	queue = [];
 	bump();

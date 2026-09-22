@@ -72,7 +72,12 @@
 			border-radius:var(--tm-r-md);padding:10px 12px;margin:2px 0 4px"
 		>
 			{#if loading}
-				<p class="tm-hint">Looking up the journey…</p>
+				<!-- The shape of the steps on their way, not a word about waiting. -->
+				<div style="display:flex;flex-direction:column;gap:7px" aria-busy="true">
+					<div class="tm-skel" style="height:18px"></div>
+					<div class="tm-skel" style="height:18px;width:80%"></div>
+					<div class="tm-skel" style="height:18px;width:60%"></div>
+				</div>
 			{:else if route?.steps?.length}
 				{@const shown = groupSteps(route.steps)}
 				<ul style="list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:7px">

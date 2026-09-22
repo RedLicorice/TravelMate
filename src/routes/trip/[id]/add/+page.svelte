@@ -39,7 +39,8 @@
 	const saved = $derived(listPois(tripId));
 	const placements = $derived(listPlacements(tripId));
 	let results = $state<Poi[]>([]);
-	let query = $state('');
+	/** Starts as whatever was typed in the slot sheet, when it sent the traveller here. */
+	let query = $state(page.url.searchParams.get('q') ?? '');
 	let view = $state<'list' | 'map' | 'custom'>('list');
 	let status = $state<'idle' | 'searching' | 'done'>('idle');
 	let error = $state<string | null>(null);
