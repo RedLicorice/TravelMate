@@ -9,20 +9,68 @@ export const session = $state<{ user: User | null; ready: boolean }>({
 	ready: false
 });
 
+/**
+ * Everything this device kept for an account that is leaving it.
+ *
+ * The service worker caches trip reads so the plan opens on a dead connection,
+ * and it keys them by URL -- a URL that says nothing about whose rows came
+ * back. On a shared phone the next person to sign in would be handed the
+ * previous account's trips out of that cache before the network answered at
+ * all: row-level security stepped around by a cache, with neither of them
+ * doing anything wrong.
+ *
+ * So the cache belongs to whoever is signed in, and it goes when they do.
+ */
+async function forgetCachedTrips(): Promise<void> {
+	if (typeof caches === 'undefined') return;
+	try {
+		// The name Workbox was given in vite.config.ts. It is recreated empty
+		// the next time anything is read.
+		await caches.delete('trip-data');
+	} catch {
+		// A browser with storage blocked has nothing cached to hand over.
+	}
+}
+
+/** Whose the cache on this device is. */
+const CACHE_OWNER = 'tm:cached-for';
+
+function ownedBy(id: string | null): void {
+	try {
+		if (localStorage.getItem(CACHE_OWNER) === id) return;
+		// Someone else's rows, or nobody's. Either way, not this account's.
+		void forgetCachedTrips();
+		if (id) localStorage.setItem(CACHE_OWNER, id);
+		else localStorage.removeItem(CACHE_OWNER);
+	} catch {
+		// No localStorage to remember an owner with: clear rather than guess.
+		void forgetCachedTrips();
+	}
+}
+
 export function watchSession(): () => void {
 	supabase.auth.getSession().then(({ data }) => {
 		session.user = data.session?.user ?? null;
 		session.ready = true;
+		ownedBy(session.user?.id ?? null);
 	});
 	const { data } = supabase.auth.onAuthStateChange((_event, s) => {
 		session.user = s?.user ?? null;
 		session.ready = true;
+		// Not awaited: this callback holds the auth lock, and clearing a cache
+		// has nothing to say back to it.
+		ownedBy(session.user?.id ?? null);
 	});
 	return () => data.subscription.unsubscribe();
 }
 
 export async function signOut(): Promise<void> {
 	await supabase.auth.signOut();
+	// After, not before: a read still in flight would otherwise refill the
+	// cache on its way out. Signed out, those reads are refused, and a refusal
+	// is not cached.
+	ownedBy(null);
+	await forgetCachedTrips();
 }
 
 /*

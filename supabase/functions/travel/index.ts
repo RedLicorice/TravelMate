@@ -1,5 +1,6 @@
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { cors } from '../_shared/cors.ts';
+import { signedIn } from '../_shared/caller.ts';
 
 type LatLng = { lat: number; lng: number };
 type Mode = 'walk' | 'bike' | 'transit' | 'car' | 'carshare';
@@ -43,6 +44,9 @@ type Cell = { from: string; to: string; minutes: number; km: number; source: str
 
 Deno.serve(async (req) => {
 	if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
+
+	// Paid work, so it is done for a traveller and nobody else.
+	if (!signedIn(req)) return json({ cells: [] }, 401);
 
 	try {
 		const { points, mode, departAt } = (await req.json()) as {

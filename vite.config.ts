@@ -88,6 +88,8 @@ export default defineConfig({
 	},
 	test: {
 		environment: 'node',
-		include: ['src/**/*.test.ts']
+		// The edge functions are Deno, but the pieces of them that are plain
+		// TypeScript -- and decide who may spend money -- are testable here.
+		include: ['src/**/*.test.ts', 'supabase/functions/**/*.test.ts']
 	}
 });

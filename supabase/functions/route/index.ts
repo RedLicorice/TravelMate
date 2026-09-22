@@ -1,5 +1,6 @@
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { cors } from '../_shared/cors.ts';
+import { signedIn } from '../_shared/caller.ts';
 
 type LatLng = { lat: number; lng: number };
 type Mode = 'walk' | 'bike' | 'transit' | 'car' | 'carshare';
@@ -51,8 +52,9 @@ const ttlDays = (mode: Mode) => (mode === 'transit' ? 7 : 30);
 const secondsOf = (duration: string | undefined) =>
 	Number(String(duration ?? '0s').replace('s', '')) || 0;
 
-const json = (body: unknown) =>
+const json = (body: unknown, status = 200) =>
 	new Response(JSON.stringify(body), {
+		status,
 		headers: { ...cors, 'Content-Type': 'application/json' }
 	});
 
@@ -151,6 +153,9 @@ function toSteps(legs: Record<string, unknown>[], departedAt: string | null): St
 
 Deno.serve(async (req) => {
 	if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
+
+	// Paid work, so it is done for a traveller and nobody else.
+	if (!signedIn(req)) return json({ route: null }, 401);
 
 	try {
 		const { from, to, mode, departAt, prefer } = (await req.json()) as {
