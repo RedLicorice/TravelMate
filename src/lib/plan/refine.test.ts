@@ -10,7 +10,7 @@ const museum = { lat: 51.5194, lng: -0.127 };
 const stop = (
 	name: string,
 	at: { lat: number; lng: number },
-	legIn: { mode: 'walk' | 'transit'; minutes: number; km: number } | null
+	legIn: { mode: 'walk' | 'transit'; minutes: number; km: number; source?: 'estimate' | 'routed' } | null
 ) => ({
 	poiId: null,
 	name,
@@ -18,7 +18,7 @@ const stop = (
 	arrive: new Date('2026-10-02T14:00:00Z'),
 	depart: new Date('2026-10-02T14:00:00Z'),
 	durationMin: 0,
-	legIn,
+	legIn: legIn && { source: 'estimate' as const, ...legIn },
 	anchor: false,
 	busyness: null,
 	warnings: []

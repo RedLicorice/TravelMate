@@ -114,7 +114,10 @@
 					{#each day.stops as stop, j (stop.name + j)}
 						{#if stop.legIn}
 							<div class="tm-leg">
-								<span>{stop.legIn.minutes} min · {stop.legIn.mode}</span>
+								<span class:tm-leg--estimate={stop.legIn.source === 'estimate'}>
+									{stop.legIn.minutes} min{stop.legIn.source === 'estimate' ? '*' : ''} ·
+									{stop.legIn.mode}
+								</span>
 							</div>
 						{/if}
 						<div class="tm-stop" class:tm-stop--anchor={stop.anchor}>

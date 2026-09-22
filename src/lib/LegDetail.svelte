@@ -12,10 +12,16 @@
 		departAt: string | null;
 		timezone: string;
 		estimate: { minutes: number; km: number };
+		/**
+		 * Where the figure came from. An estimate wears a star until the real
+		 * journey comes back, which it does on its own.
+		 */
+		source?: 'estimate' | 'routed';
 		onroute?: (route: LegRoute | null) => void;
 	};
 
-	let { from, to, mode, departAt, timezone, estimate, onroute }: Props = $props();
+	let { from, to, mode, departAt, timezone, estimate, source = 'routed', onroute }: Props =
+		$props();
 
 	let open = $state(false);
 	let route = $state<LegRoute | null>(null);
@@ -43,14 +49,20 @@
 			: '';
 </script>
 
-<div class="tm-leg" style="align-items: flex-start; flex-direction: column; gap: 4px">
+<div
+	class="tm-leg"
+	class:tm-leg--estimate={source === 'estimate'}
+	style="align-items: flex-start; flex-direction: column; gap: 4px"
+>
 	<button
 		onclick={toggle}
 		aria-expanded={open}
 		style="background:none;border:none;padding:0;cursor:pointer;color:inherit;font:inherit;
 		display:flex;align-items:center;gap:7px;text-align:left"
 	>
-		<span>{estimate.minutes} min · {estimate.km} km · {mode}</span>
+		<span title={source === 'estimate' ? 'Estimated. The real journey is being looked up.' : ''}>
+			{estimate.minutes} min{source === 'estimate' ? '*' : ''} · {estimate.km} km · {mode}
+		</span>
 		<span style="color: var(--tm-text-faint)">{open ? '▴' : '▾'}</span>
 	</button>
 

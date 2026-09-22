@@ -104,7 +104,11 @@
 					fill: 'var(--tm-surface-2)',
 					ink: 'var(--tm-text-faint)',
 					title: MODE_LABEL[stop.legIn.mode] ?? 'Travel',
-					sub: `${cardTime(null, hhmmOf(leaveMin), startMin - leaveMin)} · ${stop.legIn.minutes} min`,
+					// A star says the figure is the plan's guess: the real journey has
+					// been asked for and has not come back yet.
+					sub: `${cardTime(null, hhmmOf(leaveMin), startMin - leaveMin)} · ${stop.legIn.minutes} min${
+						stop.legIn.source === 'estimate' ? '*' : ''
+					}`,
 					icon: MODE_ICON[stop.legIn.mode] ?? MODE_ICON.walk,
 					stop: null
 				});

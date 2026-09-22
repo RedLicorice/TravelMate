@@ -79,6 +79,13 @@ export const REASON_TEXT: Record<UnplacedReason, string> = {
 };
 
 export type PlannedStop = {
+	/**
+	 * The stored row this stop is. Carried so a save updates the row rather
+	 * than replacing it, and so a travel time looked up after the fact lands
+	 * on the stop it was looked up for. Absent on a stop the scheduler has
+	 * just invented, which is what saving gives an id to.
+	 */
+	id?: string | null;
 	poiId: string | null; // null for an anchor
 	name: string;
 	at: LatLng;
@@ -628,7 +635,16 @@ function walkClock(
 	) => {
 		let legIn: Leg | null = null;
 		if (cursor) {
-			legIn = leg(cursor, point, allowedModes, terminal || cursorTerminal, travel);
+			// The clock says when this journey starts, which is what decides
+			// whether a timetabled one is the same journey at all.
+			legIn = leg(
+				cursor,
+				point,
+				allowedModes,
+				terminal || cursorTerminal,
+				travel,
+				new Date(clock).toISOString()
+			);
 			clock += legIn.minutes * 60_000;
 			travelMin += legIn.minutes;
 		}

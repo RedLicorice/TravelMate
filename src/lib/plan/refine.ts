@@ -4,6 +4,25 @@ import { pointKey, tableFrom, type TravelCell, type TravelTable } from './travel
 import type { LatLng } from '$lib/trip/days';
 import type { Mode } from './modes';
 import { pool } from '$lib/pool';
+import { supabase } from '$lib/supabase';
+
+/**
+ * Ask the server for the real travel times of a plan it has already been
+ * given.
+ *
+ * Fire and forget: the answers are written onto the stops themselves and
+ * arrive back through the plan's live subscription, so nothing here waits for
+ * them. A traveller who closes the tab still gets a routed plan; they simply
+ * see it the next time they open it.
+ */
+export async function refineTrip(tripId: string): Promise<void> {
+	try {
+		await supabase.functions.invoke('refine', { body: { tripId } });
+	} catch {
+		// Offline, or the function is down. The stars stay, and the next edit
+		// asks again.
+	}
+}
 
 type RouteFn = (
 	from: LatLng,

@@ -434,6 +434,12 @@ button.tm-slot {
    after standing beside it. Off by default: a plain list is the usual way to
    read a day, and the lines are for placing things in it -- so a drag turns
    them on whether or not the traveller asked for them. */
+/* A leg the plan is still guessing at. It reads as provisional because it is:
+   the real journey has been asked for and has not come back yet. */
+.tm-leg--estimate {
+  color: var(--tm-warn-ink);
+}
+
 .tm-rails {
   position: relative;
 }

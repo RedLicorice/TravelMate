@@ -1,7 +1,7 @@
 import type { LatLng } from '$lib/trip/days';
 import { supabase } from '$lib/supabase';
 import { DETOUR, haversineKm } from './geo';
-import type { Leg, Mode } from './modes';
+import type { Leg, LegSource, Mode } from './modes';
 
 /**
  * Real travel times, resolved before planning.
@@ -27,9 +27,31 @@ const cellKey = (from: LatLng, to: LatLng, costing: string) =>
 	`${pointKey(from)}>${pointKey(to)}|${costing}`;
 
 export type TravelTable = {
-	/** Minutes and km, or null when nothing was resolved for this pair. */
-	get(from: LatLng, to: LatLng, mode: Mode): Omit<Leg, 'mode'> | null;
+	/**
+	 * Minutes and km, or null when nothing was resolved for this pair.
+	 *
+	 * `source` is what the answer is worth: a table that does not say is
+	 * offering an estimate. `departAt` is offered to tables that answer per
+	 * departure hour; the rest ignore it.
+	 */
+	get(
+		from: LatLng,
+		to: LatLng,
+		mode: Mode,
+		departAt?: string | null
+	): { minutes: number; km: number; source?: LegSource } | null;
 };
+
+/**
+ * The departure band a journey is cached under.
+ *
+ * Must match depart_bucket in the travel and route functions exactly, or the
+ * client asks for an hour the server has already answered. A transit journey
+ * at 08:00 is a different journey from the same one at 23:00; a road one is
+ * not, so it shares a single bucket rather than storing 24 identical rows.
+ */
+export const departBucket = (mode: Mode, departAt: string | null | undefined) =>
+	mode === 'transit' && departAt ? `h${new Date(departAt).getUTCHours()}` : 'any';
 
 /** One answered pair, as the Edge Function returns it. */
 export type TravelCell = {
@@ -101,7 +123,11 @@ export function transitFrom(roadMinutes: number, km: number): number {
 }
 
 /** The estimate used when nothing better is available. Unchanged behaviour. */
-export function haversineLeg(from: LatLng, to: LatLng, mode: Mode): Omit<Leg, 'mode'> {
+export function haversineLeg(
+	from: LatLng,
+	to: LatLng,
+	mode: Mode
+): { minutes: number; km: number } {
 	const km = haversineKm(from, to) * DETOUR;
 	const SPEED: Record<Mode, number> = { walk: 4.5, bike: 13, transit: 18, car: 25, carshare: 25 };
 	const minutes = (km / SPEED[mode]) * 60 + (mode === 'transit' ? 12 : 0);
@@ -200,7 +226,7 @@ async function resolveFromValhalla(
 	modes: Mode[],
 	signal?: AbortSignal
 ): Promise<TravelTable> {
-	const table = new Map<string, Omit<Leg, 'mode'>>();
+	const table = new Map<string, { minutes: number; km: number }>();
 
 	// Valhalla's matrix is quadratic; a very long day is not a reasonable ask
 	// of a shared courtesy service.

@@ -4,7 +4,16 @@ import { noTravel, type TravelTable } from './travel';
 
 export type Mode = 'walk' | 'bike' | 'transit' | 'car' | 'carshare';
 
-export type Leg = { mode: Mode; minutes: number; km: number };
+/**
+ * Where a leg's numbers came from.
+ *
+ * 'estimate' is the speed model, or a matrix cell: good enough to order a day
+ * by, and shown with a star. 'routed' came back from the routing service for
+ * this journey at this hour, and is what the day is actually timed on.
+ */
+export type LegSource = 'estimate' | 'routed';
+
+export type Leg = { mode: Mode; minutes: number; km: number; source: LegSource };
 
 /** km/h, before the detour factor. */
 const SPEED: Record<Mode, number> = { walk: 4.5, bike: 13, transit: 18, car: 25, carshare: 25 };
@@ -39,7 +48,8 @@ export function leg(
 	to: LatLng,
 	allowed: Mode[],
 	terminal = false,
-	travel: TravelTable = noTravel
+	travel: TravelTable = noTravel,
+	departAt: string | null = null
 ): Leg {
 	// Mode is still chosen on straight-line distance: it decides which network
 	// to use, and a routed distance would not change that answer.
@@ -51,13 +61,23 @@ export function leg(
 	// zero length, which is what put "12 min · 0 km · transit" between two
 	// cards standing in the same airport, and quietly spent an hour of the
 	// arrival day on a journey that had already happened.
-	if (km === 0) return { mode, minutes: 0, km: 0 };
+	// Routed, not estimated: there is nothing to look up about standing still,
+	// so nothing will ever come back to improve it.
+	if (km === 0) return { mode, minutes: 0, km: 0, source: 'routed' };
 
-	// A real routed time when one was resolved ahead of planning; the speed
-	// model only when it was not.
-	const routed = travel.get(from, to, mode);
-	if (routed) return { mode, minutes: routed.minutes, km: routed.km };
+	// A time somebody resolved ahead of planning. A matrix cell is still an
+	// estimate -- it was asked at the day's start hour, for every pair at once
+	// -- so only a table that says 'routed' is taken as the real journey.
+	const known = travel.get(from, to, mode, departAt);
+	if (known) {
+		return { mode, minutes: known.minutes, km: known.km, source: known.source ?? 'estimate' };
+	}
 
 	const minutes = (km / SPEED[mode]) * 60 + (mode === 'transit' ? TRANSIT_OVERHEAD_MIN : 0);
-	return { mode, minutes: Math.round(minutes), km: Math.round(km * 10) / 10 };
+	return {
+		mode,
+		minutes: Math.round(minutes),
+		km: Math.round(km * 10) / 10,
+		source: 'estimate'
+	};
 }

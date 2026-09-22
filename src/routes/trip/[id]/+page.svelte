@@ -47,7 +47,14 @@
 		type Unplaced,
 		type UnplacedReason
 	} from '$lib/plan/planner';
-	import { loadPlan, savePlan, staleCount, toPlannedDays, type PlanStopRow } from '$lib/trip/plan';
+	import {
+		loadPlan,
+		savePlan,
+		staleCount,
+		tableFromPlan,
+		toPlannedDays,
+		type PlanStopRow
+	} from '$lib/trip/plan';
 	import {
 		effectiveDayStart,
 		isMeal,
@@ -64,7 +71,7 @@
 	import { resolveCurves, type CrowdCurves } from '$lib/plan/crowd';
 	import { routeShape } from '$lib/plan/route';
 	import { firstOf, resolveTravel, type TravelTable } from '$lib/plan/travel';
-	import { routedTable } from '$lib/plan/refine';
+	import { refineTrip } from '$lib/plan/refine';
 	import { BLOCK_CATEGORY } from '$lib/plan/planner';
 	import { pool } from '$lib/pool';
 	import { avatarDataUri } from '$lib/avatar';
@@ -390,6 +397,58 @@
 	 */
 	let fresh = $state<PlannedDay[] | null>(null);
 
+	/**
+	 * Real travel times, arriving after the fact.
+	 *
+	 * The refiner routes the legs the plan guessed at and writes each answer
+	 * onto the stop it belongs to. This is how an open plan hears about it: the
+	 * row is merged into the stored plan, the day is re-walked on the better
+	 * figure, and the star beside the leg goes out. Nothing is reordered --
+	 * only the clock moves, and only by the difference.
+	 *
+	 * Also how a fellow traveller's edit reaches this screen, which it never
+	 * did before.
+	 */
+	function watchPlan() {
+		const channel = supabase
+			.channel(`plan:${tripId}`)
+			.on(
+				'postgres_changes',
+				{ event: '*', schema: 'public', table: 'plan_stops', filter: `trip_id=eq.${tripId}` },
+				({ new: changed }) => {
+					const incoming = changed as PlanStopRow | null;
+					if (!incoming?.id) return;
+					const held = stored.find((r) => r.id === incoming.id);
+					// Our own write coming back. Re-walking on it would write
+					// again, which would come back again.
+					if (
+						held &&
+						held.leg_minutes === incoming.leg_minutes &&
+						held.leg_km === incoming.leg_km &&
+						held.leg_source === incoming.leg_source
+					) {
+						return;
+					}
+					stored = held
+						? stored.map((r) => (r.id === incoming.id ? { ...r, ...incoming } : r))
+						: [...stored, incoming];
+					// Not while a card is in the air: the plan under the finger is
+					// the traveller's, and it can take the better figure when they
+					// put it down.
+					if (drag.state.id || busy) return;
+					const input = planInput();
+					if (input) fresh = schedule({ ...input, travel: known() }).days;
+				}
+			)
+			.subscribe();
+		return () => {
+			void supabase.removeChannel(channel);
+		};
+	}
+
+	// Its own onMount: an async one cannot hand back a cleanup.
+	onMount(watchPlan);
+
 	onMount(async () => {
 		try {
 			[row, pois, people, stored, mealRows] = await Promise.all([
@@ -523,12 +582,21 @@
 		travel = tables.length ? firstOf(tables) : undefined;
 	}
 
+	/*
+	 * Busyness only. Travel used to be resolved here too, and that was the
+	 * expensive mistake: an $effect subscribes to every signal read while it
+	 * runs, including inside the functions it calls, up to the first await --
+	 * and refreshTravel reads day_index, lat, lng and the exit of every stop
+	 * before it awaits anything. `void pois.length` narrowed nothing. Every
+	 * drag, pin and edit re-ran it, and each run was a paid matrix per day per
+	 * mode. Curves are computed on the device and cost nothing, so they can
+	 * stay. Travel is resolved where it is actually needed: when Replan is
+	 * about to order the days.
+	 */
 	$effect(() => {
-		// Re-resolve when the stops or the dates change, not on every render.
 		void pois.length;
 		void days.length;
 		refreshCurves();
-		refreshTravel();
 	});
 
 	$effect(() => {
@@ -680,7 +748,7 @@
 		// lands under the finger instead of after a write, a re-time and a call
 		// to a routing service.
 		const input = planInput();
-		if (input) fresh = schedule({ ...input, travel }).days;
+		if (input) fresh = schedule({ ...input, travel: known() }).days;
 
 		try {
 			await saveAssignments(rows);
@@ -742,6 +810,19 @@
 		}
 	}
 
+	/**
+	 * Everything known about how long journeys take, best first.
+	 *
+	 * The stored plan comes first: a leg it has already had routed is a real
+	 * answer for a real journey, and survives the cards being moved about --
+	 * the scheduler asks by where it is going, not by which stop it is timing.
+	 * The matrix behind it is an estimate, and the speed model behind that.
+	 */
+	const known = () => {
+		const tables = [tableFromPlan(stored), ...(travel ? [travel] : [])];
+		return firstOf(tables);
+	};
+
 	/** The trip as the scheduler wants it told. */
 	function planInput() {
 		if (!row || !days.length) return null;
@@ -759,11 +840,12 @@
 	async function retime(opts: { hold?: string } = {}) {
 		const input = planInput();
 		if (!input) return;
-		const first = schedule({ ...input, travel });
-		const routed = firstOf([await routedTable(first.days), ...(travel ? [travel] : [])]);
-		const next = schedule({ ...input, travel: routed });
+		// Scheduled on what is already known, and written straight away. The
+		// legs this invents are estimates, marked as such on screen; the real
+		// times are asked for afterwards and arrive on their own.
+		const next = schedule({ ...input, travel: known() });
 		fresh = next.days;
-		planAt = await savePlan(tripId, next);
+		planAt = await savePlan(tripId, next, stored);
 
 		// A stop the day could not reach has to give up its day, or it belongs
 		// to neither place: absent from the plan because it did not fit, and
@@ -791,6 +873,10 @@
 			pois = await listPois(tripId);
 		}
 		stored = await loadPlan(tripId);
+		// The plan is the traveller's; how long its journeys take is the
+		// server's to find out. Not awaited: the answers come back through the
+		// subscription below, whether or not this tab is still open.
+		void refineTrip(tripId);
 	}
 
 	/** What a meal container is called while it is being dragged. */
@@ -1070,22 +1156,19 @@
 				curves,
 				meals: mealPlan
 			};
+			// The matrix prices every pair the ordering might need. This is the
+			// one thing worth paying for up front: which stops share a day, and
+			// in what order, cannot be decided on guesses.
+			step = 'Measuring…';
+			await refreshTravel();
+
 			const ordered = replan({ ...input, travel });
 
-			// Tier 2. The matrix priced every pair it might need; now that the
-			// order is fixed, route the n-1 legs that survived and re-walk the
-			// clock on those figures. Without this the board runs on the
-			// estimate -- and on an airport transfer the two are an hour apart.
-			step = 'Routing…';
-			const table = await routedTable(ordered.days, undefined, ({ done, total }) => {
-				step = total ? `Routing ${done}/${total}` : 'Routing…';
-			});
-			const routed = firstOf([table, ...(travel ? [travel] : [])]);
 			step = 'Saving…';
 			const next = schedule({
 				...input,
 				pois: assignedFrom(ordered),
-				travel: routed
+				travel: known()
 			});
 
 			const assignments = next.days.flatMap((d) =>
@@ -1098,12 +1181,15 @@
 				.filter((u) => !u.poi.pinned)
 				.map((u) => ({ id: u.poi.id, dayIndex: null, orderIndex: null }));
 			await saveAssignments([...assignments, ...cleared]);
-			planAt = await savePlan(tripId, next);
+			planAt = await savePlan(tripId, next, stored);
 			fresh = next.days;
 			pois = await listPois(tripId);
 			// Without this the stored rows stay a plan behind, and the effect
 			// that re-times a newly placed stop fires on a phantom difference.
 			stored = await loadPlan(tripId);
+			// The legs the ordering ran on are matrix estimates. Ask for the
+			// real ones; they arrive on their own.
+			void refineTrip(tripId);
 		} catch (e) {
 			error = (e as Error).message;
 		} finally {
@@ -1727,6 +1813,7 @@
 								departAt={previous.depart.toISOString()}
 								timezone={row.timezone}
 								estimate={{ minutes: stop.legIn.minutes, km: stop.legIn.km }}
+								source={stop.legIn.source}
 							/>
 						{/if}
 						<div

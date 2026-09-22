@@ -13,6 +13,8 @@ const aDay = (date: string, anchors: Waypoint[] = []): Day => ({
 });
 
 const row = (p: Partial<PlanStopRow> & { day_index: number; order_index: number }): PlanStopRow => ({
+	id: `row-${p.day_index}-${p.order_index}`,
+	leg_source: null,
 	poi_id: null,
 	name: 'Stop',
 	lat: 51.5,
@@ -65,7 +67,14 @@ describe('toPlannedDays', () => {
 			[aDay('2026-10-02')]
 		);
 		expect(day.stops[0].legIn).toBeNull();
-		expect(day.stops[1].legIn).toEqual({ mode: 'transit', minutes: 24, km: 7.4 });
+		// A row stored before legs said where they came from was routed the old
+		// way, synchronously, so it counts as routed rather than asking again.
+		expect(day.stops[1].legIn).toEqual({
+			mode: 'transit',
+			minutes: 24,
+			km: 7.4,
+			source: 'routed'
+		});
 	});
 
 	it('restores times as instants, not strings', () => {

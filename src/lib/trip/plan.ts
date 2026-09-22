@@ -2,7 +2,8 @@ import { supabase } from '$lib/supabase';
 import { PLANNER_VERSION } from '$lib/plan/planner';
 import type { PlanResult, PlannedDay, PlannedStop, Warning } from '$lib/plan/planner';
 import type { Day } from './days';
-import type { Leg, Mode } from '$lib/plan/modes';
+import type { Leg, LegSource, Mode } from '$lib/plan/modes';
+import { pointKey, type TravelTable } from '$lib/plan/travel';
 
 /**
  * A stop as it is stored. This is the plan of record: once Regenerate has run,
@@ -11,6 +12,8 @@ import type { Leg, Mode } from '$lib/plan/modes';
  * because a provider answered differently.
  */
 export type PlanStopRow = {
+	/** The stop's own identity, kept across saves. */
+	id: string;
 	day_index: number;
 	order_index: number;
 	poi_id: string | null;
@@ -27,13 +30,32 @@ export type PlanStopRow = {
 	leg_mode: string | null;
 	leg_minutes: number | null;
 	leg_km: number | null;
+	/** Null on plans stored before legs said where their numbers came from. */
+	leg_source: LegSource | null;
 	warnings: Warning[];
 	busyness: number | null;
 	exit_lat: number | null;
 	exit_lng: number | null;
 };
 
-const toRow = (tripId: string, dayIndex: number, orderIndex: number, s: PlannedStop) => ({
+/**
+ * What makes a stop the same stop between one save and the next.
+ *
+ * A real stop is its wishlist place, wherever it is moved to. An anchor has no
+ * wishlist row, so it is the day it belongs to, what kind of anchor it is, and
+ * what it is called -- all three of which the day itself decides.
+ */
+const identity = (dayIndex: number, s: { poiId: string | null; anchorKind?: string | null; name: string }) =>
+	s.poiId ?? `${dayIndex}:${s.anchorKind ?? ''}:${s.name}`;
+
+const toRow = (
+	tripId: string,
+	dayIndex: number,
+	orderIndex: number,
+	s: PlannedStop,
+	id: string | null
+) => ({
+	id,
 	trip_id: tripId,
 	day_index: dayIndex,
 	order_index: orderIndex,
@@ -51,6 +73,7 @@ const toRow = (tripId: string, dayIndex: number, orderIndex: number, s: PlannedS
 	leg_mode: s.legIn?.mode ?? null,
 	leg_minutes: s.legIn?.minutes ?? null,
 	leg_km: s.legIn?.km ?? null,
+	leg_source: s.legIn?.source ?? null,
 	warnings: s.warnings,
 	busyness: s.busyness,
 	exit_lat: s.exitAt?.lat ?? null,
@@ -58,26 +81,35 @@ const toRow = (tripId: string, dayIndex: number, orderIndex: number, s: PlannedS
 });
 
 /**
- * Replace the trip's plan, in one write.
+ * Write the trip's plan: this is the plan now.
  *
- * Wholesale rather than a diff: plan_stops is derived data that Regenerate can
- * always produce again, so there is nothing to reconcile.
+ * A stop keeps its row. The plan used to be deleted and written again on every
+ * save, which gave the same place a new id each time -- fine while the client
+ * that built the plan was the only thing that wrote it, and not fine now that
+ * a real travel time is looked up after the fact and written back to the stop
+ * it belongs to. An answer that arrives for a row the next save has already
+ * deleted is an answer thrown away.
+ *
+ * `known` is the plan as it is stored, which is where the ids come from. A
+ * stop the scheduler has just invented has none, and the database gives it
+ * one.
  *
  * `plan_generated_at` is written last and on purpose. Everything the traveller
  * changed before this moment is now reflected in the plan, and anything stamped
  * after it is genuinely newer than the plan -- which is exactly what staleCount
  * goes on to measure.
  */
-export async function savePlan(tripId: string, result: PlanResult): Promise<string> {
+export async function savePlan(
+	tripId: string,
+	result: PlanResult,
+	known: PlanStopRow[] = []
+): Promise<string> {
+	const ids = new Map(known.map((r) => [identity(r.day_index, { poiId: r.poi_id, anchorKind: r.anchor_kind, name: r.name }), r.id]));
 	const rows = result.days.flatMap((d) =>
-		d.stops.map((s, i) => toRow(tripId, d.index, i, s))
+		d.stops.map((s, i) => toRow(tripId, d.index, i, s, s.id ?? ids.get(identity(d.index, s)) ?? null))
 	);
 
-	// One statement. As a delete and then an insert, two overlapping saves --
-	// an automatic re-time and a traveller's edit, say -- interleave as
-	// delete, delete, insert, insert, and the plan comes back with every stop
-	// on it twice.
-	const { error: writeError } = await supabase.rpc('replace_plan', {
+	const { error: writeError } = await supabase.rpc('save_plan', {
 		trip: tripId,
 		rows: rows.map(({ trip_id: _ignored, ...rest }) => rest)
 	});
@@ -96,7 +128,7 @@ export async function loadPlan(tripId: string): Promise<PlanStopRow[]> {
 	const { data, error } = await supabase
 		.from('plan_stops')
 		.select(
-			'day_index,order_index,poi_id,name,lat,lng,anchor,anchor_kind,time_label,starts_at,ends_at,duration_min,pinned,leg_mode,leg_minutes,leg_km,warnings,busyness,exit_lat,exit_lng'
+			'id,day_index,order_index,poi_id,name,lat,lng,anchor,anchor_kind,time_label,starts_at,ends_at,duration_min,pinned,leg_mode,leg_minutes,leg_km,leg_source,warnings,busyness,exit_lat,exit_lng'
 		)
 		.eq('trip_id', tripId)
 		.order('day_index', { ascending: true })
@@ -112,7 +144,15 @@ const toLeg = (row: PlanStopRow): Leg | null => {
 	// stored before that was true carry a transit overhead on a leg of zero
 	// length, and would show "12 min · 0 km · transit" until regenerated.
 	if (km === 0) return null;
-	return { mode: row.leg_mode as Mode, minutes: row.leg_minutes ?? 0, km };
+	return {
+		mode: row.leg_mode as Mode,
+		minutes: row.leg_minutes ?? 0,
+		km,
+		// A plan stored before legs said where they came from was routed the
+		// old way, synchronously, before it was saved. Taking it as routed is
+		// what stops every old trip asking to be looked up again.
+		source: (row.leg_source ?? 'routed') as LegSource
+	};
 };
 
 /**
@@ -152,6 +192,7 @@ export function toPlannedDays(rows: PlanStopRow[], days: Day[]): PlannedDay[] {
 		(a, b) => a.day_index - b.day_index || a.order_index - b.order_index
 	)) {
 		planned[row.day_index]?.stops.push({
+			id: row.id,
 			poiId: row.poi_id,
 			name: row.name,
 			at: { lat: row.lat, lng: row.lng },
@@ -171,6 +212,45 @@ export function toPlannedDays(rows: PlanStopRow[], days: Day[]): PlannedDay[] {
 		});
 	}
 	return planned;
+}
+
+/**
+ * The journeys a stored plan already knows for real.
+ *
+ * The scheduler asks for travel by where it is going, not by which stop it is
+ * timing, so what was looked up for one arrangement of a day is still true
+ * after the cards are moved about. This is how a refined time survives the
+ * next drag without being asked for again.
+ */
+export function tableFromPlan(rows: PlanStopRow[]): TravelTable {
+	const known = new Map<string, { minutes: number; km: number }>();
+	const byDay = new Map<number, PlanStopRow[]>();
+	for (const row of rows) {
+		const day = byDay.get(row.day_index) ?? [];
+		day.push(row);
+		byDay.set(row.day_index, day);
+	}
+	for (const day of byDay.values()) {
+		const ordered = [...day].sort((a, b) => a.order_index - b.order_index);
+		ordered.forEach((row, i) => {
+			const previous = ordered[i - 1];
+			if (!previous || row.leg_source !== 'routed' || !row.leg_mode) return;
+			const from = {
+				lat: previous.exit_lat ?? previous.lat,
+				lng: previous.exit_lng ?? previous.lng
+			};
+			known.set(`${pointKey(from)}>${pointKey({ lat: row.lat, lng: row.lng })}|${row.leg_mode}`, {
+				minutes: row.leg_minutes ?? 0,
+				km: Number(row.leg_km ?? 0)
+			});
+		});
+	}
+	return {
+		get(from, to, mode) {
+			const cell = known.get(`${pointKey(from)}>${pointKey(to)}|${mode}`);
+			return cell ? { ...cell, source: 'routed' as const } : null;
+		}
+	};
 }
 
 /**

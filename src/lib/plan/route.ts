@@ -1,6 +1,7 @@
 import type { LatLng } from '$lib/trip/days';
 import { supabase } from '$lib/supabase';
 import { haversineKm } from './geo';
+import { departBucket } from './travel';
 import type { Mode } from './modes';
 
 const pointKeyOf = (p: LatLng) => `${p.lat.toFixed(5)},${p.lng.toFixed(5)}`;
@@ -190,12 +191,19 @@ export async function legRoute(
 	departAt: string | null,
 	options: { prefer?: 'rail' | null } = {}
 ): Promise<LegRoute | null> {
+	// Two cards standing in the same place: there is no journey to route, and
+	// asking costs a billed element to be told so.
+	if (pointKeyOf(from) === pointKeyOf(to)) return null;
+
 	const prefer =
 		// Left to itself the router puts an airport run on a coach, which is
 		// cheap and slow. Rail is what people mean by the train from the airport.
 		options.prefer ?? (mode === 'transit' && haversineKm(from, to) > 20 ? 'rail' : null);
 
-	const key = `${pointKeyOf(from)}>${pointKeyOf(to)}|${mode}|${departAt ?? 'any'}|${prefer ?? ''}`;
+	// Keyed by the departure band, not the instant. On the instant, re-timing a
+	// day by four minutes missed every leg in it and asked again for answers
+	// the server had already given -- it caches by the hour, and so does this.
+	const key = `${pointKeyOf(from)}>${pointKeyOf(to)}|${mode}|${departBucket(mode, departAt)}|${prefer ?? ''}`;
 	if (legCache.has(key)) return legCache.get(key)!;
 
 	try {

@@ -808,6 +808,8 @@ describe('a leg that goes nowhere', () => {
 	it('costs nothing, whatever mode was chosen', () => {
 		expect(leg(here, here, ['transit', 'walk'], true)).toEqual({
 			mode: 'transit',
+			// Nothing to look up about standing still.
+			source: 'routed',
 			minutes: 0,
 			km: 0
 		});
