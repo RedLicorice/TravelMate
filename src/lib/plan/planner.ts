@@ -616,6 +616,15 @@ function walkClock(
 		if (slot) served.add(slot);
 	}
 
+	// A slot the traveller filled with a place that is on this day: that place
+	// is the meal, wherever the day reaches it. Without this the day would walk
+	// their choice and then offer an empty container for the same meal.
+	const onTheDay = new Set(pois.map((p) => p.id));
+	for (const name of MEAL_NAMES) {
+		const id = says.get(mealKey(dayIndex, name))?.poi_id;
+		if (id && onTheDay.has(id)) served.add(name);
+	}
+
 	const push = (
 		name: string,
 		point: LatLng,
@@ -947,8 +956,11 @@ function walkClock(
  * A pinned restaurant stays in the route -- the traveller said where and when,
  * and that is not the meal pass's to reconsider.
  */
-function split(list: PlanPoi[]): { route: PlanPoi[]; diners: PlanPoi[] } {
-	const diners = list.filter((p) => isMeal(p.category) && !p.pinned);
+function split(list: PlanPoi[], chosen: Set<string> = new Set()): { route: PlanPoi[]; diners: PlanPoi[] } {
+	// A place the traveller put in a slot stays in the route, like a pinned
+	// one: they said what it is and where it goes, and the meal pass has
+	// nothing left to decide about it.
+	const diners = list.filter((p) => isMeal(p.category) && !p.pinned && !chosen.has(p.id));
 	return { route: list.filter((p) => !diners.includes(p)), diners };
 }
 
@@ -963,17 +975,23 @@ export function schedule(input: PlanInput): PlanResult {
 	input.days.forEach((_, i) => byDay.set(i, []));
 	const unplaced: Unplaced[] = [];
 
-	// Places the traveller put in a meal slot. They belong to the slot rather
-	// than to a day, so they are neither waiting for a plan nor missing from
-	// one -- they are already where they were put.
+	// Places the traveller put in a meal slot. The slot says which meal they
+	// are; it does not take them out of the day. A place chosen for lunch is a
+	// stop on that day, in the order it was put in, and is dragged about like
+	// any other -- which is what was wrong before: it was lifted out of the
+	// route entirely and re-seated by the meal pass, so dropping anything
+	// before it did nothing at all.
 	const says = input.meals ?? new Map();
-	const inSlots = new Set(
+	/** Every place named by a slot, on whatever day. */
+	const chosen = new Set(
 		[...says.values()].map((r) => r.poi_id).filter((id): id is string => !!id)
 	);
 
 	for (const p of input.pois) {
-		if (inSlots.has(p.id)) continue;
 		if (p.dayIndex === null || !byDay.has(p.dayIndex)) {
+			// Chosen for a meal before it had a day of its own: the slot is where
+			// it goes, so it is not waiting for a plan.
+			if (chosen.has(p.id)) continue;
 			// Never been through the planner, or points at a day that no longer
 			// exists because the dates moved.
 			unplaced.push({ poi: p, reason: 'not-planned-yet' });
@@ -986,15 +1004,18 @@ export function schedule(input: PlanInput): PlanResult {
 	}
 
 	const days = input.days.map((day, i) => {
-		const { route, diners } = split(byDay.get(i)!);
+		const { route, diners } = split(byDay.get(i)!, chosen);
 
-		// Slots the traveller filled themselves, resolved against every place on
-		// the trip rather than against this day's candidates: an assignment is
-		// what goes there, whether or not the day would have chosen it.
+		// Slots the traveller filled with a place that is not on this day --
+		// chosen before it had one, or left over from a day that moved. A place
+		// already on the day is walked where it sits; seating it again would put
+		// it on the day twice.
+		const here = new Set(byDay.get(i)!.map((p) => p.id));
 		const picked = new Map<string, PlanPoi>();
 		for (const meal of MEAL_NAMES) {
 			const id = says.get(mealKey(i, meal))?.poi_id;
-			const poi = id ? input.pois.find((p) => p.id === id) : undefined;
+			if (!id || here.has(id)) continue;
+			const poi = input.pois.find((p) => p.id === id);
 			if (poi) picked.set(meal, poi);
 		}
 		const result = walkClock(
