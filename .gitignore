@@ -17,3 +17,5 @@ Thumbs.db
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .wrangler
+dev-dist/
+.env.local
