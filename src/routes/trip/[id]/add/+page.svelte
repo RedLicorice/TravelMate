@@ -305,12 +305,23 @@
 					before
 				);
 				const poiOf = new Map(placements.map((x) => [x.id, x.poi_id]));
-				await place(tripId, row.id, slot.day, rows.find((r) => r.id === NEW)!.orderIndex);
-				await savePlacements(
+				// Back to the day at once. The visit is written on the way out
+				// -- the trip page reads the placements when it opens, and by
+				// then this has landed; a failure surfaces there rather than
+				// holding a screen the traveller has finished with.
+				const writing = place(
 					tripId,
-					rows.filter((r) => r.id !== NEW).map((r) => ({ ...r, poiId: poiOf.get(r.id)! }))
+					row.id,
+					slot.day,
+					rows.find((r) => r.id === NEW)!.orderIndex
+				).then(() =>
+					savePlacements(
+						tripId,
+						rows.filter((r) => r.id !== NEW).map((r) => ({ ...r, poiId: poiOf.get(r.id)! }))
+					)
 				);
 				await goto(`${base}/trip/${tripId}?day=${slot.day}`, { replaceState: true });
+				await writing;
 				return;
 			}
 

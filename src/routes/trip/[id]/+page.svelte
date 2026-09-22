@@ -703,42 +703,63 @@
 	onMount(watchPlan);
 	onMount(() => watching(tripId));
 
-	onMount(async () => {
-		try {
-			[row, pois, placements, people, stored, mealRows] = await Promise.all([
-				getTrip(tripId),
-				listPois(tripId),
-				listPlacements(tripId),
-				loadTripProfiles(tripId),
-				loadPlan(tripId),
-				loadMeals(tripId)
-			]);
-			if (!row) return;
-			planAt = row.plan_generated_at;
-			// Coming back from adding into a slot: open on the day it landed on.
-			const asked = Number(page.url.searchParams.get('day'));
-			if (Number.isInteger(asked) && asked >= 0) dayIndex = asked;
-			if (row.share_token) shareUrl = linkFor(row.share_token);
-			await furnish();
-			bbox = cityBBox(row);
-			// Trips saved before the city box -- and before the country code --
-			// was captured. One geocode fills in whichever is missing.
-			if (!bbox || !row.country_code) {
-				const [match] = await provider.searchCities(row.city);
-				if (match?.bbox && !bbox) {
-					bbox = match.bbox;
-					await updateCityBBox(tripId, match.bbox);
+	onMount(() => {
+		// Every read goes out at once and each draws itself the moment it
+		// lands. The screen used to wait for the slowest of six before it would
+		// show anything -- on a device that already had five of them cached.
+		const mine = (e: unknown) => (error = (e as Error).message);
+
+		const trip = getTrip(tripId)
+			.then(async (found) => {
+				row = found;
+				loading = false;
+				if (!found) return;
+				planAt = found.plan_generated_at;
+				// Coming back from adding into a slot: open on the day it
+				// landed on.
+				const asked = Number(page.url.searchParams.get('day'));
+				if (Number.isInteger(asked) && asked >= 0) dayIndex = asked;
+				if (found.share_token) shareUrl = linkFor(found.share_token);
+				bbox = cityBBox(found);
+				// Trips saved before the city box -- and before the country
+				// code -- was captured. One geocode fills in whichever is
+				// missing, behind the screen rather than in front of it.
+				if (!bbox || !found.country_code) {
+					const [match] = await provider.searchCities(found.city);
+					if (match?.bbox && !bbox) {
+						bbox = match.bbox;
+						await updateCityBBox(tripId, match.bbox);
+					}
+					if (match?.countryCode && !row?.country_code) {
+						row = row ? { ...row, country_code: match.countryCode } : row;
+						await updateCountryCode(tripId, match.countryCode);
+					}
 				}
-				if (match?.countryCode && !row.country_code) {
-					row = { ...row, country_code: match.countryCode };
-					await updateCountryCode(tripId, match.countryCode);
-				}
-			}
-		} catch (e) {
-			error = (e as Error).message;
-		} finally {
-			loading = false;
-		}
+			})
+			.catch((e) => {
+				loading = false;
+				mine(e);
+			});
+
+		const placed = listPlacements(tripId)
+			.then((v) => (placements = v))
+			.catch(mine);
+		listPois(tripId)
+			.then((v) => (pois = v))
+			.catch(mine);
+		loadPlan(tripId)
+			.then((v) => (stored = v))
+			.catch(mine);
+		loadMeals(tripId)
+			.then((v) => (mealRows = v))
+			.catch(mine);
+		loadTripProfiles(tripId)
+			.then((v) => (people = v))
+			.catch(mine);
+
+		// The furniture needs the trip and what is already placed, and nothing
+		// on screen waits for it.
+		void Promise.all([trip, placed]).then(() => furnish().catch(mine));
 	});
 
 	const linkFor = (token: string) => `${window.location.origin}${base}/shared/${token}`;
@@ -1926,8 +1947,12 @@
 </script>
 
 <main class="flex h-dvh flex-col">
-	{#if loading}
-		<p class="p-6" style="color: var(--tm-text-faint)">Loading…</p>
+	{#if loading && !row}
+		<!-- The frame, not a word about loading: the trip is on its way and
+		     everything around it is already drawable. -->
+		<div class="tm-safe-top p-4">
+			<a href="{base}/" class="tm-attrib" style="text-decoration: none">← Trips</a>
+		</div>
 	{:else if !row}
 		<div class="tm-safe-top p-6">
 			<a href="{base}/" class="tm-attrib" style="text-decoration: none">← Trips</a>
