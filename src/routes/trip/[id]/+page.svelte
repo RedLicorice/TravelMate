@@ -671,7 +671,7 @@
 	const unplaced = $derived<Unplaced[]>(
 		pois
 			.filter((p) => !planned.has(p.id))
-			.map((p) => ({ poi: toPlanPoi(p), reason: reasonFor(p) }))
+			.map((p) => ({ poi: toPlanPoi(p, cardAt.get(p.id) ?? null), reason: reasonFor(p) }))
 	);
 
 	/**
@@ -757,16 +757,24 @@
 		);
 		if (!rows.length) return;
 
-		// Held by the drag. Dropped onto a card that states an order and nothing
-		// more: minting a time from where the card happened to land would stop
-		// the next refinement sliding the stop when a leg turns out longer, and
-		// it would warn about a time nobody chose.
+		// Held where it was put, and by no moment at all.
 		//
-		// Dropped into an opened gap it is different: the gap is drawn to scale,
-		// so letting go two thirds of the way down a free afternoon is the
-		// traveller saying when, and the plan should hold it there.
-		const held =
-			target?.kind === 'gap' ? { pinned: true, pinned_at: target.at } : { pinned: true };
+		// pinned means Replan may not move it. Where it goes is the order the
+		// traveller just stated by dropping it, and that is the whole of what a
+		// drop says.
+		//
+		// A moment was minted here, from where the card landed on the day's
+		// line, and it was the bug: the planner orders pinned stops by the time
+		// they hold (planner.ts, `pins`), so the minted moment outranked the
+		// order. Drop a card early in a day that cannot start that early, or
+		// beside a meal the meal pass seats by its own window, and the stop was
+		// put back where its old moment said -- pinned, in the place it had
+		// just been dragged out of. Clearing it is also what stops a pin from
+		// a week ago dragging today's move backwards.
+		const held = { pinned: true };
+		// Its old card time is where it used to be, and it is not there any
+		// more: the walk about to run decides when it happens now.
+		justMoved = draggedId;
 
 		// Follow the stop to its new day. Without this it simply vanishes from
 		// the day on screen and the move looks like a deletion.
@@ -795,6 +803,8 @@
 			// Refine in the background: real road times may shift the day by a
 			// few minutes, and that is not worth a frozen screen.
 			await restore();
+			// It has a card of its own again, so it is held to that from here.
+			justMoved = null;
 		} catch (e) {
 			error = (e as Error).message;
 			pois = await listPois(tripId);
@@ -870,11 +880,31 @@
 		return firstOf(tables);
 	};
 
+	/**
+	 * When each stop currently happens, from the card on the plan.
+	 *
+	 * This is where a stop's time lives. A pin says Replan may not move it; the
+	 * card says what it may not be moved from.
+	 */
+	const cardAt = $derived.by(() => {
+		const at = new Map<string, string>();
+		for (const day of fresh ?? toPlannedDays(stored, days)) {
+			for (const st of day.stops) if (st.poiId) at.set(st.poiId, st.arrive.toISOString());
+		}
+		return at;
+	});
+
+	/**
+	 * A stop the traveller has just dragged, whose card time is the one it had
+	 * before the drag and so must not be held to.
+	 */
+	let justMoved = $state<string | null>(null);
+
 	/** The trip as the scheduler wants it told. */
 	function planInput() {
 		if (!row || !days.length) return null;
 		return {
-			pois: pois.map(toPlanPoi),
+			pois: pois.map((p) => toPlanPoi(p, p.id === justMoved ? null : (cardAt.get(p.id) ?? null))),
 			days,
 			allowedModes: row.allowed_modes as Mode[],
 			timezone: row.timezone,
@@ -1172,7 +1202,9 @@
 			// Dropped into an opened gap, it is pinned to the moment that was
 			// touched: the gap is drawn to scale, so the tap said a time and not
 			// merely a position in the order.
-			await updatePoi(poiId, target.at ? { pinned: true, pinned_at: target.at } : { pinned: true });
+			// Same rule as a drag: whatever moment it used to be held at is not
+			// the moment it is being put at now.
+			await updatePoi(poiId, { pinned: true, pinned_at: target.at ?? null });
 			pois = await listPois(tripId);
 			dayIndex = target.day;
 			await restore({ hold: poiId });
@@ -1207,8 +1239,11 @@
 		busy = true;
 		error = null;
 		try {
+			// Replan builds around what is pinned: a pinned card keeps the day
+			// and the moment its card says, and everything else is arranged to
+			// fit before and after it.
 			const input = {
-				pois: pois.map(toPlanPoi),
+				pois: pois.map((p) => toPlanPoi(p, cardAt.get(p.id) ?? null)),
 				days,
 				allowedModes: row.allowed_modes as Mode[],
 				timezone: row.timezone,

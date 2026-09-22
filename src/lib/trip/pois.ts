@@ -35,7 +35,16 @@ export type PoiRow = {
 	updated_at: string | null;
 };
 
-export const toPlanPoi = (row: PoiRow): PlanPoi => ({
+/**
+ * A wishlist row as the planner wants it told.
+ *
+ * `heldAt` is the moment the stop already happens at, taken from the card on
+ * the plan -- because that is where a stop's time lives. A pin carries no time
+ * of its own: it says Replan may not move this one, and the card says when it
+ * is. Passing nothing means the planner decides, which is what it does for
+ * anything unpinned and for a stop that has just been dragged somewhere new.
+ */
+export const toPlanPoi = (row: PoiRow, heldAt: string | null = null): PlanPoi => ({
 	id: row.id,
 	name: row.name,
 	lat: row.lat,
@@ -46,7 +55,7 @@ export const toPlanPoi = (row: PoiRow): PlanPoi => ({
 	dayIndex: row.day_index,
 	orderIndex: row.order_index,
 	pinned: row.pinned ?? false,
-	pinnedAt: row.pinned_at ?? null,
+	pinnedAt: row.pinned ? heldAt : null,
 	branches: row.any_branch ? (row.branches ?? []) : null,
 	exitAt: row.exit_lat !== null && row.exit_lng !== null ? { lat: row.exit_lat, lng: row.exit_lng } : null
 });
