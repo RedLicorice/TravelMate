@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
+	import { mutate, pullTrip, store } from '$lib/store/store.svelte';
 	import { base } from '$app/paths';
 	import { goto } from '$app/navigation';
 	import {
@@ -11,8 +12,7 @@
 		terminalsOf,
 		updateCityBBox,
 		updateTrip,
-		type Terminals,
-		type TripRow
+		type Terminals
 	} from '$lib/trip/repo';
 	import JourneySide from '$lib/JourneySide.svelte';
 	import CheckIn from '$lib/CheckIn.svelte';
@@ -23,8 +23,9 @@
 	const tripId = page.params.id!;
 	const MODES = ['walk', 'bike', 'transit', 'car', 'carshare'] as const;
 
-	let row = $state<TripRow | null>(null);
-	let loading = $state(true);
+	const row = $derived(getTrip(tripId));
+	/** Not on this device, and the server not yet asked. */
+	const loading = $derived(!row && !store.asked.includes(tripId));
 	let saving = $state(false);
 	let error = $state<string | null>(null);
 	let confirmDelete = $state(false);
@@ -44,27 +45,29 @@
 	let bbox = $state<ReturnType<typeof cityBBox>>(null);
 	let terminals = $state<Terminals>(noTerminals());
 
-	onMount(async () => {
-		try {
-			row = await getTrip(tripId);
-			if (!row) return;
-			cityName = row.city;
-			timezone = row.timezone;
-			hotelName = row.hotel_name;
-			hotelLat = row.hotel_lat;
-			hotelLng = row.hotel_lng;
-			arrival = toLocalInput(row.arrival_at, row.timezone);
-			departure = toLocalInput(row.departure_at, row.timezone);
-			modes = [...(row.allowed_modes ?? [])];
-			dayStart = row.day_start.slice(0, 5);
-			dayEnd = row.day_end.slice(0, 5);
-			bbox = cityBBox(row);
-			terminals = terminalsOf(row);
-		} catch (e) {
-			error = (e as Error).message;
-		} finally {
-			loading = false;
-		}
+	// The form is filled once, from the trip as it first reads. After that it
+	// is the traveller's draft, and an edit arriving from someone else does
+	// not overwrite what they are typing.
+	let filled = false;
+	$effect(() => {
+		if (filled || !row) return;
+		filled = true;
+		cityName = row.city;
+		timezone = row.timezone;
+		hotelName = row.hotel_name;
+		hotelLat = row.hotel_lat;
+		hotelLng = row.hotel_lng;
+		arrival = toLocalInput(row.arrival_at, row.timezone);
+		departure = toLocalInput(row.departure_at, row.timezone);
+		modes = [...(row.allowed_modes ?? [])];
+		dayStart = row.day_start.slice(0, 5);
+		dayEnd = row.day_end.slice(0, 5);
+		bbox = cityBBox(row);
+		terminals = terminalsOf(row);
+	});
+
+	onMount(() => {
+		if (!row) pullTrip(tripId).catch((e) => (error = (e as Error).message));
 	});
 
 	const city = $derived<City | null>(
@@ -88,22 +91,24 @@
 		saving = true;
 		error = null;
 		try {
-			await updateTrip(tripId, {
-				city: cityName,
-				timezone,
-				hotelName,
-				hotelLat,
-				hotelLng,
-				// Read in the trip's own zone, so editing from another country does
-				// not silently shift the flights.
-				arrivalAt: fromLocalInput(arrival, timezone),
-				departureAt: fromLocalInput(departure, timezone),
-				allowedModes: modes,
-				dayStart,
-				dayEnd,
-				terminals
+			await mutate('Edited the trip', tripId, (w) => {
+				updateTrip(w, tripId, {
+					city: cityName,
+					timezone,
+					hotelName,
+					hotelLat,
+					hotelLng,
+					// Read in the trip's own zone, so editing from another country does
+					// not silently shift the flights.
+					arrivalAt: fromLocalInput(arrival, timezone),
+					departureAt: fromLocalInput(departure, timezone),
+					allowedModes: modes,
+					dayStart,
+					dayEnd,
+					terminals
+				});
+				if (bbox) updateCityBBox(w, tripId, bbox);
 			});
-			if (bbox) await updateCityBBox(tripId, bbox);
 			await goto(`${base}/trip/${tripId}`, { replaceState: true });
 		} catch (e) {
 			error = (e as Error).message;
@@ -113,7 +118,7 @@
 
 	async function destroy() {
 		try {
-			await deleteTrip(tripId);
+			await mutate('Deleted the trip', tripId, (w) => deleteTrip(w, tripId));
 			await goto(`${base}/`, { replaceState: true });
 		} catch (e) {
 			error = (e as Error).message;

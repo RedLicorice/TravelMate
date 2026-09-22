@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { base } from '$app/paths';
 	import { goto } from '$app/navigation';
@@ -14,8 +14,7 @@
 		updateAllowance,
 		updateCityBBox,
 		updateCountryCode,
-		updateHotel,
-		type TripRow
+		updateHotel
 	} from '$lib/trip/repo';
 	import {
 		addPoi,
@@ -25,14 +24,7 @@
 		type PoiRow
 	} from '$lib/trip/pois';
 	import { describe as describeJourney } from '$lib/trip/journey';
-	import {
-		loadMeals,
-		mealKey,
-		resetMeal,
-		saveMeal,
-		toMealPlan,
-		type MealSlotRow
-	} from '$lib/trip/meals';
+	import { loadMeals, mealKey, resetMeal, saveMeal, toMealPlan } from '$lib/trip/meals';
 	import {
 		holdPlacement,
 		listPlacements,
@@ -43,7 +35,6 @@
 		moveTo,
 		setFurnished,
 		setPlacementMinutes,
-		savePlacements,
 		unplace as dropPlacement,
 		type PlacementRow
 	} from '$lib/trip/placements';
@@ -60,14 +51,7 @@
 		type Unplaced,
 		type UnplacedReason
 	} from '$lib/plan/planner';
-	import {
-		loadPlan,
-		savePlan,
-		staleCount,
-		tableFromPlan,
-		toPlannedDays,
-		type PlanStopRow
-	} from '$lib/trip/plan';
+	import { loadPlan, savePlan, staleCount, tableFromPlan, toPlannedDays } from '$lib/trip/plan';
 	import {
 		effectiveDayStart,
 		isMeal,
@@ -85,16 +69,15 @@
 	import { resolveCurves, type CrowdCurves } from '$lib/plan/crowd';
 	import { routeShape } from '$lib/plan/route';
 	import { firstOf, resolveTravel, type TravelTable } from '$lib/plan/travel';
-	import { refineTrip } from '$lib/plan/refine';
 	import { BLOCK_CATEGORY } from '$lib/plan/planner';
 	import { pool } from '$lib/pool';
 	import { avatarDataUri } from '$lib/avatar';
 	import {
 		displayName,
-		loadTripProfiles,
 		removeMember,
 		saveMyProfile,
 		setMemberRole,
+		tripProfiles,
 		type Profile
 	} from '$lib/profile.svelte';
 	import type { Mode } from '$lib/plan/modes';
@@ -110,8 +93,22 @@
 	import DayLine from '$lib/DayLine.svelte';
 	import TimeGap from '$lib/TimeGap.svelte';
 	import TripAvatar from '$lib/TripAvatar.svelte';
-	import { supabase } from '$lib/supabase';
 	import { session } from '$lib/session.svelte';
+	import {
+		accept,
+		asideFor,
+		asideOn,
+		mutate,
+		reject,
+		store,
+		upload,
+		watchTrip,
+		type Mutation,
+		type Writer
+	} from '$lib/store/store.svelte';
+	import Notices from '$lib/Notices.svelte';
+	import ConflictSheet from '$lib/ConflictSheet.svelte';
+	import { explain } from '$lib/conflict';
 	import { track, watching } from '$lib/telemetry';
 	import { zoneAt } from '$lib/trip/timezone';
 	import TripMap from '$lib/GoogleMap.svelte';
@@ -119,12 +116,13 @@
 
 	const tripId = page.params.id!;
 
-	let row = $state<TripRow | null>(null);
+	/** The trip, as this device holds it. Every read below is from the device. */
+	const row = $derived(getTrip(tripId));
 	/** Sharing, editing and the picture are the owner's; the policies say so
 	    too, and a control the server will refuse is a control that lies. */
 	const isOwner = $derived(!!row && row.user_id === session.user?.id);
 	/** The wishlist: places wanted, each once. */
-	let pois = $state<PoiRow[]>([]);
+	const pois = $derived(listPois(tripId));
 	/**
 	 * Which visit the open card is showing, when it was opened from the plan.
 	 * Null when it was opened from the wishlist, where a place has no one
@@ -136,7 +134,7 @@
 	 * as many as the traveller likes, and a place with none is simply on the
 	 * wishlist and not yet on the plan.
 	 */
-	let placements = $state<PlacementRow[]>([]);
+	const placements = $derived(listPlacements(tripId));
 	const poiById = $derived(new Map(pois.map((p) => [p.id, p])));
 	/**
 	 * A place on the wishlist that has no visit yet, in the shape the planner
@@ -216,7 +214,8 @@
 		if (pl.name === 'Getting ready') return prep?.prepMin ?? 0;
 		return row.bag_drop_min;
 	}
-	let loading = $state(true);
+	/** Not on this device, and the server not yet asked for it. */
+	const loading = $derived(!row && !store.asked.includes(tripId));
 	let error = $state<string | null>(null);
 	let busy = $state(false);
 	/** What the Replan button is up to, since routing a trip is not instant. */
@@ -228,7 +227,9 @@
 	 * traveller notices it is wrong.
 	 */
 	type Allowance = 'prep' | 'bags' | 'out' | 'checkin';
-	let carded = $state<PoiRow | null>(null);
+	/** The place whose card is open. Read from the device, so an edit shows on it at once. */
+	let cardedId = $state<string | null>(null);
+	const carded = $derived(cardedId ? (poiById.get(cardedId) ?? null) : null);
 
 	// A sheet opened for one slot should not still be filtered by what was
 	// typed into the last one.
@@ -268,52 +269,41 @@
 	) {
 		mealed = null;
 		slot = null;
-		// Said on screen before it is written down. The plan redraws from what
-		// the traveller just chose; the row follows, and only a failure is
-		// allowed to take it back.
-		const wasMeals = mealRows;
-		if (change !== 'reset') {
-			const key = mealKey(dayIdx, meal);
-			const had = mealRows.find((r) => mealKey(r.day_index, r.meal as MealName) === key);
-			const next = {
-				...(had ?? { trip_id: tripId, day_index: dayIdx, meal, poi_id: null, at: null, skipped: false }),
-				...change
-			} as MealSlotRow;
-			mealRows = [...mealRows.filter((r) => mealKey(r.day_index, r.meal as MealName) !== key), next];
-		} else {
-			mealRows = mealRows.filter(
-				(r) => mealKey(r.day_index, r.meal as MealName) !== mealKey(dayIdx, meal)
-			);
-		}
-		const drawn = planInput();
-		if (drawn) fresh = schedule({ ...drawn, travel: known() }).days;
-
-		try {
-			if (change === 'reset') await resetMeal(tripId, dayIdx, meal);
-			else await saveMeal(tripId, { dayIndex: dayIdx, meal, ...change });
-
+		// At the meal's own hour: the sitting is a card on the day like any
+		// other, and the place chosen for it happens when it does. Read before
+		// the edit changes the day under it.
+		const sitting = (result?.days[dayIdx]?.stops ?? []).find(
+			(st) => st.anchorKind === 'meal' && mealFor(st) === meal
+		);
+		const at = sitting ? sitting.arrive.toISOString() : momentFor({ day: dayIdx, before: null });
+		await edit(change === 'reset' ? `Gave ${MEAL_LABEL[meal]} back to the plan` : `Said what ${MEAL_LABEL[meal].toLowerCase()} is`, (w) => {
+			if (change === 'reset') resetMeal(w, tripId, dayIdx, meal);
+			else saveMeal(w, tripId, { dayIndex: dayIdx, meal, ...change });
 			// The place keeps its day. A meal is a stop like any other, and the
 			// slot only says which meal it is -- taking its day away is what
 			// used to lift it out of the route and re-seat it by window,
 			// which is how dropping a card before it did nothing at all.
 			if (change !== 'reset' && change.poiId && !placements.some((pl) => pl.poi_id === change.poiId)) {
-				// At the meal's own hour: the sitting is a card on the day like
-				// any other, and the place chosen for it happens when it does.
-				const sitting = (result?.days[dayIdx]?.stops ?? []).find(
-					(st) => st.anchorKind === 'meal' && mealFor(st) === meal
-				);
-				const at = sitting
-					? sitting.arrive.toISOString()
-					: momentFor({ day: dayIdx, before: null });
-				placements = [...placements, await place(tripId, change.poiId, dayIdx, at)];
+				place(w, tripId, change.poiId, dayIdx, at);
 			}
+			retime(w);
+		});
+	}
 
-			mealRows = await loadMeals(tripId);
-			await restore();
+	/**
+	 * One edit, with the re-time that follows from it inside it: the two land
+	 * together or not at all. An edit the device cannot keep is said, never
+	 * swallowed.
+	 */
+	async function edit(name: string, work: (w: Writer) => void): Promise<boolean> {
+		try {
+			await mutate(name, tripId, work);
+			return true;
 		} catch (e) {
 			error = (e as Error).message;
-			mealRows = wasMeals;
-			mealRows = await loadMeals(tripId);
+			// The walk drawn for an edit that did not land is not the day.
+			fresh = null;
+			return false;
 		}
 	}
 
@@ -347,6 +337,11 @@
 	}
 
 	function holdMeal(stop: PlannedStop, dayIdx: number) {
+		const waiting = conflictOf(stop, dayIdx);
+		if (waiting) {
+			conflict = waiting;
+			return;
+		}
 		const meal = mealFor(stop);
 		if (meal) {
 			mealed = { day: dayIdx, meal, name: MEAL_LABEL[meal], poiId: stop.poiId };
@@ -354,6 +349,11 @@
 	}
 
 	function holdAllowance(stop: PlannedStop, dayIdx: number) {
+		const waiting = conflictOf(stop, dayIdx);
+		if (waiting) {
+			conflict = waiting;
+			return;
+		}
 		// A piece of the day's own furniture: how long it takes is this one's,
 		// and it can be taken off the day altogether.
 		if (stop.placementId && stop.anchor) {
@@ -380,39 +380,26 @@
 
 	async function setAllowance(kind: Allowance, minutes: number, placementId?: string | null) {
 		if (!row) return;
+		const name = allowanced?.name ?? 'a card';
 		allowanced = null;
-		busy = true;
-		try {
-			// This card's own length, not the trip's: the traveller is saying
-			// how long this afternoon at the hotel is, not redefining every
-			// hotel stop on the trip.
-			if (placementId) {
-				await setPlacementMinutes(placementId, minutes);
-				placements = placements.map((pl) =>
-					pl.id === placementId ? { ...pl, minutes } : pl
-				);
-				await restore();
-				return;
-			}
-			if (kind === 'prep') {
-				await saveMyProfile({ prep_min: minutes });
-				people = await loadTripProfiles(tripId);
-			} else {
-				const patch =
+		// This card's own length, not the trip's: the traveller is saying how
+		// long this afternoon at the hotel is, not redefining every hotel stop
+		// on the trip.
+		await edit(`Changed how long ${name} takes`, (w) => {
+			if (placementId) setPlacementMinutes(w, placementId, minutes);
+			else if (kind === 'prep') saveMyProfile(w, { prep_min: minutes });
+			else
+				updateAllowance(
+					w,
+					tripId,
 					kind === 'bags'
 						? { bag_drop_min: minutes }
 						: kind === 'out'
 							? { arrival_buffer_min: minutes }
-							: { departure_buffer_min: minutes };
-				await updateAllowance(tripId, patch);
-				row = { ...row, ...patch };
-			}
-			await restore();
-		} catch (e) {
-			error = (e as Error).message;
-		} finally {
-			busy = false;
-		}
+							: { departure_buffer_min: minutes }
+				);
+			retime(w);
+		});
 	}
 
 	/**
@@ -428,29 +415,16 @@
 	}) {
 		const held = carded;
 		if (!held) return;
-		// On the card and in the plan before the write: an edit the traveller
-		// can see land is an edit they do not have to wonder about.
-		const was = pois;
-		const guessed = { ...held, ...patch } as PoiRow;
-		pois = pois.map((p) => (p.id === held.id ? guessed : p));
-		carded = guessed;
-		const drawn = planInput();
-		if (drawn) fresh = schedule({ ...drawn, travel: known() }).days;
-		try {
-			const updated = await updatePoi(held.id, patch);
-			pois = pois.map((p) => (p.id === held.id ? updated : p));
-			carded = updated;
-			// Written into the plan as well, so a longer visit is a longer card
-			// the next time the trip is opened rather than only until the page
-			// is closed. Nothing moves: every card holds its own clock, and a
-			// re-time writes times without rearranging anything. What it takes
-			// to fit the new length is Replan's question.
-			await restore();
-		} catch (e) {
-			error = (e as Error).message;
-			pois = was;
-			carded = held;
-		}
+		// Written into the plan as well, so a longer visit is a longer card the
+		// next time the trip is opened rather than only until the page is
+		// closed. Nothing moves: every card holds its own clock, and a re-time
+		// writes times without rearranging anything. What it takes to fit the
+		// new length is Replan's question.
+		const { pinned: _pinned, ...change } = patch;
+		await edit(`Changed ${held.name}`, (w) => {
+			updatePoi(w, held.id, change);
+			retime(w);
+		});
 	}
 
 	/**
@@ -463,40 +437,22 @@
 	 * confirmation.
 	 */
 	async function unplace(placementId: string) {
-		carded = null;
-		// Gone from the screen at once, and from the day the plan draws. The
-		// write follows; if it fails the trip is read back and the card
-		// returns, which is the only moment the traveller should ever wait.
-		const was = placements;
-		placements = placements.filter((pl) => pl.id !== placementId);
-		const input = planInput();
-		if (input) fresh = schedule({ ...input, travel: known() }).days;
-		try {
-			await dropPlacement(placementId);
-			await restore();
-		} catch (e) {
-			error = (e as Error).message;
-			placements = was;
-			placements = await listPlacements(tripId);
-		}
+		const name = carded?.name;
+		cardedId = null;
+		await edit(`Took ${name ?? 'a card'} off the day`, (w) => {
+			dropPlacement(w, placementId);
+			retime(w);
+		});
 	}
 
 	/** Let Replan have every visit to this place back. */
 	async function unpin(poiId: string) {
-		carded = null;
-		busy = true;
-		try {
-			const held = placements.filter((pl) => pl.poi_id === poiId && pl.pinned);
-			for (const pl of held) await holdPlacement(pl.id, false);
-			placements = placements.map((pl) =>
-				pl.poi_id === poiId ? { ...pl, pinned: false } : pl
-			);
-			await restore();
-		} catch (e) {
-			error = (e as Error).message;
-		} finally {
-			busy = false;
-		}
+		const name = carded?.name;
+		cardedId = null;
+		await edit(`Let Replan move ${name ?? 'a place'} again`, (w) => {
+			for (const pl of placements) if (pl.poi_id === poiId && pl.pinned) holdPlacement(w, pl.id, false);
+			retime(w);
+		});
 	}
 
 	let picking = $state(false);
@@ -512,15 +468,12 @@
 		picking = true;
 		error = null;
 		try {
+			// A picture has to reach the server before anyone can see it, so this
+			// one thing waits for a connection, and says so when there is none.
+			if (!navigator.onLine) throw new Error('Adding a picture needs a connection.');
 			const ext = file.name.split('.').pop()?.toLowerCase() ?? 'png';
-			const path = `${tripId}/${crypto.randomUUID()}.${ext}`;
-			const { error: upErr } = await supabase.storage
-				.from('trip-images')
-				.upload(path, file, { upsert: true, contentType: file.type });
-			if (upErr) throw new Error(upErr.message);
-			const { data } = supabase.storage.from('trip-images').getPublicUrl(path);
-			await setTripImage(tripId, data.publicUrl);
-			if (row) row = { ...row, image_url: data.publicUrl };
+			const url = await upload('trip-images', `${tripId}/${crypto.randomUUID()}.${ext}`, file);
+			await edit('Changed the trip’s picture', (w) => setTripImage(w, tripId, url));
 		} catch (e) {
 			error = (e as Error).message;
 		} finally {
@@ -530,12 +483,7 @@
 	}
 
 	async function clearImage() {
-		try {
-			await setTripImage(tripId, null);
-			if (row) row = { ...row, image_url: null };
-		} catch (e) {
-			error = (e as Error).message;
-		}
+		await edit('Took the trip’s picture off', (w) => setTripImage(w, tripId, null));
 	}
 	let dayIndex = $state(0);
 	let view = $state<'plan' | 'map' | 'wishlist'>('plan');
@@ -546,10 +494,10 @@
 	/** Unassigned stops are their own layer on the map, not a day. */
 	let showUnassigned = $state(true);
 	let seeded = false;
-	let shareUrl = $state<string | null>(null);
+	const shareUrl = $derived(row?.share_token ? linkFor(row.share_token) : null);
 	let copied = $state(false);
-	let bbox = $state<ReturnType<typeof cityBBox>>(null);
-	let people = $state<Profile[]>([]);
+	const bbox = $derived(row ? cityBBox(row) : null);
+	const people = $derived(tripProfiles(tripId));
 
 	/** What the traveller has typed to find a place in a long wishlist. */
 	let hunt = $state('');
@@ -594,66 +542,53 @@
 	let travel = $state<TravelTable | undefined>(undefined);
 
 	/** The plan of record, as Regenerate last wrote it. */
-	let stored = $state<PlanStopRow[]>([]);
+	const stored = $derived(loadPlan(tripId));
 	/** What the traveller has said about particular meals. */
-	let mealRows = $state<MealSlotRow[]>([]);
+	const mealRows = $derived(loadMeals(tripId));
 	const mealPlan = $derived(toMealPlan(mealRows));
-	let planAt = $state<string | null>(null);
+	const planAt = $derived(row?.plan_generated_at ?? null);
 	/**
-	 * A plan this session has just produced. It wins over `stored` until the
-	 * page is next loaded: the traveller should see a drag land immediately
-	 * rather than after the write has been read back.
+	 * The plan re-walked on this screen, when a journey time the server looked
+	 * up arrives: the day as it reads on the better figure, before anyone has
+	 * edited it. Drawn instead of `stored` until the stored plan changes for
+	 * any other reason -- an edit here, which writes its own re-walk into the
+	 * plan, or someone else's, which is what the trip now says.
 	 */
 	let fresh = $state<PlannedDay[] | null>(null);
 
 	/**
-	 * Real travel times, arriving after the fact.
+	 * Real travel times, arriving after the fact -- and a fellow traveller's
+	 * edit, as it happens.
 	 *
 	 * The refiner routes the legs the plan guessed at and writes each answer
-	 * onto the stop it belongs to. This is how an open plan hears about it: the
-	 * row is merged into the stored plan, the day is re-walked on the better
-	 * figure, and the star beside the leg goes out. Nothing is reordered --
-	 * only the clock moves, and only by the difference.
+	 * onto the stop it belongs to; the device takes it in like any other
+	 * change, and the day is re-walked here on the better figure, so the
+	 * cards after a longer journey happen later. Nothing is reordered -- only
+	 * the clock moves, and only by the difference -- and nothing is written:
+	 * a re-walk that wrote would come back, and be re-walked again.
 	 *
-	 * Also how a fellow traveller's edit reaches this screen, which it never
-	 * did before.
+	 * Only a journey that changed on a stop already held counts. The plan
+	 * arriving, or this device's own write coming back, is not news: opening
+	 * a trip draws what was stored.
 	 */
-	function watchPlan() {
-		const channel = supabase
-			.channel(`plan:${tripId}`)
-			.on(
-				'postgres_changes',
-				{ event: '*', schema: 'public', table: 'plan_stops', filter: `trip_id=eq.${tripId}` },
-				({ new: changed }) => {
-					const incoming = changed as PlanStopRow | null;
-					if (!incoming?.id) return;
-					const held = stored.find((r) => r.id === incoming.id);
-					// Our own write coming back. Re-walking on it would write
-					// again, which would come back again.
-					if (
-						held &&
-						held.leg_minutes === incoming.leg_minutes &&
-						held.leg_km === incoming.leg_km &&
-						held.leg_source === incoming.leg_source
-					) {
-						return;
-					}
-					stored = held
-						? stored.map((r) => (r.id === incoming.id ? { ...r, ...incoming } : r))
-						: [...stored, incoming];
-					// Not while a card is in the air: the plan under the finger is
-					// the traveller's, and it can take the better figure when they
-					// put it down.
-					if (drag.state.id || busy) return;
-					const input = planInput();
-					if (input) fresh = schedule({ ...input, travel: known() }).days;
-				}
-			)
-			.subscribe();
-		return () => {
-			void supabase.removeChannel(channel);
-		};
-	}
+	let legs = new Map<string, string>();
+	$effect(() => {
+		const now = new Map(stored.map((r) => [r.id, `${r.leg_minutes}|${r.leg_km}|${r.leg_source}`]));
+		const routed = [...now].some(([id, leg]) => legs.has(id) && legs.get(id) !== leg);
+		legs = now;
+		untrack(() => {
+			if (!routed) {
+				fresh = null;
+				return;
+			}
+			// Not while a card is in the air: the plan under the finger is the
+			// traveller's, and it can take the better figure when they put it
+			// down.
+			if (drag.state.id || busy) return;
+			const input = planInput();
+			fresh = input ? schedule({ ...input, travel: known() }).days : null;
+		});
+	});
 
 	/**
 	 * Put the usual furniture on a day nobody has furnished yet.
@@ -665,10 +600,10 @@
 	 * a day again, which is what stops a hotel the traveller removed quietly
 	 * reappearing.
 	 */
-	async function furnish() {
+	function furnish() {
 		if (!row || !days.length || days.length <= row.furnished_days) return;
 		const first = row.furnished_days;
-		const wanted: Parameters<typeof placeMany>[0] = [];
+		const wanted: Parameters<typeof placeMany>[1] = [];
 		for (let i = first; i < days.length; i++) {
 			const last = i === days.length - 1;
 			const { start, end } = days[i];
@@ -711,77 +646,58 @@
 				wanted.push({ kind: 'hotel', minutes: 0, dayIndex: i, at: end.toISOString() });
 			}
 		}
-		// One insert for the lot, rather than four round trips per day before
-		// the trip will draw anything.
-		placements = [...placements, ...(await placeMany(wanted, tripId))];
-		await setFurnished(tripId, days.length);
-		row = { ...row, furnished_days: days.length };
+		const days_ = days.length;
+		void edit('Set out the days', (w) => {
+			placeMany(w, wanted, tripId);
+			setFurnished(w, tripId, days_);
+		});
 	}
 
-	// Its own onMount: an async one cannot hand back a cleanup.
-	onMount(watchPlan);
+	// Kept current while it is open: read once from the server, then every
+	// change to it as it happens.
+	onMount(() => watchTrip(tripId));
 	onMount(() => watching(tripId));
 
 	onMount(() => {
-		// Every read goes out at once and each draws itself the moment it
-		// lands. The screen used to wait for the slowest of six before it would
-		// show anything -- on a device that already had five of them cached.
-		const mine = (e: unknown) => (error = (e as Error).message);
-
-		const trip = getTrip(tripId)
-			.then(async (found) => {
-				row = found;
-				loading = false;
-				if (!found) return;
-				planAt = found.plan_generated_at;
-				// Coming back from adding into a slot: open on the day it
-				// landed on.
-				const asked = Number(page.url.searchParams.get('day'));
-				if (Number.isInteger(asked) && asked >= 0) dayIndex = asked;
-				if (found.share_token) shareUrl = linkFor(found.share_token);
-				bbox = cityBBox(found);
-				// Trips saved before the city box -- and before the country
-				// code -- was captured. One geocode fills in whichever is
-				// missing, behind the screen rather than in front of it.
-				if (!bbox || !found.country_code) {
-					const [match] = await provider.searchCities(found.city);
-					if (match?.bbox && !bbox) {
-						bbox = match.bbox;
-						await updateCityBBox(tripId, match.bbox);
-					}
-					if (match?.countryCode && !row?.country_code) {
-						row = row ? { ...row, country_code: match.countryCode } : row;
-						await updateCountryCode(tripId, match.countryCode);
-					}
-				}
-			})
-			.catch((e) => {
-				loading = false;
-				mine(e);
-			});
-
-		const placed = listPlacements(tripId)
-			.then((v) => (placements = v))
-			.catch(mine);
-		listPois(tripId)
-			.then((v) => (pois = v))
-			.catch(mine);
-		loadPlan(tripId)
-			.then((v) => (stored = v))
-			.catch(mine);
-		loadMeals(tripId)
-			.then((v) => (mealRows = v))
-			.catch(mine);
-		loadTripProfiles(tripId)
-			.then((v) => (people = v))
-			.catch(mine);
-
-		// The furniture needs the trip and what is already placed, and nothing
-		// on screen waits for it.
-		void Promise.all([trip, placed]).then(() => furnish().catch(mine));
+		// Coming back from adding into a slot: open on the day it landed on.
+		const asked = Number(page.url.searchParams.get('day'));
+		if (Number.isInteger(asked) && asked >= 0) dayIndex = asked;
 	});
 
-	const linkFor = (token: string) => `${window.location.origin}${base}/shared/${token}`;
+	/**
+	 * Furniture for days nobody has furnished, once per opening. Only by
+	 * someone who may edit the trip: a viewer's edit would only be refused.
+	 */
+	let furnished = false;
+	$effect(() => {
+		if (furnished || !row || !days.length || !canEdit) return;
+		furnished = true;
+		untrack(furnish);
+	});
+
+	/**
+	 * Trips saved before the city box -- and before the country code -- was
+	 * captured. One geocode fills in whichever is missing, behind the screen
+	 * rather than in front of it.
+	 */
+	let located = false;
+	$effect(() => {
+		if (located || !row || !canEdit || (bbox && row.country_code)) return;
+		located = true;
+		const found = row;
+		void provider.searchCities(found.city).then((matches) => {
+			const match = matches[0];
+			if (!match || ((!match.bbox || bbox) && (!match.countryCode || found.country_code))) return;
+			void edit('Found the city on the map', (w) => {
+				if (match.bbox && !bbox) updateCityBBox(w, tripId, match.bbox);
+				if (match.countryCode && !found.country_code) updateCountryCode(w, tripId, match.countryCode);
+			});
+		}).catch(() => {});
+	});
+
+	function linkFor(token: string) {
+		return `${window.location.origin}${base}/shared/${token}`;
+	}
 
 	/** The latest anyone on this trip is out of the door. */
 	const ready = $derived(latestReady(people.map((p) => ({ wakeAt: p.wakeAt, prepMin: p.prepMin }))));
@@ -1118,28 +1034,16 @@
 		// the day on screen and the move looks like a deletion.
 		dayIndex = day;
 
-		placements = placements.map((pl) =>
-			pl.id === draggedId ? { ...pl, day_index: day, at: when } : pl
-		);
-
-		// Show the move now, from what is already known. The same scheduler the
-		// round trips will run, on the travel times already in hand: the card
-		// lands under the finger instead of after a write, a re-time and a call
-		// to a routing service.
-		const input = planInput();
-		if (input) fresh = schedule({ ...input, travel: known() }).days;
-
-		try {
-			await moveTo(draggedId, when, day);
-			// Refine in the background: real road times may shift the day by a
-			// few minutes, and that is not worth a frozen screen.
-			await restore();
-			// It has a card of its own again, so it is held to that from here.
-			justMoved = null;
-		} catch (e) {
-			error = (e as Error).message;
-			pois = await listPois(tripId);
-		}
+		// The move and the day re-timed around it, as one edit: the card lands
+		// under the finger, walked on the travel times already in hand. Real
+		// road times come afterwards, and may shift the day by a few minutes.
+		const name = placements.find((pl) => pl.id === draggedId)?.name ?? result?.days[day]?.stops.find((st) => st.placementId === draggedId)?.name;
+		await edit(`Moved ${name ?? 'a card'}`, (w) => {
+			moveTo(w, draggedId, when, day);
+			retime(w);
+		});
+		// It has a card of its own again, so it is held to that from here.
+		justMoved = null;
 	}
 
 	/**
@@ -1170,36 +1074,6 @@
 				: null;
 		if (!at) return;
 		await sayMeal(day, meal as MealName, { at });
-	}
-
-	/**
-	 * Re-time the plan after a manual move -- steps 3-5 only, since the
-	 * traveller has just stated the assignment and the order. The stored plan
-	 * is the plan of record, so a drag has to be written back to it or the
-	 * move survives only until the page reloads.
-	 */
-	/**
-	 * One re-time at a time.
-	 *
-	 * Two of these overlapping is what duplicated every stop on the plan: both
-	 * read the same state, both wrote it, and the second wrote a plan built
-	 * from what the first had already changed. A second caller waits for the
-	 * first and then runs on the settled state.
-	 */
-	let timing: Promise<void> | null = null;
-
-	async function restore(): Promise<void> {
-		const previous = timing;
-		const mine = (async () => {
-			if (previous) await previous.catch(() => {});
-			await retime();
-		})();
-		timing = mine;
-		try {
-			await mine;
-		} finally {
-			if (timing === mine) timing = null;
-		}
 	}
 
 	/**
@@ -1258,15 +1132,22 @@
 		};
 	}
 
-	async function retime() {
+	/**
+	 * Re-time the plan, inside the edit that called for it -- steps 3-5 only,
+	 * since the traveller has just stated the assignment and the order. The
+	 * stored plan is the plan of record, so it is written back too, or the
+	 * change would survive only until the page is next opened.
+	 */
+	function retime(w: Writer) {
 		const input = planInput();
 		if (!input) return;
-		// Scheduled on what is already known, and written straight away. The
-		// legs this invents are estimates, marked as such on screen; the real
-		// times are asked for afterwards and arrive on their own.
+		// Scheduled on what is already known. The legs this invents are
+		// estimates, marked as such on screen; the real times are asked for
+		// once the edit reaches the server, and arrive on their own.
 		const next = schedule({ ...input, travel: known() });
-		fresh = next.days;
-		planAt = await savePlan(tripId, next, stored);
+		savePlan(w, tripId, next, stored);
+		// Drawn from the plan just written, like everything else on the trip.
+		fresh = null;
 
 		// A longer journey is a later afternoon.
 		//
@@ -1276,40 +1157,19 @@
 		// ones the walk moved are written -- a pinned card and the day's own
 		// furniture stay at the minute the traveller gave them, so there is
 		// nothing to write for those.
-		const moved = next.days.flatMap((d) =>
-			d.stops
-				.filter((st) => st.placementId)
-				.map((st) => ({ st, was: placements.find((pl) => pl.id === st.placementId) }))
-				.filter(({ st, was }) => was && Date.parse(was.at) !== st.arrive.getTime())
-				.map(({ st, was }) => ({
-					id: st.placementId!,
-					poiId: was!.poi_id,
-					kind: was!.kind,
-					name: was!.name,
-					minutes: was!.minutes,
-					meal: was!.meal,
-					dayIndex: was!.day_index,
-					at: st.arrive.toISOString()
-				}))
-		);
-		if (moved.length) {
-			placements = placements.map((pl) => {
-				const now = moved.find((m) => m.id === pl.id);
-				return now ? { ...pl, at: now.at } : pl;
-			});
-			await savePlacements(tripId, moved);
-		}
-
+		//
 		// Nothing is taken off the plan here. A visit the walk could not seat
 		// was still put on that day by the traveller, and deleting it because
 		// the planner had an opinion is how a restaurant dragged into a free
 		// hour went back to the wishlist with nothing said. Re-timing writes
 		// times; it does not decide what is on the trip.
-		stored = await loadPlan(tripId);
-		// The plan is the traveller's; how long its journeys take is the
-		// server's to find out. Not awaited: the answers come back through the
-		// subscription below, whether or not this tab is still open.
-		void refineTrip(tripId);
+		for (const d of next.days) {
+			for (const st of d.stops) {
+				if (!st.placementId) continue;
+				const was = placements.find((pl) => pl.id === st.placementId);
+				if (was && Date.parse(was.at) !== st.arrive.getTime()) moveTo(w, was.id, st.arrive.toISOString());
+			}
+		}
 	}
 
 	/** What a meal container is called while it is being dragged. */
@@ -1339,7 +1199,7 @@
 	 */
 	let retimed = false;
 	$effect(() => {
-		if (retimed || busy || !row || !days.length || !stored.length) return;
+		if (retimed || busy || !row || !days.length || !stored.length || !canEdit) return;
 
 		// A plan made by an older planner. Asking the traveller to tap Replan
 		// because the app changed underneath them is the app's problem.
@@ -1347,11 +1207,55 @@
 
 		const inPlan = new Set(stored.map((r) => r.placement_id).filter(Boolean));
 		const placedButUnplanned = placements.some((pl) => !inPlan.has(pl.id));
+		// A card whose visit is gone -- the place was removed from its own page.
+		const visits = new Set(placements.map((pl) => pl.id));
+		const plannedButGone = stored.some((r) => r.placement_id && !visits.has(r.placement_id));
 
-		if (!stale && !placedButUnplanned) return;
+		if (!stale && !placedButUnplanned && !plannedButGone) return;
 		retimed = true;
-		restore().catch((e) => (error = (e as Error).message));
+		untrack(() => void edit('Re-timed the days', retime));
 	});
+
+	/** The put-aside edit whose sheet is open. */
+	let conflict = $state<Mutation | null>(null);
+
+	/** The put-aside edit a card on the plan is waiting on, if any. */
+	function conflictOf(stop: PlannedStop, dayIdx: number): Mutation | null {
+		if (stop.placementId) {
+			const own = asideFor('placements', { id: stop.placementId });
+			if (own) return own;
+		}
+		if (stop.poiId) {
+			const place = asideFor('pois', { id: stop.poiId });
+			if (place) return place;
+		}
+		const meal = stop.anchorKind === 'meal' ? mealFor(stop) : null;
+		return meal ? asideFor('trip_meals', { trip_id: tripId, day_index: dayIdx, meal }) : null;
+	}
+
+	/** What a put-aside edit would change, in words the traveller uses. */
+	const explainIt = (m: Mutation) =>
+		explain(m, {
+			timezone: row?.timezone ?? 'UTC',
+			dayName: (i) => (days[i] && row ? dayLabel(days[i].date, row.timezone) : `day ${i + 1}`),
+			placeName: (id) => poiById.get(id)?.name ?? null,
+			personName: (id) => {
+				const person = people.find((p) => p.userId === id);
+				return person ? displayName(person) : 'a traveller';
+			}
+		});
+
+	async function settle(m: Mutation, keep: 'mine' | 'theirs') {
+		conflict = null;
+		try {
+			if (keep === 'theirs') return await reject(m);
+			await accept(m);
+			// The day, re-timed around the change that was kept.
+			if (canEdit) await edit('Re-timed the days', retime);
+		} catch (e) {
+			error = (e as Error).message;
+		}
+	}
 
 	/**
 	 * Open the card for a visit, or for a place off the wishlist.
@@ -1364,7 +1268,14 @@
 		const visit = placements.find((pl) => pl.id === id);
 		cardedVisit = visit?.id ?? null;
 		const poiId = visit?.poi_id ?? id;
-		carded = pois.find((p) => p.id === poiId) ?? null;
+		// A card in conflict opens the conflict: what it shows is upstream, and
+		// the question in front of the traveller is whether to keep theirs.
+		const waiting = asideFor('placements', { id }) ?? asideFor('pois', { id: poiId });
+		if (waiting) {
+			conflict = waiting;
+			return;
+		}
+		cardedId = pois.some((p) => p.id === poiId) ? poiId : null;
 	}
 
 	/** Hold this visit where it is, or let Replan have it back. */
@@ -1372,15 +1283,9 @@
 		const current = placements.find((pl) => pl.id === placementId);
 		if (!current) return;
 		const next = !current.pinned;
-		placements = placements.map((pl) => (pl.id === placementId ? { ...pl, pinned: next } : pl));
-		try {
-			await holdPlacement(placementId, next);
-		} catch (e) {
-			error = (e as Error).message;
-			placements = placements.map((pl) =>
-				pl.id === placementId ? { ...pl, pinned: !next } : pl
-			);
-		}
+		await edit(next ? 'Held a card where it is' : 'Let Replan move a card again', (w) =>
+			holdPlacement(w, placementId, next)
+		);
 	}
 
 	/**
@@ -1394,15 +1299,10 @@
 	);
 
 	async function fixZone() {
-		if (!row || !zoneShouldBe) return;
-		busy = true;
-		try {
-			row = await repairTimezone(row, zoneShouldBe);
-		} catch (e) {
-			error = (e as Error).message;
-		} finally {
-			busy = false;
-		}
+		const was = row;
+		if (!was || !zoneShouldBe) return;
+		const zone = zoneShouldBe;
+		await edit(`Moved the trip onto ${zone}`, (w) => repairTimezone(w, was, zone));
 	}
 
 	/** Visits being held where they are, by placement. */
@@ -1485,22 +1385,22 @@
 
 	/** A named stretch of time with no place: a rest, an errand, a nap. */
 	async function addBlock() {
-		if (!slot || !row || !blockName.trim()) return;
+		const trip = row;
+		if (!slot || !trip || !blockName.trim()) return;
 		const target = slot;
 		const name = blockName.trim();
 		const minutes = blockMin;
 		slot = null;
 		blockName = '';
-		busy = true;
-		try {
-			const created = await addPoi(tripId, {
+		await edit(`Added ${name}`, (w) => {
+			const created = addPoi(w, tripId, {
 				name,
 				label: '',
 				// The coordinates are a formality: the planner puts a block
 				// wherever the traveller already is. The hotel is the honest
 				// stand-in for a day that has not started yet.
-				lat: row.hotel_lat,
-				lng: row.hotel_lng,
+				lat: trip.hotel_lat,
+				lng: trip.hotel_lng,
 				category: BLOCK_CATEGORY,
 				durationMin: minutes,
 				openingHours: null,
@@ -1508,15 +1408,8 @@
 				phone: null,
 				osmId: null
 			});
-			pois = [...pois, created];
-			// The visit it is about to get is pinned: the traveller put this at
-			// a particular point in the day, and a block has no geography for
-			// Replan to reason about.
-			await placeInto(created.id, target);
-		} catch (e) {
-			error = (e as Error).message;
-			busy = false;
-		}
+			placeInto(w, created.id, target);
+		});
 	}
 
 	/**
@@ -1529,24 +1422,16 @@
 		const target = slot;
 		if (!target || !row) return;
 		slot = null;
-		const was = placements;
-		try {
-			// Nothing else on the day moves: the new card takes a free minute
-			// and the day reads in the order the clocks say.
-			const made = await placeAnchor(tripId, kind, target.day, momentFor(target), {
+		dayIndex = target.day;
+		// Nothing else on the day moves: the new card takes a free minute and
+		// the day reads in the order the clocks say.
+		await edit(kind === 'chore' ? 'Added time to yourself' : 'Added a return to the hotel', (w) => {
+			placeAnchor(w, tripId, kind, target.day, momentFor(target), {
 				name: kind === 'chore' ? 'Time to yourself' : null,
 				minutes: kind === 'chore' ? 60 : 0
 			});
-			placements = [...placements, made];
-			dayIndex = target.day;
-			const input = planInput();
-			if (input) fresh = schedule({ ...input, travel: known() }).days;
-			await restore();
-		} catch (e) {
-			error = (e as Error).message;
-			placements = was;
-			placements = await listPlacements(tripId);
-		}
+			retime(w);
+		});
 	}
 
 	/**
@@ -1568,15 +1453,14 @@
 		const target = slot;
 		const source = pois.find((p) => p.id === poiId);
 		slot = null;
-		busy = true;
+		if (!source) return;
 
-		if (!source || !dayOfPoi.has(poiId)) {
-			await placeInto(poiId, target);
-			return;
-		}
-
-		try {
-			const copy = await addPoi(tripId, {
+		await edit(`Added ${source.name}`, (w) => {
+			if (!dayOfPoi.has(poiId)) {
+				placeInto(w, poiId, target);
+				return;
+			}
+			const copy = addPoi(w, tripId, {
 				name: source.name,
 				label: '',
 				lat: source.lat,
@@ -1593,41 +1477,23 @@
 				// place, and the uniqueness index is there for the first one.
 				osmId: null
 			});
-			pois = [...pois, copy];
-			await placeInto(copy.id, target);
-		} catch (e) {
-			error = (e as Error).message;
-			busy = false;
-		}
+			placeInto(w, copy.id, target);
+		});
 	}
 
-	async function placeInto(
+	/**
+	 * When it happens is the whole of where it goes: the minute it was put at,
+	 * or the space above the card it was put before. Nothing else on the day
+	 * is touched, and the day is re-timed around it in the same edit.
+	 */
+	function placeInto(
+		w: Writer,
 		poiId: string,
 		target: { day: number; before: string | null; at?: string; hold?: boolean }
 	) {
-		try {
-			// When it happens is the whole of where it goes: the minute it was
-			// put at, or the space above the card it was put before. Nothing
-			// else on the day is touched.
-			await place(tripId, poiId, target.day, momentFor(target));
-			placements = await listPlacements(tripId);
-			// Pinned before the plan is worked out, not after: the scheduler has
-			// to already know this one is the traveller's, or it drops it for not
-			// fitting and the reconciliation then takes its day away -- which is
-			// how a restaurant placed into a full evening vanished again.
-			//
-			// Dropped into an opened gap, it is pinned to the moment that was
-			// touched: the gap is drawn to scale, so the tap said a time and not
-			// merely a position in the order.
-			// Same rule as a drag: whatever moment it used to be held at is not
-			// the moment it is being put at now.
-			dayIndex = target.day;
-			await restore();
-		} catch (e) {
-			error = (e as Error).message;
-		} finally {
-			busy = false;
-		}
+		place(w, tripId, poiId, target.day, momentFor(target));
+		dayIndex = target.day;
+		retime(w);
 	}
 
 	/**
@@ -1644,8 +1510,15 @@
 
 	async function doReplan() {
 		if (!row || !days.length) return;
-		busy = true;
 		error = null;
+		// Replan prices real journeys between the places, and that is the one
+		// thing the device cannot do on its own. Everything else works without
+		// a connection; this says so rather than planning on guesses.
+		if (!navigator.onLine) {
+			error = 'Replan needs a connection: it looks up real journeys between your places. Everything else works offline.';
+			return;
+		}
+		busy = true;
 		try {
 			// Replan builds around what is pinned: a pinned card keeps the day
 			// and the moment its card says, and everything else is arranged to
@@ -1666,91 +1539,75 @@
 			step = 'Measuring…';
 			await refreshTravel();
 
-			const ordered = replan({ ...input, travel });
+			step = 'Arranging…';
+			await edit('Replanned the trip', (w) => {
+				const ordered = replan({ ...input, travel });
 
-			step = 'Saving…';
-			// Written back from Replan itself, not from a re-walk of it. The
-			// walk is told about stored visits only, so putting one between
-			// Replan and the write threw away every card Replan had just
-			// invented -- the sittings a day needed, the hotel it ends at --
-			// and the day came back with no lunch in it.
-			//
-			// A stop carrying a draft id is a place off the wishlist that has
-			// just been given a day for the first time, so it needs a row of
-			// its own; the rest already have one and only move. Anchors
-			// included: they are placements too.
-			const byId = new Map(placements.map((pl) => [pl.id, pl]));
-			const decided = ordered.days.flatMap((d) =>
-				d.stops
-					.filter((st) => st.placementId)
-					.map((st, i) => {
-						const was = byId.get(st.placementId!);
-						return {
-							id: st.placementId!,
-							poiId: st.poiId,
-							kind: was?.kind ?? (st.poiId ? ('stop' as const) : ('hotel' as const)),
-							name: was?.name ?? null,
-							minutes: was?.minutes ?? null,
-							dayIndex: d.index,
-							// What Replan decided this card happens at.
-							at: st.arrive.toISOString()
-						};
-					})
-			);
-			for (const made of decided.filter((r) => r.id.startsWith(NEW) && r.poiId)) {
-				await place(tripId, made.poiId!, made.dayIndex, made.at);
-			}
-			await savePlacements(
-				tripId,
-				decided.filter((r) => !r.id.startsWith(NEW))
-			);
+				// Written back from Replan itself, not from a re-walk of it. The
+				// walk is told about stored visits only, so putting one between
+				// Replan and the write threw away every card Replan had just
+				// invented -- the sittings a day needed, the hotel it ends at --
+				// and the day came back with no lunch in it.
+				//
+				// A stop carrying a draft id is a place off the wishlist that has
+				// just been given a day for the first time, so it needs a row of
+				// its own; the rest already have one and only move. Anchors
+				// included: they are placements too.
+				for (const d of ordered.days) {
+					for (const st of d.stops) {
+						if (!st.placementId) continue;
+						const at = st.arrive.toISOString();
+						if (st.placementId.startsWith(NEW)) {
+							if (st.poiId) place(w, tripId, st.poiId, d.index, at);
+						} else {
+							moveTo(w, st.placementId, at, d.index);
+						}
+					}
+				}
 
-			// What Replan drew that nothing had placed yet: a sitting it
-			// decided the day needed, and the hotel a day ends at when the
-			// traveller has not put one there. They become placements like
-			// everything else -- they hold a clock, they drag, they come off.
-			const invented = ordered.days.flatMap((d) =>
-				d.stops
-					.filter((st) => !st.placementId && (st.anchorKind === 'meal' || st.anchorKind === 'hotel'))
-					.map((st) => ({
-						kind: st.anchorKind === 'meal' ? ('meal' as const) : ('hotel' as const),
-						meal: st.anchorKind === 'meal' ? mealFor(st) : null,
-						name: st.anchorKind === 'meal' ? null : st.name,
-						minutes: st.durationMin,
-						dayIndex: d.index,
-						at: st.arrive.toISOString()
-					}))
-			);
-			if (invented.length) await placeMany(invented, tripId);
-			// A visit the day could not reach goes back to the wishlist. A
-			// pinned one keeps its day whatever happened, or the traveller
-			// would find it gone with no idea why.
-			for (const u of ordered.unplaced.filter((x) => !x.poi.pinned && !x.poi.id.startsWith(NEW))) {
-				await dropPlacement(u.poi.id);
-			}
-			placements = await listPlacements(tripId);
+				// What Replan drew that nothing had placed yet: a sitting it
+				// decided the day needed, and the hotel a day ends at when the
+				// traveller has not put one there. They become placements like
+				// everything else -- they hold a clock, they drag, they come off.
+				placeMany(
+					w,
+					ordered.days.flatMap((d) =>
+						d.stops
+							.filter((st) => !st.placementId && (st.anchorKind === 'meal' || st.anchorKind === 'hotel'))
+							.map((st) => ({
+								kind: st.anchorKind === 'meal' ? ('meal' as const) : ('hotel' as const),
+								meal: st.anchorKind === 'meal' ? mealFor(st) : null,
+								name: st.anchorKind === 'meal' ? null : st.name,
+								minutes: st.durationMin,
+								dayIndex: d.index,
+								at: st.arrive.toISOString()
+							}))
+					),
+					tripId
+				);
+				// A visit the day could not reach goes back to the wishlist. A
+				// pinned one keeps its day whatever happened, or the traveller
+				// would find it gone with no idea why.
+				for (const u of ordered.unplaced.filter((x) => !x.poi.pinned && !x.poi.id.startsWith(NEW))) {
+					dropPlacement(w, u.poi.id);
+				}
 
-			// Walked again, now that every stop is a visit with a row of its
-			// own. The first walk was told about places off the wishlist that
-			// had never been anywhere, and a card drawn from one of those has
-			// no visit to name -- which is not something the stored plan can
-			// hold, and not something a later drag could move.
-			const settled = schedule({ ...input, pois: everyVisit(), travel: known() });
-			planAt = await savePlan(tripId, settled, stored);
-			fresh = settled.days;
-			track('plan.replan', {
-				days: settled.days.length,
-				cards: settled.days.reduce((n, d) => n + d.stops.length, 0),
-				unplaced: settled.unplaced.length,
-				placements: placements.length,
-				wishlist: pois.length
+				// Walked again, now that every stop is a visit with a row of its
+				// own. The first walk was told about places off the wishlist that
+				// had never been anywhere, and a card drawn from one of those has
+				// no visit to name -- which is not something the stored plan can
+				// hold, and not something a later drag could move.
+				const settled = schedule({ ...input, pois: everyVisit(), travel: known() });
+				savePlan(w, tripId, settled, stored);
+				fresh = null;
+				track('plan.replan', {
+					days: settled.days.length,
+					cards: settled.days.reduce((n, d) => n + d.stops.length, 0),
+					unplaced: settled.unplaced.length,
+					placements: placements.length,
+					wishlist: pois.length
+				});
 			});
-			// Without this the stored rows stay a plan behind, and the effect
-			// that re-times a newly placed stop fires on a phantom difference.
-			stored = await loadPlan(tripId);
-			// The legs the ordering ran on are matrix estimates. Ask for the
-			// real ones; they arrive on their own.
-			void refineTrip(tripId);
 		} catch (e) {
 			error = (e as Error).message;
 		} finally {
@@ -1767,8 +1624,7 @@
 		try {
 			if (!shareUrl) {
 				const token = crypto.randomUUID();
-				await setShareToken(tripId, token);
-				shareUrl = linkFor(token);
+				if (!(await edit('Made a link to the trip', (w) => setShareToken(w, tripId, token)))) return;
 			}
 			await copy();
 		} catch (e) {
@@ -1784,8 +1640,9 @@
 		roleBusy = person.userId;
 		try {
 			const next = person.role === 'editor' ? 'viewer' : 'editor';
-			await setMemberRole(tripId, person.userId, next);
-			people = people.map((p) => (p.userId === person.userId ? { ...p, role: next } : p));
+			await mutate(`Made ${displayName(person)} ${next === 'editor' ? 'an editor' : 'a viewer'}`, tripId, (w) =>
+				setMemberRole(w, tripId, person.userId, next)
+			);
 		} catch (e) {
 			error = (e as Error).message;
 		} finally {
@@ -1797,8 +1654,9 @@
 		if (person.role === 'owner') return;
 		roleBusy = person.userId;
 		try {
-			await removeMember(tripId, person.userId);
-			people = people.filter((p) => p.userId !== person.userId);
+			await mutate(`Took ${displayName(person)} off the trip`, tripId, (w) =>
+				removeMember(w, tripId, person.userId)
+			);
 		} catch (e) {
 			error = (e as Error).message;
 		} finally {
@@ -1807,12 +1665,7 @@
 	}
 
 	async function revoke() {
-		try {
-			await setShareToken(tripId, null);
-			shareUrl = null;
-		} catch (e) {
-			error = (e as Error).message;
-		}
+		await edit('Turned the link off', (w) => setShareToken(w, tripId, null));
 	}
 
 	async function copy() {
@@ -1828,12 +1681,7 @@
 	}
 
 	async function setHotel(h: { name: string; lat: number; lng: number }) {
-		try {
-			await updateHotel(tripId, h);
-			row = await getTrip(tripId);
-		} catch (e) {
-			error = (e as Error).message;
-		}
+		await edit(`Moved the hotel to ${h.name}`, (w) => updateHotel(w, tripId, h));
 	}
 
 	const city = $derived<City | null>(
@@ -2182,6 +2030,19 @@
 			{/if}
 
 			{#if error}<p class="tm-hint tm-hint--error">{error}</p>{/if}
+			<Notices trip={tripId} />
+			<!-- Every change of the traveller's that was put aside, whether or
+			     not it has a card on the day being looked at. -->
+			{#each asideOn(tripId) as m (m.seq)}
+				<button
+					class="tm-hint"
+					style="display:flex;align-items:center;gap:6px;background:none;border:none;padding:0;text-align:left;cursor:pointer;color:inherit"
+					onclick={() => (conflict = m)}
+				>
+					<span class="tm-conflict-mark" aria-hidden="true">!</span>
+					<span>“{m.name}” was put aside: someone changed the same thing. Tap to decide.</span>
+				</button>
+			{/each}
 		</div>
 
 		{#if zoneWrong}
@@ -2244,10 +2105,12 @@
 					{/if}
 					{#each shortlist as p (p.id)}
 						{@const assigned = dayOf.has(p.id)}
+						{@const waiting = asideFor('pois', { id: p.id })}
 						<button
 							class="tm-result"
+							class:tm-result--conflict={!!waiting}
 							style="align-items: center; color: inherit"
-							onclick={() => (carded = p)}
+							onclick={() => (waiting ? (conflict = waiting) : (cardedId = p.id))}
 						>
 							<span style="display: flex; gap: 10px; align-items: flex-start">
 								<span
@@ -2255,6 +2118,7 @@
 								></span>
 								<span>
 									<span style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+										{#if waiting}<span class="tm-conflict-mark" aria-label="A change of yours is waiting">!</span>{/if}
 										<span class="tm-result__name">{p.name}</span>
 										<Stars value={p.priority} size={9} label="Wanted" />
 									</span>
@@ -2389,6 +2253,7 @@
 							class:tm-stop--chore={stop.anchorKind === 'chore'}
 							class:tm-stop--meal={stop.anchorKind === 'meal'}
 							class:tm-stop--blocked={stop.warnings.some((w) => w.kind === 'blocked')}
+							class:tm-stop--conflict={!!conflictOf(stop, dayIndex)}
 							data-drop-stop={stop.placementId ?? undefined}
 							{@attach stop.poiId
 								? longPress(() => openCard(stop.placementId ?? stop.poiId!))
@@ -2444,6 +2309,16 @@
 									{#if stop.warnings.some((w) => w.kind === 'blocked')}
 										<span class="tm-stop__blocked" aria-label="Does not fit">!</span>
 									{/if}
+									<!-- A change of the traveller's that was put aside: the card
+									     draws what the trip says, and the mark opens the
+									     choice between that and theirs. -->
+									{#if conflictOf(stop, dayIndex)}
+										<button
+											class="tm-conflict-mark"
+											aria-label="A change of yours was put aside"
+											onclick={() => (conflict = conflictOf(stop, dayIndex))}
+										>!</button>
+									{/if}
 									{#if stop.poiId}
 										<button
 											class="tm-stop__open"
@@ -2453,8 +2328,11 @@
 										{@const after = current.stops.slice(i + 1).find((x) => x.poiId)}
 										<button
 											class="tm-stop__open"
-											onclick={() =>
-												(slot = { day: dayIndex, before: after?.poiId ?? null, meal: stop.name })}
+											onclick={() => {
+												const waiting = conflictOf(stop, dayIndex);
+												if (waiting) conflict = waiting;
+												else slot = { day: dayIndex, before: after?.poiId ?? null, meal: stop.name };
+											}}
 										>{stop.name}</button>
 									{:else}{stop.name}{/if}
 								</p>
@@ -2670,7 +2548,18 @@
 				pinned={!!cardedVisit && pinnedIds.has(cardedVisit)}
 				onunplace={(id) => unplace(id)}
 				onrelease={(id) => togglePin(id)}
-				onclose={() => ((carded = null), (cardedVisit = null))}
+				onclose={() => ((cardedId = null), (cardedVisit = null))}
+			/>
+		{/if}
+
+		{#if conflict}
+			{@const m = conflict}
+			<ConflictSheet
+				name={m.name}
+				lines={explainIt(m)}
+				onaccept={() => settle(m, 'mine')}
+				onreject={() => settle(m, 'theirs')}
+				onclose={() => (conflict = null)}
 			/>
 		{/if}
 

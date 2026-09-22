@@ -1,6 +1,6 @@
 <script lang="ts">
 	import '../app.css';
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import { goto, onNavigate } from '$app/navigation';
 	import { page } from '$app/state';
 	import { base } from '$app/paths';
@@ -8,6 +8,8 @@
 	import { redirectTarget, safeNext } from '$lib/guard';
 	import { registerSW } from 'virtual:pwa-register';
 	import { watchForFaults } from '$lib/telemetry';
+	import { pullProfile, pullTrips, send } from '$lib/store/store.svelte';
+	import { ensureMyProfile } from '$lib/profile.svelte';
 
 	let { children } = $props();
 
@@ -54,6 +56,20 @@
 			stopWatching();
 			stopListening();
 		};
+	});
+
+	// Signed in with a connection: what the server has comes down, and what
+	// this device did offline goes up. Without one, nothing waits on either.
+	$effect(() => {
+		const id = session.user?.id;
+		if (!id) return;
+		untrack(() => {
+			send();
+			pullTrips().catch(() => {});
+			pullProfile(id)
+				.then(ensureMyProfile)
+				.catch(() => {});
+		});
 	});
 
 	$effect(() => {

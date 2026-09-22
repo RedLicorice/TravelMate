@@ -3,17 +3,18 @@
 	import { page } from '$app/state';
 	import { base } from '$app/paths';
 	import { goto } from '$app/navigation';
-	import { getTrip, hotelMissing, toTrip, type TripRow } from '$lib/trip/repo';
-	import { getPoi, removePoi, updatePoi, type PoiRow } from '$lib/trip/pois';
-	import { between, listPlacements, place, unplace, type PlacementRow } from '$lib/trip/placements';
+	import { getTrip, hotelMissing, toTrip } from '$lib/trip/repo';
+	import { getPoi, removePoi, updatePoi } from '$lib/trip/pois';
+	import { between, listPlacements, place, unplace } from '$lib/trip/placements';
+	import { mutate, pullTrip } from '$lib/store/store.svelte';
 	import { tripDays } from '$lib/trip/days';
 	import { REASON_TEXT, type UnplacedReason } from '$lib/plan/planner';
-	import { loadPlan, toPlannedDays, type PlanStopRow } from '$lib/trip/plan';
+	import { loadPlan, toPlannedDays } from '$lib/trip/plan';
 	import { busyWindows, categoryBusyness, hourLabel } from '$lib/plan/crowd';
 	import { effectiveDayStart, isMeal, latestReady } from '$lib/plan/meals';
 	import { haversineKm } from '$lib/plan/geo';
 	import { isShortMapLink, parseLatLng } from '$lib/poi/manual';
-	import { displayName, loadTripProfiles, type Profile } from '$lib/profile.svelte';
+	import { displayName, tripProfiles } from '$lib/profile.svelte';
 	import { avatarDataUri } from '$lib/avatar';
 	import { safePhone, safeUrl } from '$lib/poi/photon';
 	import Stars from '$lib/Stars.svelte';
@@ -23,12 +24,15 @@
 	const tripId = page.params.id!;
 	const poiId = page.params.poiId!;
 
-	let trip = $state<TripRow | null>(null);
-	let poi = $state<PoiRow | null>(null);
+	const trip = $derived(getTrip(tripId));
+	const poi = $derived(getPoi(poiId));
 	/** Every visit to this place, in plan order. */
-	let placements = $state<PlacementRow[]>([]);
-	let ready = $state<string | null>(null);
-	let loading = $state(true);
+	const placements = $derived(listPlacements(tripId).filter((v) => v.poi_id === poiId));
+	const people = $derived(tripProfiles(tripId));
+	const ready = $derived(latestReady(people.map((x) => ({ wakeAt: x.wakeAt, prepMin: x.prepMin }))));
+	const stored = $derived(loadPlan(tripId));
+	/** Not on this device yet: the page draws its shape until the trip arrives. */
+	let loading = $state(!getPoi(poiId));
 	let error = $state<string | null>(null);
 	let saving = $state(false);
 	let confirmRemove = $state(false);
@@ -39,33 +43,23 @@
 	let exitPaste = $state('');
 	let exitError = $state<string | null>(null);
 
-	onMount(async () => {
-		try {
-			const [t, p, visits, party] = await Promise.all([
-				getTrip(tripId),
-				getPoi(poiId),
-				listPlacements(tripId),
-				loadTripProfiles(tripId)
-			]);
-			trip = t;
-			poi = p;
-			placements = visits.filter((v) => v.poi_id === poiId);
-			people = party;
-			ready = latestReady(party.map((x) => ({ wakeAt: x.wakeAt, prepMin: x.prepMin })));
-			if (p) {
-				duration = p.duration_min;
-				notes = p.notes ?? '';
-			}
-			stored = await loadPlan(tripId);
-		} catch (e) {
-			error = (e as Error).message;
-		} finally {
-			loading = false;
-		}
+	// Filled once, from the place as it first reads; after that the fields are
+	// the traveller's to type in.
+	let filled = false;
+	$effect(() => {
+		if (filled || !poi) return;
+		filled = true;
+		duration = poi.duration_min;
+		notes = poi.notes ?? '';
 	});
 
-	let stored = $state<PlanStopRow[]>([]);
-	let people = $state<Profile[]>([]);
+	onMount(() => {
+		if (poi) return;
+		loading = true;
+		pullTrip(tripId)
+			.catch((e) => (error = (e as Error).message))
+			.finally(() => (loading = false));
+	});
 
 	/** Whoever put this on the wishlist, if they are still on the trip. */
 	const addedBy = $derived(people.find((p) => p.userId === poi?.added_by) ?? null);
@@ -161,21 +155,18 @@
 		new Intl.DateTimeFormat(undefined, { timeZone: tz, weekday: 'long', day: 'numeric', month: 'short' })
 			.format(new Date(`${iso}T12:00:00Z`));
 
-	async function persist(patch: Parameters<typeof updatePoi>[1]) {
-		saving = true;
+	async function persist(patch: Parameters<typeof updatePoi>[2]) {
 		error = null;
 		try {
-			poi = await updatePoi(poiId, patch);
+			await mutate(`Changed ${poi?.name ?? 'a place'}`, tripId, (w) => updatePoi(w, poiId, patch));
 		} catch (e) {
 			error = (e as Error).message;
-		} finally {
-			saving = false;
 		}
 	}
 
 	async function remove() {
 		try {
-			await removePoi(poiId);
+			await mutate(`Removed ${poi?.name ?? 'a place'}`, tripId, (w) => removePoi(w, poiId));
 			await goto(`${base}/trip/${tripId}`, { replaceState: true });
 		} catch (e) {
 			error = (e as Error).message;
@@ -211,7 +202,9 @@
 						: next
 							? new Date(next.arrive.getTime() - 60 * 60_000).toISOString()
 							: (days[index]?.start ?? new Date()).toISOString();
-			placements = [...placements, await place(tripId, poiId, index, when)];
+			await mutate(`Put ${poi?.name ?? 'a place'} on a day`, tripId, (w) =>
+				place(w, tripId, poiId, index, when)
+			);
 		} catch (e) {
 			error = (e as Error).message;
 		} finally {
@@ -223,8 +216,7 @@
 		saving = true;
 		error = null;
 		try {
-			await unplace(id);
-			placements = placements.filter((p) => p.id !== id);
+			await mutate(`Took ${poi?.name ?? 'a place'} off a day`, tripId, (w) => unplace(w, id));
 		} catch (e) {
 			error = (e as Error).message;
 		} finally {

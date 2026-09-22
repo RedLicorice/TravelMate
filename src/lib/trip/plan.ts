@@ -1,4 +1,4 @@
-import { supabase } from '$lib/supabase';
+import { ofTrip, type Writer } from '$lib/store/store.svelte';
 import { PLANNER_VERSION } from '$lib/plan/planner';
 import type { PlanResult, PlannedDay, PlannedStop, Warning } from '$lib/plan/planner';
 import type { Day } from './days';
@@ -124,19 +124,19 @@ const toRow = (
  * deleted is an answer thrown away.
  *
  * `known` is the plan as it is stored, which is where the ids come from. A
- * stop the scheduler has just invented has none, and the database gives it
- * one.
+ * stop the scheduler has just invented has none, and is given one here, so
+ * the device can draw it before the server has seen it.
  *
- * `plan_generated_at` is written last and on purpose. Everything the traveller
- * changed before this moment is now reflected in the plan, and anything stamped
- * after it is genuinely newer than the plan -- which is exactly what staleCount
- * goes on to measure.
+ * Returns when the plan was made. Everything the traveller changed before
+ * this moment is reflected in it, and anything stamped after it is genuinely
+ * newer than the plan -- which is exactly what staleCount goes on to measure.
  */
-export async function savePlan(
+export function savePlan(
+	w: Writer,
 	tripId: string,
 	result: PlanResult,
 	known: PlanStopRow[] = []
-): Promise<string> {
+): string {
 	const ids = new Map<string, string>();
 	const byDay = new Map<number, PlanStopRow[]>();
 	for (const r of known) byDay.set(r.day_index, [...(byDay.get(r.day_index) ?? []), r]);
@@ -161,41 +161,25 @@ export async function savePlan(
 
 	// One stored row cannot be two stops. If the same id is claimed twice --
 	// two days that both once ended at the hotel, say -- the later claim is a
-	// new row rather than a save the database refuses outright.
+	// new row.
 	const claimed = new Set<string>();
 	for (const row of rows) {
-		if (!row.id) continue;
-		if (claimed.has(row.id)) row.id = null;
-		else claimed.add(row.id);
+		if (row.id && !claimed.has(row.id)) claimed.add(row.id);
+		else row.id = crypto.randomUUID();
 	}
 
-	const { error: writeError } = await supabase.rpc('save_plan', {
-		trip: tripId,
-		rows: rows.map(({ trip_id: _ignored, ...rest }) => rest)
-	});
-	if (writeError) throw new Error(writeError.message);
-
-	const generatedAt = new Date().toISOString();
-	const { error } = await supabase
-		.from('trips')
-		.update({ plan_generated_at: generatedAt, plan_version: PLANNER_VERSION })
-		.eq('id', tripId);
-	if (error) throw new Error(error.message);
-	return generatedAt;
+	return w.plan(
+		tripId,
+		rows.map(({ trip_id: _ignored, ...rest }) => rest),
+		PLANNER_VERSION
+	);
 }
 
-export async function loadPlan(tripId: string): Promise<PlanStopRow[]> {
-	const { data, error } = await supabase
-		.from('plan_stops')
-		.select(
-			'id,placement_id,day_index,order_index,poi_id,name,lat,lng,anchor,anchor_kind,time_label,starts_at,ends_at,duration_min,pinned,leg_mode,leg_minutes,leg_km,leg_source,warnings,busyness,exit_lat,exit_lng'
-		)
-		.eq('trip_id', tripId)
-		.order('day_index', { ascending: true })
-		.order('order_index', { ascending: true });
-	if (error) throw new Error(error.message);
-	return (data ?? []) as PlanStopRow[];
-}
+/** The plan as stored, by day and in the order it was written. */
+export const loadPlan = (tripId: string): PlanStopRow[] =>
+	ofTrip<PlanStopRow>('plan_stops', tripId).sort(
+		(a, b) => a.day_index - b.day_index || a.order_index - b.order_index
+	);
 
 /**
  * A day's rows in the order they happen.

@@ -19,7 +19,13 @@ export default defineConfig({
 			// Pure SPA: auth state lives only in the browser, so there is nothing
 			// meaningful to render on a server that will never exist.
 			adapter: adapter({ fallback: '404.html' }),
-			paths: { base }
+			paths: { base },
+			// Registered by the app (see the layout), not by SvelteKit.
+			serviceWorker: { register: false },
+			// The worker's file is named for the URL it is served at. Installed
+			// copies look for an update at /sw.js, and a copy that finds nothing
+			// there keeps its old worker -- and its old app -- for good.
+			files: { serviceWorker: 'src/sw' }
 		}),
 		SvelteKitPWA({
 			// The integration does not read SvelteKit's config: without this it
@@ -60,31 +66,13 @@ export default defineConfig({
 					{ src: `${base}/icon-512.png`, sizes: '512x512', type: 'image/png', purpose: 'maskable' }
 				]
 			},
-			workbox: {
-				globPatterns: ['**/*.{js,css,html,woff2,png,svg}'],
-				// The worker never takes the page on its own. The app tells it
-				// to, on opening, and at no other moment.
-				skipWaiting: false,
-				clientsClaim: false,
-				runtimeCaching: [
-					{
-						// Trip data: answered from the device, then refreshed behind
-						// what the traveller is already reading. Tapping a trip draws
-						// it at once -- it was on the phone the whole time.
-						//
-						// This said NetworkFirst, which is the opposite: every open
-						// waited on a round trip, and up to four seconds of nothing
-						// before it gave up and used the copy it had. A stale plan
-						// beats a spinner on a hot street.
-						urlPattern: /^https:\/\/[a-z0-9]+\.supabase\.co\/rest\/v1\/.*/i,
-						handler: 'StaleWhileRevalidate',
-						options: {
-							cacheName: 'trip-data',
-							expiration: { maxEntries: 200, maxAgeSeconds: 60 * 60 * 24 * 7 },
-							cacheableResponse: { statuses: [0, 200] }
-						}
-					}
-				]
+			// Written by hand, for Background Sync: see src/sw.ts. It caches the
+			// shell and nothing else; the trip lives in the device database.
+			strategies: 'injectManifest',
+			srcDir: 'src',
+			filename: 'sw.ts',
+			injectManifest: {
+				globPatterns: ['**/*.{js,css,html,woff2,png,svg}']
 			}
 		})
 	],

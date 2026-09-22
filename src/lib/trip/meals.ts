@@ -1,4 +1,4 @@
-import { supabase } from '$lib/supabase';
+import { ofTrip, row, type Writer } from '$lib/store/store.svelte';
 import type { MealName } from '$lib/plan/meals';
 
 /**
@@ -8,11 +8,15 @@ import type { MealName } from '$lib/plan/meals';
  * which is the ordinary case and the reason this table stays small.
  */
 export type MealSlotRow = {
+	id: string;
+	trip_id: string;
 	day_index: number;
 	meal: MealName;
 	/** Null with `skipped` false is a container emptied on purpose. */
 	poi_id: string | null;
 	skipped: boolean;
+	created_at: string;
+	version: number;
 };
 
 /** Keyed `${dayIndex}:${meal}`, which is how the planner asks about one. */
@@ -23,53 +27,42 @@ export const mealKey = (dayIndex: number, meal: MealName) => `${dayIndex}:${meal
 export const toMealPlan = (rows: MealSlotRow[]): MealPlan =>
 	new Map(rows.map((r) => [mealKey(r.day_index, r.meal), r]));
 
-export async function loadMeals(tripId: string): Promise<MealSlotRow[]> {
-	const { data, error } = await supabase
-		.from('trip_meals')
-		.select('day_index,meal,poi_id,skipped')
-		.eq('trip_id', tripId)
-		.order('day_index', { ascending: true });
-	if (error) throw new Error(error.message);
-	return (data ?? []) as MealSlotRow[];
-}
+export const loadMeals = (tripId: string): MealSlotRow[] =>
+	ofTrip<MealSlotRow>('trip_meals', tripId).sort((a, b) => a.day_index - b.day_index);
 
 /**
- * Record a say about one meal. Upserted on the day and meal, because there is
+ * Record a say about one meal. One row per day and meal, because there is
  * one breakfast on 3 October however many times the traveller changes it.
  *
- * Only what was passed is written. An upsert names the columns it was given,
- * so a row that is only being emptied keeps whatever else it said -- sending
- * the whole row instead is how skipping a meal used to clear the place the
- * traveller had chosen for it.
+ * Only what was passed is written, so a row that is only being emptied keeps
+ * whatever else it said -- sending the whole row instead is how skipping a
+ * meal used to clear the place the traveller had chosen for it.
  */
-export async function saveMeal(
+export function saveMeal(
+	w: Writer,
 	tripId: string,
 	slot: { dayIndex: number; meal: MealName; poiId?: string | null; skipped?: boolean }
-): Promise<void> {
-	const { error } = await supabase.from('trip_meals').upsert(
-		{
-			trip_id: tripId,
-			day_index: slot.dayIndex,
-			meal: slot.meal,
-			...(slot.poiId !== undefined ? { poi_id: slot.poiId } : {}),
-			...(slot.skipped !== undefined ? { skipped: slot.skipped } : {})
-		},
-		{ onConflict: 'trip_id,day_index,meal' }
-	);
-	if (error) throw new Error(error.message);
+): void {
+	const key = { trip_id: tripId, day_index: slot.dayIndex, meal: slot.meal };
+	const said = {
+		...(slot.poiId !== undefined ? { poi_id: slot.poiId } : {}),
+		...(slot.skipped !== undefined ? { skipped: slot.skipped } : {})
+	};
+	if (row('trip_meals', key)) {
+		w.update('trip_meals', key, said);
+		return;
+	}
+	w.insert('trip_meals', {
+		id: crypto.randomUUID(),
+		...key,
+		poi_id: null,
+		skipped: false,
+		created_at: new Date().toISOString(),
+		version: 1,
+		...said
+	});
 }
 
 /** Hand the meal back to the plan. */
-export async function resetMeal(
-	tripId: string,
-	dayIndex: number,
-	meal: MealName
-): Promise<void> {
-	const { error } = await supabase
-		.from('trip_meals')
-		.delete()
-		.eq('trip_id', tripId)
-		.eq('day_index', dayIndex)
-		.eq('meal', meal);
-	if (error) throw new Error(error.message);
-}
+export const resetMeal = (w: Writer, tripId: string, dayIndex: number, meal: MealName) =>
+	w.remove('trip_meals', { trip_id: tripId, day_index: dayIndex, meal });

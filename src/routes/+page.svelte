@@ -2,24 +2,17 @@
 	import { onMount } from 'svelte';
 	import { base } from '$app/paths';
 	import { listTrips, toTrip, type TripRow } from '$lib/trip/repo';
+	import { store } from '$lib/store/store.svelte';
 	import { tripDays } from '$lib/trip/days';
 	import { watchInstall } from '$lib/pwa.svelte';
 	import InstallCard from '$lib/InstallCard.svelte';
+	import Notices from '$lib/Notices.svelte';
 	import ProfileButton from '$lib/ProfileButton.svelte';
 	import TripAvatar from '$lib/TripAvatar.svelte';
 
-	let trips = $state<TripRow[]>([]);
-	let error = $state<string | null>(null);
-	let loading = $state(true);
+	const trips = $derived(listTrips());
 
-	onMount(() => {
-		const stop = watchInstall();
-		listTrips()
-			.then((t) => (trips = t))
-			.catch((e) => (error = (e as Error).message))
-			.finally(() => (loading = false));
-		return stop;
-	});
+	onMount(watchInstall);
 
 	// The ramp holds 8 colours; a longer trip stops adding dots rather than
 	// wrapping to day 1, which would show two days sharing a colour.
@@ -43,15 +36,16 @@
 	</header>
 
 	<InstallCard />
+	<Notices />
 
-	{#if loading}
+	{#if !trips.length && !store.listed}
+		<!-- Nothing on this device yet, and the server not yet asked: the
+		     shape of the list, not a word about waiting. -->
 		<div class="flex flex-col gap-3">
 			<div class="tm-skel" style="height:84px"></div>
 			<div class="tm-skel" style="height:84px"></div>
 			<div class="tm-skel" style="height:84px"></div>
 		</div>
-	{:else if error}
-		<p class="tm-hint tm-hint--error">{error}</p>
 	{:else if trips.length === 0}
 		<div class="tm-card" style="background: var(--tm-surface-2)">
 			<p style="color: var(--tm-text-muted)">No trips yet. Where are you going?</p>

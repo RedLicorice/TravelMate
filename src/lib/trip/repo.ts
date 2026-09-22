@@ -1,9 +1,8 @@
-import { supabase } from '$lib/supabase';
+import { allTrips, mutate, row as held, type Writer } from '$lib/store/store.svelte';
+import { session } from '$lib/session.svelte';
 import type { BBox } from '$lib/poi';
 import { reinterpret } from './days';
 import type { Place, Trip } from './days';
-import type { PoiRow } from './pois';
-import type { PlanStopRow } from './plan';
 import { emptyLeg, summaryOf, type JourneyLeg } from './journey';
 
 export type TripRow = {
@@ -55,6 +54,8 @@ export type TripRow = {
 	/** Which planner produced it. Older than the app means re-time on sight. */
 	plan_version: number;
 	created_at: string;
+	/** Which edit of this row the server last confirmed. */
+	version: number;
 };
 
 export type NewTrip = {
@@ -196,48 +197,51 @@ export function toTrip(row: TripRow): Trip {
 	};
 }
 
-export async function listTrips(): Promise<TripRow[]> {
-	const { data, error } = await supabase
-		.from('trips')
-		.select('*')
-		.order('arrival_at', { ascending: true });
-	if (error) throw new Error(error.message);
-	return data ?? [];
-}
+/** Every trip on this device, soonest first. */
+export const listTrips = (): TripRow[] =>
+	allTrips<TripRow>().sort((a, b) => a.arrival_at.localeCompare(b.arrival_at));
 
-export async function getTrip(id: string): Promise<TripRow | null> {
-	const { data, error } = await supabase.from('trips').select('*').eq('id', id).maybeSingle();
-	if (error) throw new Error(error.message);
-	return data;
-}
+export const getTrip = (id: string): TripRow | null => held<TripRow>('trips', { id });
 
+/**
+ * A new trip, written whole on the device: the columns the database would
+ * otherwise default are given here, because the trip is drawn from this row
+ * until the server has answered.
+ */
 export async function createTrip(input: NewTrip): Promise<string> {
-	const { data: auth } = await supabase.auth.getUser();
-	if (!auth.user) throw new Error('Not signed in');
-
-	const { data, error } = await supabase
-		.from('trips')
-		.insert({
-			user_id: auth.user.id,
-			name: input.name,
-			city: input.city,
-			timezone: input.timezone,
-			hotel_name: input.hotelName,
-			hotel_lat: input.hotelLat,
-			hotel_lng: input.hotelLng,
-			arrival_at: input.arrivalAt,
-			departure_at: input.departureAt,
-			city_south: input.cityBBox?.south ?? null,
-			city_north: input.cityBBox?.north ?? null,
-			city_west: input.cityBBox?.west ?? null,
-			city_east: input.cityBBox?.east ?? null,
-			country_code: input.countryCode,
-			...terminalColumns(input.terminals, input.timezone)
-		})
-		.select('id')
-		.single();
-	if (error) throw new Error(error.message);
-	return data.id;
+	const user = session.user;
+	if (!user) throw new Error('Not signed in');
+	const id = crypto.randomUUID();
+	const made: TripRow = {
+		id,
+		user_id: user.id,
+		name: input.name,
+		city: input.city,
+		timezone: input.timezone,
+		hotel_name: input.hotelName,
+		hotel_lat: input.hotelLat,
+		hotel_lng: input.hotelLng,
+		arrival_at: input.arrivalAt,
+		departure_at: input.departureAt,
+		city_south: input.cityBBox?.south ?? null,
+		city_north: input.cityBBox?.north ?? null,
+		city_west: input.cityBBox?.west ?? null,
+		city_east: input.cityBBox?.east ?? null,
+		country_code: input.countryCode,
+		furnished_days: 0,
+		allowed_modes: ['walk', 'transit'],
+		day_start: '09:00:00',
+		day_end: '19:00:00',
+		image_url: null,
+		share_token: null,
+		plan_generated_at: null,
+		plan_version: 0,
+		created_at: new Date().toISOString(),
+		version: 1,
+		...terminalColumns(input.terminals, input.timezone)
+	} as TripRow;
+	await mutate(`Planned a trip to ${input.city}`, id, (w) => w.insert('trips', made));
+	return id;
 }
 
 /** The city box as stored, or null when the trip predates it being captured. */
@@ -260,60 +264,22 @@ export const hotelMissing = (row: TripRow) => row.hotel_lat === 0 && row.hotel_l
  * notices it is wrong -- so it can be changed from there rather than only from
  * the edit screen three taps away.
  */
-export async function updateAllowance(
+export const updateAllowance = (
+	w: Writer,
 	id: string,
 	patch: { bag_drop_min?: number; arrival_buffer_min?: number; departure_buffer_min?: number }
-): Promise<void> {
-	const { error } = await supabase.from('trips').update(patch).eq('id', id);
-	if (error) throw new Error(error.message);
-}
+) => w.update('trips', { id }, patch);
 
-export async function updateHotel(
-	id: string,
-	hotel: { name: string; lat: number; lng: number }
-): Promise<void> {
-	const { error } = await supabase
-		.from('trips')
-		.update({ hotel_name: hotel.name, hotel_lat: hotel.lat, hotel_lng: hotel.lng })
-		.eq('id', id);
-	if (error) throw new Error(error.message);
-}
+export const updateHotel = (w: Writer, id: string, hotel: { name: string; lat: number; lng: number }) =>
+	w.update('trips', { id }, { hotel_name: hotel.name, hotel_lat: hotel.lat, hotel_lng: hotel.lng });
 
-/**
- * A write that must have changed something.
- *
- * Row-level security answers a write it does not allow with zero rows, not
- * with an error: a member who taps Share gets "Copied" for a link that was
- * never minted. Asking for the row back turns a silent refusal into one the
- * screen can say out loud.
- */
-async function must<T>(
-	query: PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
-	refused: string
-): Promise<void> {
-	const { data, error } = await query;
-	if (error) throw new Error(error.message);
-	if (!data?.length) throw new Error(refused);
-}
-
-/**
- * Set the trip's picture, or clear it back to the country flag.
- *
- * The object is keyed by trip id, which is exactly what the storage policy
- * checks, so a collaborator can change it and a stranger cannot.
- */
-export async function setTripImage(id: string, url: string | null): Promise<void> {
-	await must(
-		supabase.from('trips').update({ image_url: url }).eq('id', id).select('id'),
-		'Only the traveller who made the trip can change its picture.'
-	);
-}
+/** Set the trip's picture, or clear it back to the country flag. Only its owner may. */
+export const setTripImage = (w: Writer, id: string, url: string | null) =>
+	w.update('trips', { id }, { image_url: url });
 
 /** Trips saved before the country was captured. Filled in once, on sight. */
-export async function updateCountryCode(id: string, code: string): Promise<void> {
-	const { error } = await supabase.from('trips').update({ country_code: code }).eq('id', id);
-	if (error) throw new Error(error.message);
-}
+export const updateCountryCode = (w: Writer, id: string, code: string) =>
+	w.update('trips', { id }, { country_code: code });
 
 /**
  * Move a trip onto the right timezone, keeping every time the traveller typed
@@ -323,29 +289,20 @@ export async function updateCountryCode(id: string, code: string): Promise<void>
  * hour and Regenerate is what fixes them, which is also the moment the
  * traveller sees the plan change rather than finding it silently moved.
  */
-export async function repairTimezone(row: TripRow, zone: string): Promise<TripRow> {
-	const patch = {
+export const repairTimezone = (w: Writer, row: TripRow, zone: string) =>
+	w.update('trips', { id: row.id }, {
 		timezone: zone,
 		arrival_at: reinterpret(row.arrival_at, row.timezone, zone),
 		departure_at: reinterpret(row.departure_at, row.timezone, zone)
-	};
-	const { error } = await supabase.from('trips').update(patch).eq('id', row.id);
-	if (error) throw new Error(error.message);
-	return { ...row, ...patch };
-}
+	});
 
-export async function updateCityBBox(id: string, bbox: BBox): Promise<void> {
-	const { error } = await supabase
-		.from('trips')
-		.update({
-			city_south: bbox.south,
-			city_north: bbox.north,
-			city_west: bbox.west,
-			city_east: bbox.east
-		})
-		.eq('id', id);
-	if (error) throw new Error(error.message);
-}
+export const updateCityBBox = (w: Writer, id: string, bbox: BBox) =>
+	w.update('trips', { id }, {
+		city_south: bbox.south,
+		city_north: bbox.north,
+		city_west: bbox.west,
+		city_east: bbox.east
+	});
 
 export type TripEdit = {
 	city: string;
@@ -361,72 +318,26 @@ export type TripEdit = {
 	terminals: Terminals;
 };
 
-export async function updateTrip(id: string, edit: TripEdit): Promise<void> {
-	await must(
-		supabase
-			.from('trips')
-			.update({
-				name: edit.city,
-				city: edit.city,
-				timezone: edit.timezone,
-				hotel_name: edit.hotelName,
-				hotel_lat: edit.hotelLat,
-				hotel_lng: edit.hotelLng,
-				arrival_at: edit.arrivalAt,
-				departure_at: edit.departureAt,
-				allowed_modes: edit.allowedModes,
-				day_start: edit.dayStart,
-				day_end: edit.dayEnd,
-				...terminalColumns(edit.terminals, edit.timezone)
-			})
-			.eq('id', id)
-			.select('id'),
-		'Only the traveller who made the trip can edit it.'
-	);
-}
+/** Only the traveller who made the trip may edit it; the server refuses anyone else. */
+export const updateTrip = (w: Writer, id: string, edit: TripEdit) =>
+	w.update('trips', { id }, {
+		name: edit.city,
+		city: edit.city,
+		timezone: edit.timezone,
+		hotel_name: edit.hotelName,
+		hotel_lat: edit.hotelLat,
+		hotel_lng: edit.hotelLng,
+		arrival_at: edit.arrivalAt,
+		departure_at: edit.departureAt,
+		allowed_modes: edit.allowedModes,
+		day_start: edit.dayStart,
+		day_end: edit.dayEnd,
+		...terminalColumns(edit.terminals, edit.timezone)
+	});
 
-export async function deleteTrip(id: string): Promise<void> {
-	// pois cascade via the foreign key, so this is one statement, not two.
-	await must(
-		supabase.from('trips').delete().eq('id', id).select('id'),
-		'Only the traveller who made the trip can delete it.'
-	);
-}
+/** Everything on the trip goes with it: the foreign keys cascade. */
+export const deleteTrip = (w: Writer, id: string) => w.remove('trips', { id });
 
 /** A share token, minted on demand. Null revokes the link. */
-export async function setShareToken(id: string, token: string | null): Promise<void> {
-	await must(
-		supabase.from('trips').update({ share_token: token }).eq('id', id).select('id'),
-		'Only the traveller who made the trip can share it.'
-	);
-}
-
-/**
- * A shared trip, read through the RPC rather than the table.
- *
- * Anonymous callers have no select policy on trips at all -- deliberately, as
- * a `share_token is not null` policy would let them write their own WHERE and
- * enumerate every shared trip. The function takes the token as an argument, so
- * an unguessable value is genuinely required.
- */
-export async function getSharedTrip(
-	token: string
-): Promise<{ trip: TripRow; pois: PoiRow[]; plan: PlanStopRow[] } | null> {
-	const { data, error } = await supabase.rpc('get_shared_trip', { token });
-	if (error) throw new Error(error.message);
-	if (!data?.trip) return null;
-	return data as { trip: TripRow; pois: PoiRow[]; plan: PlanStopRow[] };
-}
-
-/**
- * Join a trip using a share link. Returns the trip id, or null when the token
- * is unknown or revoked -- the same answer for both, so neither is confirmed.
- *
- * Membership is granted by the function rather than by an insert, because a
- * client that could insert its own trip_members row would not need a token.
- */
-export async function joinTrip(token: string): Promise<string | null> {
-	const { data, error } = await supabase.rpc('join_trip', { token });
-	if (error) throw new Error(error.message);
-	return (data as string | null) ?? null;
-}
+export const setShareToken = (w: Writer, id: string, token: string | null) =>
+	w.update('trips', { id }, { share_token: token });

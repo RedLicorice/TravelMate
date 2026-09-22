@@ -1,4 +1,4 @@
-import { supabase } from '$lib/supabase';
+import { ofTrip, type Writer } from '$lib/store/store.svelte';
 
 /**
  * A place on a day, in a position: what the traveller has actually decided.
@@ -43,42 +43,62 @@ export type PlacementRow = {
 	/** Replan may not move this one. When it happens is the card's to say. */
 	pinned: boolean;
 	created_at: string;
+	/** Which edit of this row the server last confirmed. */
+	version: number;
 };
 
-export async function listPlacements(tripId: string): Promise<PlacementRow[]> {
-	const { data, error } = await supabase
-		.from('placements')
-		.select('*')
-		.eq('trip_id', tripId)
-		.order('day_index', { ascending: true })
-		.order('at', { ascending: true });
-	if (error) throw new Error(error.message);
-	return (data ?? []) as PlacementRow[];
+/** A trip's visits, by day and then by clock. */
+export const listPlacements = (tripId: string): PlacementRow[] =>
+	ofTrip<PlacementRow>('placements', tripId).sort(
+		(a, b) => a.day_index - b.day_index || a.at.localeCompare(b.at)
+	);
+
+type Furniture = 'hotel' | 'chore' | 'meal';
+
+/** A whole new visit. Its id is chosen here, so it can be moved before the server has seen it. */
+function visit(
+	w: Writer,
+	tripId: string,
+	v: {
+		poiId?: string | null;
+		kind: PlacementKind;
+		name?: string | null;
+		minutes?: number | null;
+		meal?: PlacementRow['meal'];
+		dayIndex: number;
+		at: string;
+		pinned?: boolean;
+		id?: string;
+	}
+): PlacementRow {
+	const made: PlacementRow = {
+		id: v.id ?? crypto.randomUUID(),
+		trip_id: tripId,
+		poi_id: v.poiId ?? null,
+		kind: v.kind,
+		name: v.name ?? null,
+		minutes: v.minutes ?? null,
+		meal: v.meal ?? null,
+		day_index: v.dayIndex,
+		at: v.at,
+		pinned: v.pinned ?? false,
+		created_at: new Date().toISOString(),
+		version: 1
+	};
+	w.insert('placements', made);
+	return made;
 }
 
 /** Put a place on a day. Returns the placement, which is what is dragged. */
-export async function place(
+export const place = (
+	w: Writer,
 	tripId: string,
 	poiId: string,
 	dayIndex: number,
 	at: string,
-	pinned = false
-): Promise<PlacementRow> {
-	const { data, error } = await supabase
-		.from('placements')
-		.insert({
-			trip_id: tripId,
-			poi_id: poiId,
-			kind: 'stop',
-			day_index: dayIndex,
-			at,
-			pinned
-		})
-		.select('*')
-		.single();
-	if (error) throw new Error(error.message);
-	return data as PlacementRow;
-}
+	pinned = false,
+	id?: string
+): PlacementRow => visit(w, tripId, { poiId, kind: 'stop', dayIndex, at, pinned, id });
 
 /**
  * Put a piece of the day's own furniture on a day: back to the hotel in the
@@ -91,115 +111,21 @@ export async function place(
  * midnight with two hours of nothing in front of it: the time was wrong once,
  * and the pin kept it wrong.
  */
-export async function placeAnchor(
+export const placeAnchor = (
+	w: Writer,
 	tripId: string,
-	kind: 'hotel' | 'chore' | 'meal',
+	kind: Furniture,
 	dayIndex: number,
 	at: string,
 	opts: { name?: string | null; minutes?: number | null; meal?: PlacementRow['meal'] } = {}
-): Promise<PlacementRow> {
-	const { data, error } = await supabase
-		.from('placements')
-		.insert({
-			trip_id: tripId,
-			poi_id: null,
-			kind,
-			name: opts.name ?? null,
-			minutes: opts.minutes ?? null,
-			meal: opts.meal ?? null,
-			day_index: dayIndex,
-			at,
-			pinned: false
-		})
-		.select('*')
-		.single();
-	if (error) throw new Error(error.message);
-	return data as PlacementRow;
-}
-
-/** How long this one takes, when the traveller says rather than the trip. */
-export async function setPlacementMinutes(id: string, minutes: number | null): Promise<void> {
-	const { error } = await supabase.from('placements').update({ minutes }).eq('id', id);
-	if (error) throw new Error(error.message);
-}
-
-/** Take one visit off the plan. The place stays on the wishlist. */
-export async function unplace(id: string): Promise<void> {
-	const { error } = await supabase.from('placements').delete().eq('id', id);
-	if (error) throw new Error(error.message);
-}
+): PlacementRow => visit(w, tripId, { kind, dayIndex, at, ...opts });
 
 /**
- * Write a whole day's worth of positions at once.
- *
- * One upsert rather than a write per row: a drag renumbers everything below
- * it, and sending those one at a time leaves the plan half-moved if the
- * connection drops in the middle.
+ * Several at once: a new trip's furniture, or what Replan decided a day
+ * needed.
  */
-export async function savePlacements(
-	tripId: string,
-	rows: {
-		id: string;
-		poiId: string | null;
-		kind?: PlacementKind;
-		name?: string | null;
-		minutes?: number | null;
-		meal?: PlacementRow['meal'];
-		dayIndex: number;
-		/** When the card happens: the only thing that orders a day. */
-		at: string;
-	}[]
-): Promise<void> {
-	if (!rows.length) return;
-	// The whole row, not just what changed: an upsert is an insert that gives
-	// way, and the insert it starts as has to satisfy the columns that cannot
-	// be null.
-	const { error } = await supabase.from('placements').upsert(
-		rows.map((r) => ({
-			id: r.id,
-			trip_id: tripId,
-			poi_id: r.poiId,
-			kind: r.kind ?? 'stop',
-			name: r.name ?? null,
-			minutes: r.minutes ?? null,
-			meal: r.meal ?? null,
-			day_index: r.dayIndex,
-			at: r.at
-		})),
-		{ onConflict: 'id' }
-	);
-	if (error) throw new Error(error.message);
-}
-
-export async function holdPlacement(id: string, pinned: boolean): Promise<void> {
-	const { error } = await supabase.from('placements').update({ pinned }).eq('id', id);
-	if (error) throw new Error(error.message);
-}
-
-/**
- * How many of a trip's days have been furnished already.
- *
- * A day the app has never drawn gets the usual furniture the first time it is
- * seen -- the hotel at either end, getting out of the door, the bags. After
- * that the day belongs to the traveller: a piece they removed stays removed,
- * and one they added stays added, because nothing comes along afterwards to
- * put the furniture back.
- */
-export async function setFurnished(tripId: string, days: number): Promise<void> {
-	const { error } = await supabase
-		.from('trips')
-		.update({ furnished_days: days })
-		.eq('id', tripId);
-	if (error) throw new Error(error.message);
-}
-
-/**
- * Several at once.
- *
- * Furnishing a trip is one insert, not one per card: a new trip used to make
- * four round trips per day before it would draw anything.
- */
-export async function placeMany(
+export const placeMany = (
+	w: Writer,
 	rows: {
 		poiId?: string | null;
 		kind: PlacementKind;
@@ -211,36 +137,33 @@ export async function placeMany(
 		pinned?: boolean;
 	}[],
 	tripId: string
-): Promise<PlacementRow[]> {
-	if (!rows.length) return [];
-	const { data, error } = await supabase
-		.from('placements')
-		.insert(
-			rows.map((r) => ({
-				trip_id: tripId,
-				poi_id: r.poiId ?? null,
-				kind: r.kind,
-				name: r.name ?? null,
-				minutes: r.minutes ?? null,
-				meal: r.meal ?? null,
-				day_index: r.dayIndex,
-				at: r.at,
-				pinned: r.pinned ?? false
-			}))
-		)
-		.select('*');
-	if (error) throw new Error(error.message);
-	return (data ?? []) as PlacementRow[];
-}
+): PlacementRow[] => rows.map((r) => visit(w, tripId, r));
+
+/** How long this one takes, when the traveller says rather than the trip. */
+export const setPlacementMinutes = (w: Writer, id: string, minutes: number | null) =>
+	w.update('placements', { id }, { minutes });
+
+/** Take one visit off the plan. The place stays on the wishlist. */
+export const unplace = (w: Writer, id: string) => w.remove('placements', { id });
+
+export const holdPlacement = (w: Writer, id: string, pinned: boolean) =>
+	w.update('placements', { id }, { pinned });
+
+/**
+ * How many of a trip's days have been furnished already.
+ *
+ * A day the app has never drawn gets the usual furniture the first time it is
+ * seen -- the hotel at either end, getting out of the door, the bags. After
+ * that the day belongs to the traveller: a piece they removed stays removed,
+ * and one they added stays added, because nothing comes along afterwards to
+ * put the furniture back.
+ */
+export const setFurnished = (w: Writer, tripId: string, days: number) =>
+	w.update('trips', { id: tripId }, { furnished_days: days });
 
 /** Move a card to a moment. The day reorders itself around it. */
-export async function moveTo(id: string, at: string, dayIndex?: number): Promise<void> {
-	const { error } = await supabase
-		.from('placements')
-		.update(dayIndex === undefined ? { at } : { at, day_index: dayIndex })
-		.eq('id', id);
-	if (error) throw new Error(error.message);
-}
+export const moveTo = (w: Writer, id: string, at: string, dayIndex?: number) =>
+	w.update('placements', { id }, dayIndex === undefined ? { at } : { at, day_index: dayIndex });
 
 /** Halfway between two moments: when a card put between two others happens. */
 export const between = (a: string | Date, b: string | Date): string =>

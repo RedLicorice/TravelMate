@@ -1,27 +1,10 @@
 <script lang="ts">
 	import { base } from '$app/paths';
 	import { avatarDataUri } from '$lib/avatar';
-	import { displayName, loadMyProfile, type Profile } from '$lib/profile.svelte';
+	import { displayName, myProfile } from '$lib/profile.svelte';
 	import { session } from '$lib/session.svelte';
 
-	let profile = $state<Profile | null>(null);
-
-	$effect(() => {
-		const user = session.user;
-		if (!user) {
-			profile = null;
-			return;
-		}
-		let live = true;
-		// A failure here is not worth an error banner on the trips list: the
-		// button falls back to an initial and the profile page will say why.
-		loadMyProfile()
-			.then((p) => live && (profile = p))
-			.catch(() => {});
-		return () => {
-			live = false;
-		};
-	});
+	const profile = $derived(myProfile());
 
 	const name = $derived(profile ? displayName(profile, session.user?.email) : 'Profile');
 	/** Shown until the avatar arrives, so the button never starts empty. */

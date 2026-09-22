@@ -2,10 +2,11 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { base } from '$app/paths';
-	import { cityBBox, getTrip, toTrip, updateCityBBox, type TripRow } from '$lib/trip/repo';
+	import { cityBBox, getTrip, toTrip, updateCityBBox } from '$lib/trip/repo';
+	import { mutate } from '$lib/store/store.svelte';
 	import { tripDays } from '$lib/trip/days';
 	import { addPoi, DuplicatePoiError, listPois, type PoiRow } from '$lib/trip/pois';
-	import { between, listPlacements, place, type PlacementRow } from '$lib/trip/placements';
+	import { between, listPlacements, place } from '$lib/trip/placements';
 	import { goto } from '$app/navigation';
 	import { poi as provider, type City, type Poi } from '$lib/poi';
 	import { durationFor } from '$lib/poi/photon';
@@ -34,9 +35,9 @@
 	/** Where a day starts, for the first card ever put on it. */
 	const dayStart = (i: number) => (trip ? tripDays(toTrip(trip))[i]?.start : null) ?? null;
 
-	let trip = $state<TripRow | null>(null);
-	let saved = $state<PoiRow[]>([]);
-	let placements = $state<PlacementRow[]>([]);
+	const trip = $derived(getTrip(tripId));
+	const saved = $derived(listPois(tripId));
+	const placements = $derived(listPlacements(tripId));
 	let results = $state<Poi[]>([]);
 	let query = $state('');
 	let view = $state<'list' | 'map' | 'custom'>('list');
@@ -52,11 +53,6 @@
 
 	onMount(async () => {
 		try {
-			[trip, saved, placements] = await Promise.all([
-				getTrip(tripId),
-				listPois(tripId),
-				listPlacements(tripId)
-			]);
 			if (!trip) return;
 			bbox = cityBBox(trip);
 			if (!bbox) {
@@ -65,7 +61,9 @@
 				const [match] = await provider.searchCities(trip.city);
 				if (match?.bbox) {
 					bbox = match.bbox;
-					await updateCityBBox(tripId, match.bbox);
+					await mutate('Found the city on the map', tripId, (w) =>
+						updateCityBBox(w, tripId, match.bbox!)
+					);
 				}
 			}
 		} catch (e) {
@@ -261,65 +259,43 @@
 		void add(everyBranch ? { ...chosen.pick, branches: chosen.branches } : chosen.pick);
 	}
 
-	/**
-	 * The wishlist row for this place, made if it is not there yet. The index
-	 * catches what the UI check missed -- two taps in quick succession, or a
-	 * teammate adding the same place a moment ago -- and that is not an error
-	 * here, it is the row we wanted: refresh and use it.
-	 */
-	async function wishlistRow(p: Poi): Promise<PoiRow> {
-		const existing = onWishlist(p);
-		if (existing) return existing;
-		try {
-			const row = await addPoi(tripId, p);
-			saved = [...saved, row];
-			return row;
-		} catch (e) {
-			if (!(e instanceof DuplicatePoiError)) throw e;
-			saved = await listPois(tripId);
-			const row = onWishlist(p);
-			if (!row) throw e;
-			return row;
-		}
+	/** When a place put into the slot happens: the space above `before`, or the end of the day. */
+	function slotMoment(day: number, before: string | null): string {
+		// Asking for a slot is asking for a time: above `before` means in the
+		// space between `before` and whatever comes before it. Nothing else on
+		// the day moves -- a card is where its clock says, so making room is a
+		// matter of picking a free minute, not of renumbering the neighbours.
+		// `before` still names a place on the trip page for now, so a placement
+		// of that place is accepted too.
+		const cards = placements.filter((x) => x.day_index === day);
+		const i = cards.findIndex((x) => x.id === before || x.poi_id === before);
+		const next = i < 0 ? undefined : cards[i];
+		const prev = i < 0 ? cards.at(-1) : cards[i - 1];
+		return prev && next
+			? between(prev.at, next.at)
+			: next
+				? new Date(Date.parse(next.at) - 60 * 60_000).toISOString()
+				: prev
+					? new Date(Date.parse(prev.at) + 60 * 60_000).toISOString()
+					: (dayStart(day) ?? new Date()).toISOString();
 	}
 
+	/**
+	 * Onto the wishlist, unless it is there already -- and, from a slot, onto
+	 * the day as well, in the same edit: one tap, one thing done.
+	 */
 	async function add(p: Poi) {
 		if (!canAdd(p)) return;
 		try {
-			const row = await wishlistRow(p);
+			const target = slot;
+			await mutate(`Added ${p.name}`, tripId, (w) => {
+				const row = onWishlist(p) ?? addPoi(w, tripId, p);
+				if (target) place(w, tripId, row.id, target.day, slotMoment(target.day, target.before));
+			});
 
-			if (slot) {
-				// Put it in the slot it was asked for, then hand the trip page
-				// back the day it landed on so it opens there.
-				//
-				// Asking for a slot is asking for a time: above `before` means
-				// in the space between `before` and whatever comes before it.
-				// Nothing else on the day moves -- a card is where its clock
-				// says, so making room is a matter of picking a free minute,
-				// not of renumbering the neighbours. `before` still names a
-				// place on the trip page for now, so a placement of that place
-				// is accepted too.
-				const day = placements
-					.filter((x) => x.day_index === slot.day)
-					.sort((a, b) => a.at.localeCompare(b.at));
-				const i = day.findIndex((x) => x.id === slot.before || x.poi_id === slot.before);
-				const next = i < 0 ? undefined : day[i];
-				const prev = i < 0 ? day.at(-1) : day[i - 1];
-				const when =
-					prev && next
-						? between(prev.at, next.at)
-						: next
-							? new Date(Date.parse(next.at) - 60 * 60_000).toISOString()
-							: prev
-								? new Date(Date.parse(prev.at) + 60 * 60_000).toISOString()
-								: (dayStart(slot.day) ?? new Date()).toISOString();
-				// Back to the day at once. The visit is written on the way out
-				// -- the trip page reads the placements when it opens, and by
-				// then this has landed; a failure surfaces there rather than
-				// holding a screen the traveller has finished with.
-				const writing = place(tripId, row.id, slot.day, when);
-				await goto(`${base}/trip/${tripId}?day=${slot.day}`, { replaceState: true });
-				await writing;
+			if (target) {
+				// Back to the day it landed on, so the trip page opens there.
+				await goto(`${base}/trip/${tripId}?day=${target.day}`, { replaceState: true });
 				return;
 			}
 
@@ -329,7 +305,9 @@
 			// old query up invites adding its neighbours by accident.
 			clearSearch();
 		} catch (e) {
-			error = (e as Error).message;
+			// Already there -- two taps in quick succession -- is not an error:
+			// it is the row that was wanted.
+			if (!(e instanceof DuplicatePoiError)) error = (e as Error).message;
 		}
 	}
 

@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { mutate, ofTrip, row, type Writer } from './store/store.svelte';
 import { session } from './session.svelte';
 import { newSeed } from './avatar';
 import { DEFAULT_WINDOWS, type MealWindows } from './plan/meals';
@@ -12,6 +12,7 @@ export type ProfileRow = {
 	wake_at: string;
 	prep_min: number;
 	updated_at: string;
+	version: number;
 };
 
 /** Owner and editor may write the trip; a viewer holds a link, and reads. */
@@ -44,45 +45,50 @@ export const toProfile = (row: ProfileRow): Profile => ({
 	prepMin: row.prep_min ?? 30
 });
 
-/** The signed-in user's own row, created on first read. */
-export async function loadMyProfile(): Promise<Profile> {
+/** The signed-in traveller's own profile, as this device holds it. */
+export function myProfile(): Profile | null {
 	const id = session.user?.id;
-	if (!id) throw new Error('Not signed in');
-
-	const { data, error } = await supabase.from('profiles').select('*').eq('user_id', id).maybeSingle();
-	if (error) throw new Error(error.message);
-	if (data) return toProfile(data as ProfileRow);
-
-	// First sign-in: write the row rather than carrying a "maybe missing"
-	// profile through every screen that reads one.
-	const seed = { user_id: id, avatar_seed: newSeed(), meal_windows: DEFAULT_WINDOWS };
-	const { data: created, error: insertError } = await supabase
-		.from('profiles')
-		.insert(seed)
-		.select('*')
-		.single();
-	if (insertError) throw new Error(insertError.message);
-	return toProfile(created as ProfileRow);
+	const mine = id ? row<ProfileRow>('profiles', { user_id: id }) : null;
+	return mine ? toProfile(mine) : null;
 }
 
-export async function saveMyProfile(patch: {
-	display_name?: string | null;
-	avatar_url?: string | null;
-	avatar_seed?: string | null;
-	meal_windows?: MealWindows;
-	wake_at?: string;
-	prep_min?: number;
-}): Promise<Profile> {
+/**
+ * First sign-in: the row is written rather than carrying a "maybe missing"
+ * profile through every screen that reads one. Called once the server has
+ * said there is none.
+ */
+export function ensureMyProfile(): Promise<void> {
+	const id = session.user?.id;
+	if (!id || row('profiles', { user_id: id })) return Promise.resolve();
+	return mutate('Set up your profile', null, (w) =>
+		w.insert('profiles', {
+			user_id: id,
+			display_name: null,
+			avatar_url: null,
+			avatar_seed: newSeed(),
+			meal_windows: DEFAULT_WINDOWS,
+			wake_at: '08:00:00',
+			prep_min: 30,
+			updated_at: new Date().toISOString(),
+			version: 1
+		})
+	);
+}
+
+export function saveMyProfile(
+	w: Writer,
+	patch: {
+		display_name?: string | null;
+		avatar_url?: string | null;
+		avatar_seed?: string | null;
+		meal_windows?: MealWindows;
+		wake_at?: string;
+		prep_min?: number;
+	}
+): void {
 	const id = session.user?.id;
 	if (!id) throw new Error('Not signed in');
-	const { data, error } = await supabase
-		.from('profiles')
-		.update({ ...patch, updated_at: new Date().toISOString() })
-		.eq('user_id', id)
-		.select('*')
-		.single();
-	if (error) throw new Error(error.message);
-	return toProfile(data as ProfileRow);
+	w.update('profiles', { user_id: id }, { ...patch, updated_at: new Date().toISOString() });
 }
 
 /**
@@ -92,59 +98,20 @@ export async function saveMyProfile(patch: {
  * share a trip with. This is the whole reason preferences moved out of
  * auth user_metadata, which only its owner can read.
  */
-export async function loadTripProfiles(tripId: string): Promise<Profile[]> {
-	const { data: members, error } = await supabase
-		.from('trip_members')
-		.select('user_id,role')
-		.eq('trip_id', tripId);
-	if (error) throw new Error(error.message);
-	const ids = (members ?? []).map((m) => m.user_id);
-	if (!ids.length) return [];
-
-	const { data, error: profileError } = await supabase
-		.from('profiles')
-		.select('*')
-		.in('user_id', ids);
-	if (profileError) throw new Error(profileError.message);
-	const roles = new Map((members ?? []).map((m) => [m.user_id, m.role as TripRole]));
-	return (data ?? []).map((r) => ({
-		...toProfile(r as ProfileRow),
-		role: roles.get((r as ProfileRow).user_id)
-	}));
+export function tripProfiles(tripId: string): Profile[] {
+	return ofTrip<{ user_id: string; role: TripRole }>('trip_members', tripId).flatMap((m) => {
+		const p = row<ProfileRow>('profiles', { user_id: m.user_id });
+		return p ? [{ ...toProfile(p), role: m.role }] : [];
+	});
 }
 
-/**
- * Hand someone the pen, or take it back.
- *
- * Only the owner may: the policy says so, and a write it refuses answers with
- * no rows rather than an error, so the row is asked for back.
- */
-export async function setMemberRole(
-	tripId: string,
-	userId: string,
-	role: 'editor' | 'viewer'
-): Promise<void> {
-	const { data, error } = await supabase
-		.from('trip_members')
-		.update({ role })
-		.eq('trip_id', tripId)
-		.eq('user_id', userId)
-		.select('user_id');
-	if (error) throw new Error(error.message);
-	if (!data?.length) throw new Error('Only the traveller who made the trip can change who edits it.');
-}
+/** Hand someone the pen, or take it back. Only the owner may. */
+export const setMemberRole = (w: Writer, tripId: string, userId: string, role: 'editor' | 'viewer') =>
+	w.update('trip_members', { trip_id: tripId, user_id: userId }, { role });
 
-/** Put someone off the trip. Revoking the link never did this. */
-export async function removeMember(tripId: string, userId: string): Promise<void> {
-	const { data, error } = await supabase
-		.from('trip_members')
-		.delete()
-		.eq('trip_id', tripId)
-		.eq('user_id', userId)
-		.select('user_id');
-	if (error) throw new Error(error.message);
-	if (!data?.length) throw new Error('Only the traveller who made the trip can remove a traveller.');
-}
+/** Put someone off the trip. Revoking the link never did this. Only the owner may. */
+export const removeMember = (w: Writer, tripId: string, userId: string) =>
+	w.remove('trip_members', { trip_id: tripId, user_id: userId });
 
 /** Display name, falling back to the local part of the email. */
 export const displayName = (p: { name: string }, email?: string | null) =>

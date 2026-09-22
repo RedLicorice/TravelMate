@@ -602,3 +602,27 @@ button.tm-slot {
   font: 700 12px/1 var(--tm-font);
   vertical-align: text-bottom;
 }
+
+/* A card whose edit was put aside: somebody else changed the same thing
+   while this device was away. It draws what the trip says now; the mark
+   says there is a change of the traveller's waiting to be kept or dropped. */
+.tm-stop--conflict,
+.tm-result--conflict {
+  border: 2px solid var(--tm-conflict);
+}
+.tm-conflict-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-right: 6px;
+  padding: 0;
+  border: none;
+  border-radius: var(--tm-r-full);
+  background: var(--tm-conflict);
+  color: #fff;
+  font: 700 12px/1 var(--tm-font);
+  vertical-align: text-bottom;
+  cursor: pointer;
+}

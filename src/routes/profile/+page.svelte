@@ -1,27 +1,18 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { base } from '$app/paths';
-	import { supabase } from '$lib/supabase';
 	import { session, signOut } from '$lib/session.svelte';
 	import { avatarDataUri, newSeed } from '$lib/avatar';
-	import { displayName, loadMyProfile, saveMyProfile, type Profile } from '$lib/profile.svelte';
+	import { displayName, myProfile, saveMyProfile } from '$lib/profile.svelte';
 	import { MEAL_NAMES, readyAt, toHours, type MealWindows } from '$lib/plan/meals';
+	import { mutate, upload as store } from '$lib/store/store.svelte';
 
-	let profile = $state<Profile | null>(null);
-	let loading = $state(true);
-	let status = $state<'idle' | 'saving' | 'saved'>('idle');
+	const profile = $derived(myProfile());
+	/** Meal hours being typed that do not make a window yet, so are not saved yet. */
+	let draft = $state<MealWindows | null>(null);
+	const windows = $derived(draft ?? profile?.mealWindows);
+	let status = $state<'idle' | 'saved'>('idle');
 	let error = $state<string | null>(null);
 	let uploading = $state(false);
-
-	onMount(async () => {
-		try {
-			profile = await loadMyProfile();
-		} catch (e) {
-			error = (e as Error).message;
-		} finally {
-			loading = false;
-		}
-	});
 
 	const src = $derived(
 		profile ? (profile.avatarUrl ?? avatarDataUri(profile.avatarSeed)) : ''
@@ -31,27 +22,26 @@
 	const badWindow = (w: MealWindows, name: (typeof MEAL_NAMES)[number]) =>
 		toHours(w[name].to) <= toHours(w[name].from);
 
-	async function persist(patch: Parameters<typeof saveMyProfile>[0]) {
-		status = 'saving';
+	async function persist(patch: Parameters<typeof saveMyProfile>[1]) {
 		error = null;
 		try {
-			profile = await saveMyProfile(patch);
+			await mutate('Changed your profile', null, (w) => saveMyProfile(w, patch));
 			status = 'saved';
 			setTimeout(() => (status = 'idle'), 1500);
 		} catch (e) {
 			error = (e as Error).message;
-			status = 'idle';
 		}
 	}
 
 	async function setMeal(name: (typeof MEAL_NAMES)[number], edge: 'from' | 'to', value: string) {
-		if (!profile) return;
-		const next: MealWindows = {
-			...profile.mealWindows,
-			[name]: { ...profile.mealWindows[name], [edge]: value }
-		};
-		profile = { ...profile, mealWindows: next };
-		if (!badWindow(next, name)) await persist({ meal_windows: next });
+		if (!windows) return;
+		const next: MealWindows = { ...windows, [name]: { ...windows[name], [edge]: value } };
+		if (badWindow(next, name)) {
+			draft = next;
+			return;
+		}
+		draft = null;
+		await persist({ meal_windows: next });
 	}
 
 	async function upload(event: Event) {
@@ -64,12 +54,10 @@
 			// Keyed by user id so the storage policy can check ownership, with a
 			// fresh name each time so a cached old picture cannot linger.
 			const path = `${session.user.id}/${newSeed()}.${ext}`;
-			const { error: upErr } = await supabase.storage
-				.from('avatars')
-				.upload(path, file, { upsert: true, contentType: file.type });
-			if (upErr) throw new Error(upErr.message);
-			const { data } = supabase.storage.from('avatars').getPublicUrl(path);
-			await persist({ avatar_url: data.publicUrl });
+			// A picture has to reach the server before anyone can see it, so
+			// this one thing waits for a connection and says so if there is none.
+			if (!navigator.onLine) throw new Error('Uploading a picture needs a connection.');
+			await persist({ avatar_url: await store('avatars', path, file) });
 		} catch (e) {
 			error = (e as Error).message;
 		} finally {
@@ -84,12 +72,14 @@
 		<h1 style="font: 700 var(--tm-text-xl)/1.15 var(--tm-font)">Profile</h1>
 	</header>
 
-	{#if loading}
+	{#if !profile || !windows}
+		<!-- A profile is made on first sign-in; until the server has answered
+		     there is nothing to draw but its shape. -->
 		<div class="flex flex-col gap-3">
 			<div class="tm-skel" style="height:96px"></div>
 			<div class="tm-skel" style="height:96px"></div>
 		</div>
-	{:else if profile}
+	{:else}
 		<div class="flex flex-col items-center gap-4">
 			<img
 				{src}
@@ -107,7 +97,7 @@
 				<button
 					class="tm-btn tm-btn--secondary"
 					onclick={() => persist({ avatar_seed: newSeed(), avatar_url: null })}
-					disabled={status === 'saving'}
+					
 				>
 					New face
 				</button>
@@ -187,7 +177,7 @@
 						class="tm-input"
 						type="time"
 						aria-label="{name} from"
-						value={profile.mealWindows[name].from}
+						value={windows[name].from}
 						onchange={(e) => setMeal(name, 'from', e.currentTarget.value)}
 					/>
 					<span style="color: var(--tm-text-faint)">to</span>
@@ -195,11 +185,11 @@
 						class="tm-input"
 						type="time"
 						aria-label="{name} to"
-						value={profile.mealWindows[name].to}
+						value={windows[name].to}
 						onchange={(e) => setMeal(name, 'to', e.currentTarget.value)}
 					/>
 				</div>
-				{#if badWindow(profile.mealWindows, name)}
+				{#if badWindow(windows, name)}
 					<span class="tm-hint tm-hint--error">
 						The end has to be after the start, so this is not saved yet.
 					</span>
@@ -210,8 +200,6 @@
 		<p class="tm-hint">
 			{#if error}
 				<span class="tm-hint--error">{error}</span>
-			{:else if status === 'saving'}
-				Saving…
 			{:else if status === 'saved'}
 				Saved
 			{:else}
@@ -220,7 +208,5 @@
 		</p>
 
 		<button class="tm-btn tm-btn--secondary tm-btn--block mt-8" onclick={signOut}>Sign out</button>
-	{:else if error}
-		<p class="tm-hint tm-hint--error">{error}</p>
 	{/if}
 </main>

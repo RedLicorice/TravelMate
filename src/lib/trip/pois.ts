@@ -1,7 +1,9 @@
-import { supabase } from '$lib/supabase';
+import { ofTrip, row, type Writer } from '$lib/store/store.svelte';
 import type { Poi } from '$lib/poi';
 import type { PlanPoi } from '$lib/plan/planner';
 import type { PlacementRow } from '$lib/trip/placements';
+import type { MealSlotRow } from '$lib/trip/meals';
+import { session } from '$lib/session.svelte';
 
 export type PoiRow = {
 	id: string;
@@ -33,6 +35,8 @@ export type PoiRow = {
 	added_by: string | null;
 	created_at: string;
 	updated_at: string | null;
+	/** Which edit of this row the server last confirmed. */
+	version: number;
 };
 
 /**
@@ -69,43 +73,48 @@ export const toPlanPoi = (
 	exitAt: row.exit_lat !== null && row.exit_lng !== null ? { lat: row.exit_lat, lng: row.exit_lng } : null
 });
 
-export async function listPois(tripId: string): Promise<PoiRow[]> {
-	const { data, error } = await supabase
-		.from('pois')
-		.select('*')
-		.eq('trip_id', tripId)
-		.order('created_at', { ascending: true });
-	if (error) throw new Error(error.message);
-	return data ?? [];
-}
+/** The wishlist, in the order places were added. */
+export const listPois = (tripId: string): PoiRow[] =>
+	ofTrip<PoiRow>('pois', tripId).sort((a, b) => a.created_at.localeCompare(b.created_at));
 
-/** Captured stops land in the wishlist; putting one on a day is a placement. */
-export async function addPoi(tripId: string, poi: Poi): Promise<PoiRow> {
-	const { data, error } = await supabase
-		.from('pois')
-		.insert({
-			trip_id: tripId,
-			name: poi.name,
-			lat: poi.lat,
-			lng: poi.lng,
-			category: poi.category,
-			duration_min: poi.durationMin,
-			opening_hours: poi.openingHours,
-			osm_id: poi.osmId,
-			website: poi.website,
-			phone: poi.phone,
-			any_branch: !!poi.branches?.length,
-			branches: poi.branches ?? []
-		})
-		.select('*')
-		.single();
-	// 23505 is the per-trip uniqueness index doing its job -- two taps in quick
-	// succession, or the same place reached from both the list and the map.
-	if (error) {
-		if (error.code === '23505') throw new DuplicatePoiError(poi.name);
-		throw new Error(error.message);
+/**
+ * Captured stops land in the wishlist; putting one on a day is a placement.
+ *
+ * The same OpenStreetMap place twice is refused here, where the traveller
+ * is, rather than by the uniqueness index once the edit reaches the server:
+ * two taps in quick succession, or the same place reached from both the list
+ * and the map.
+ */
+export function addPoi(w: Writer, tripId: string, poi: Poi): PoiRow {
+	if (poi.osmId && listPois(tripId).some((p) => p.osm_id === poi.osmId)) {
+		throw new DuplicatePoiError(poi.name);
 	}
-	return data;
+	const now = new Date().toISOString();
+	const made: PoiRow = {
+		id: crypto.randomUUID(),
+		trip_id: tripId,
+		name: poi.name,
+		lat: poi.lat,
+		lng: poi.lng,
+		category: poi.category,
+		duration_min: poi.durationMin,
+		priority: 3,
+		opening_hours: poi.openingHours,
+		osm_id: poi.osmId,
+		website: poi.website,
+		phone: poi.phone,
+		notes: null,
+		any_branch: !!poi.branches?.length,
+		branches: poi.branches ?? [],
+		exit_lat: null,
+		exit_lng: null,
+		added_by: session.user?.id ?? null,
+		created_at: now,
+		updated_at: now,
+		version: 1
+	};
+	w.insert('pois', made);
+	return made;
 }
 
 export class DuplicatePoiError extends Error {
@@ -115,13 +124,10 @@ export class DuplicatePoiError extends Error {
 	}
 }
 
-export async function getPoi(id: string): Promise<PoiRow | null> {
-	const { data, error } = await supabase.from('pois').select('*').eq('id', id).maybeSingle();
-	if (error) throw new Error(error.message);
-	return data;
-}
+export const getPoi = (id: string): PoiRow | null => row<PoiRow>('pois', { id });
 
-export async function updatePoi(
+export function updatePoi(
+	w: Writer,
 	id: string,
 	patch: {
 		duration_min?: number;
@@ -131,19 +137,28 @@ export async function updatePoi(
 		exit_lat?: number | null;
 		exit_lng?: number | null;
 	}
-): Promise<PoiRow> {
-	const { data, error } = await supabase
-		.from('pois')
-		.update(patch)
-		.eq('id', id)
-		.select('*')
-		.single();
-	if (error) throw new Error(error.message);
-	return data;
+): PoiRow {
+	// updated_at is what says the plan is behind the wishlist. The server
+	// stamps it too; this is the device saying so before it has been told.
+	w.update('pois', { id }, { ...patch, updated_at: new Date().toISOString() });
+	return getPoi(id)!;
 }
 
-export async function removePoi(id: string): Promise<void> {
-	const { error } = await supabase.from('pois').delete().eq('id', id);
-	if (error) throw new Error(error.message);
+/**
+ * Take a place off the trip altogether.
+ *
+ * Its visits and the meals it was chosen for go with it, here as on the
+ * server, where the foreign keys cascade: the trip on the device has to read
+ * the same as the trip upstream.
+ */
+export function removePoi(w: Writer, id: string): void {
+	const poi = getPoi(id);
+	if (!poi) return;
+	for (const pl of ofTrip<PlacementRow>('placements', poi.trip_id)) {
+		if (pl.poi_id === id) w.remove('placements', { id: pl.id });
+	}
+	for (const m of ofTrip<MealSlotRow>('trip_meals', poi.trip_id)) {
+		if (m.poi_id === id) w.update('trip_meals', { trip_id: poi.trip_id, day_index: m.day_index, meal: m.meal }, { poi_id: null });
+	}
+	w.remove('pois', { id });
 }
-

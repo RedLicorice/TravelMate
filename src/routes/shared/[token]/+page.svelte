@@ -2,7 +2,8 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import type { PoiRow } from '$lib/trip/pois';
-	import { getSharedTrip, joinTrip, toTrip, type TripRow } from '$lib/trip/repo';
+	import { toTrip, type TripRow } from '$lib/trip/repo';
+	import { joinTrip, sharedTrip } from '$lib/store/store.svelte';
 	import { goto } from '$app/navigation';
 	import { base } from '$app/paths';
 	import { session } from '$lib/session.svelte';
@@ -23,14 +24,16 @@
 
 	onMount(async () => {
 		try {
-			const shared = await getSharedTrip(page.params.token!);
-			if (!shared) {
+			// A link is a look at somebody's trip, not a trip on this device:
+			// it is read from the server each time it is opened.
+			const shared = await sharedTrip(page.params.token!);
+			if (!shared?.trip) {
 				gone = true;
 				return;
 			}
-			row = shared.trip;
-			pois = shared.pois ?? [];
-			stored = shared.plan ?? [];
+			row = shared.trip as TripRow;
+			pois = (shared.pois ?? []) as PoiRow[];
+			stored = (shared.plan ?? []) as PlanStopRow[];
 		} catch (e) {
 			error = (e as Error).message;
 		} finally {
