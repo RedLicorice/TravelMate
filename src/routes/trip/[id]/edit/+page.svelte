@@ -14,7 +14,7 @@
 		type Terminals,
 		type TripRow
 	} from '$lib/trip/repo';
-	import TerminalFields from '$lib/TerminalFields.svelte';
+	import JourneySide from '$lib/JourneySide.svelte';
 	import CheckIn from '$lib/CheckIn.svelte';
 	import { fromLocalInput, toLocalInput } from '$lib/trip/days';
 	import { poi as provider, type City } from '$lib/poi';
@@ -28,6 +28,8 @@
 	let saving = $state(false);
 	let error = $state<string | null>(null);
 	let confirmDelete = $state(false);
+	/** Which of the three the traveller is looking at. */
+	let tab = $state<'city' | 'in' | 'out'>('city');
 
 	let cityName = $state('');
 	let timezone = $state('');
@@ -126,10 +128,26 @@
 	</header>
 
 	{#if loading}
-		<p style="color: var(--tm-text-faint)">Loading…</p>
+		<div class="tm-field" style="opacity:0.4"><span class="tm-label">&nbsp;</span></div>
 	{:else if !row}
 		<p class="tm-hint tm-hint--error">Trip not found.</p>
 	{:else}
+		<!-- Three things, kept apart. The city and the hotel are what the trip
+		     is; the two journeys are each planned at their own time, for their
+		     own reasons, and neither belongs in a list with the other. -->
+		<div class="tm-seg mb-5" role="tablist" aria-label="What to edit">
+			<button role="tab" aria-selected={tab === 'city'} onclick={() => (tab = 'city')}>
+				City &amp; hotel
+			</button>
+			<button role="tab" aria-selected={tab === 'in'} onclick={() => (tab = 'in')}>
+				Getting in
+			</button>
+			<button role="tab" aria-selected={tab === 'out'} onclick={() => (tab = 'out')}>
+				Getting out
+			</button>
+		</div>
+
+		{#if tab === 'city'}
 		<div class="mb-5">
 			<Autocomplete
 				label="City"
@@ -205,9 +223,11 @@
 			{/each}
 		</div>
 
-		<div class="mb-5" style="border-top: 1px solid var(--tm-border); padding-top: 1rem">
-			<TerminalFields bind:terminals {city} />
-		</div>
+		{:else if tab === 'in'}
+			<JourneySide direction="arrival" bind:terminals {city} />
+		{:else}
+			<JourneySide direction="departure" bind:terminals {city} />
+		{/if}
 
 		{#if error}<p class="tm-hint tm-hint--error mb-3">{error}</p>{/if}
 

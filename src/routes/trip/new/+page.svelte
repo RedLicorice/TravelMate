@@ -2,7 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { base } from '$app/paths';
 	import { createTrip, noTerminals, type Terminals } from '$lib/trip/repo';
-	import TerminalFields from '$lib/TerminalFields.svelte';
+	import JourneySide from '$lib/JourneySide.svelte';
 	import CheckIn from '$lib/CheckIn.svelte';
 	import { localZone, zoneAt } from '$lib/trip/timezone';
 	import { fromLocalInput } from '$lib/trip/days';
@@ -30,14 +30,19 @@
 	let timezoneTouched = $state(false);
 	let terminals = $state<Terminals>(noTerminals());
 
-	const titles = ['Where are you going?', 'When?', 'Check and save'];
+	const titles = ['Where are you going?', 'Getting in', 'Getting out'];
 
 	const canAdvance = $derived(
 		step === 1
 			? city !== null && hotel !== null
 			: step === 2
-				? arrivalAt !== '' && departureAt !== '' && departureAt > arrivalAt
+				? arrivalAt !== ''
 				: true
+	);
+
+	/** The trip is only a trip once it has both ends. */
+	const canSave = $derived(
+		city !== null && hotel !== null && arrivalAt !== '' && departureAt !== '' && departureAt > arrivalAt
 	);
 
 	async function save() {
@@ -107,17 +112,29 @@
 		/>
 		<p class="tm-attrib mt-4">{poi.attribution}</p>
 	{:else if step === 2}
+		<!-- The way in, and when it gets there. A journey and the moment it
+		     lands are one thing, and asking for them in two places is how a
+		     trip ends up with a flight at one time and a day starting at
+		     another. -->
+		<div class="tm-field mb-5">
+			<label class="tm-label" for="arr">You arrive</label>
+			<input class="tm-input" id="arr" type="datetime-local" bind:value={arrivalAt} />
+			<span class="tm-hint">Local to {timezone}. The first day starts here.</span>
+		</div>
+
 		<div class="mb-5"><CheckIn bind:terminals /></div>
 
-		<div class="tm-field mb-5">
-			<label class="tm-label" for="arr">Arrival</label>
-			<input class="tm-input" id="arr" type="datetime-local" bind:value={arrivalAt} />
+		<div style="border-top: 1px solid var(--tm-border); padding-top: 1rem">
+			<JourneySide direction="arrival" bind:terminals {city} />
 		</div>
+	{:else}
 		<div class="tm-field mb-5">
-			<label class="tm-label" for="dep">Departure</label>
+			<label class="tm-label" for="dep">You leave</label>
 			<input class="tm-input" id="dep" type="datetime-local" bind:value={departureAt} />
+			<span class="tm-hint">The last day ends in time for it.</span>
 		</div>
-		<div class="tm-field">
+
+		<div class="tm-field mb-5">
 			<label class="tm-label" for="tz">Timezone</label>
 			<input
 				class="tm-input"
@@ -128,23 +145,12 @@
 			<span class="tm-hint">Times are local to the city you're visiting.</span>
 		</div>
 
-		<div class="mt-6" style="border-top: 1px solid var(--tm-border); padding-top: 1rem">
-			<TerminalFields bind:terminals {city} />
+		<div style="border-top: 1px solid var(--tm-border); padding-top: 1rem">
+			<JourneySide direction="departure" bind:terminals {city} />
 		</div>
-	{:else}
-		<dl class="flex flex-col gap-3">
-			{#each [['City', city?.name ?? ''], ['Hotel', hotel?.name ?? ''], ['Arrival', arrivalAt], ['Departure', departureAt], ['Timezone', timezone], ['Arriving at', terminals.arrivalName ?? 'no terminal'], ['Leaving from', terminals.departureName ?? 'no terminal']] as [label, value]}
-				<div>
-					<dt style="font: 400 var(--tm-text-sm)/1 var(--tm-font); color: var(--tm-text-faint)">
-						{label}
-					</dt>
-					<dd style="font: 500 var(--tm-text-base)/1.4 var(--tm-font)">{value}</dd>
-				</div>
-			{/each}
-		</dl>
+
 		{#if error}<p class="tm-hint tm-hint--error mt-4">{error}</p>{/if}
 	{/if}
-
 	<div class="fixed inset-x-0 bottom-0 p-6">
 		<div class="mx-auto flex max-w-lg gap-3">
 			<button class="tm-btn tm-btn--secondary" onclick={() => (step > 1 ? step-- : goto(`${base}/`))}>
@@ -155,7 +161,7 @@
 					Next
 				</button>
 			{:else}
-				<button class="tm-btn tm-btn--primary flex-1" disabled={saving} onclick={save}>
+				<button class="tm-btn tm-btn--primary flex-1" disabled={saving || !canSave} onclick={save}>
 					{saving ? 'Saving…' : 'Save trip'}
 				</button>
 			{/if}
