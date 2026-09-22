@@ -45,7 +45,11 @@
 	<InstallCard />
 
 	{#if loading}
-		<p style="color: var(--tm-text-faint)">Loading…</p>
+		<div class="flex flex-col gap-3">
+			<div class="tm-skel" style="height:84px"></div>
+			<div class="tm-skel" style="height:84px"></div>
+			<div class="tm-skel" style="height:84px"></div>
+		</div>
 	{:else if error}
 		<p class="tm-hint tm-hint--error">{error}</p>
 	{:else if trips.length === 0}

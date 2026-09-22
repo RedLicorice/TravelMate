@@ -85,7 +85,10 @@
 	</header>
 
 	{#if loading}
-		<p style="color: var(--tm-text-faint)">Loading…</p>
+		<div class="flex flex-col gap-3">
+			<div class="tm-skel" style="height:96px"></div>
+			<div class="tm-skel" style="height:96px"></div>
+		</div>
 	{:else if profile}
 		<div class="flex flex-col items-center gap-4">
 			<img

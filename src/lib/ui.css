@@ -560,3 +560,22 @@ button.tm-slot {
   cursor: grabbing;
   border-color: var(--tm-primary);
 }
+
+/* The shape of what is coming, drawn while it comes.
+   A word saying "Loading" tells the traveller nothing they cannot see, and
+   on an app that keeps its trips on the device it is usually a lie about
+   how long they are going to wait. */
+.tm-skel {
+  border-radius: var(--tm-radius, 12px);
+  background: var(--tm-surface-2);
+  border: 1px solid var(--tm-border);
+  opacity: 0.55;
+  animation: tm-skel-breathe 1.6s ease-in-out infinite;
+}
+@keyframes tm-skel-breathe {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 0.65; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tm-skel { animation: none; }
+}

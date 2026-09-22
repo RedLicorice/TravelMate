@@ -244,7 +244,11 @@
 	</header>
 
 	{#if loading}
-		<p style="color: var(--tm-text-faint)">Loading…</p>
+		<div class="flex flex-col gap-3">
+			<div class="tm-skel" style="height:72px"></div>
+			<div class="tm-skel" style="height:72px"></div>
+			<div class="tm-skel" style="height:72px"></div>
+		</div>
 	{:else if !poi || !trip}
 		<div class="tm-card" style="background: var(--tm-surface-2)">
 			<p class="tm-card__title">Not found</p>

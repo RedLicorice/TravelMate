@@ -89,7 +89,12 @@
 	</header>
 
 	{#if loading}
-		<p style="color: var(--tm-text-faint)">Loading…</p>
+		<div class="flex flex-col gap-3">
+			<div class="tm-skel" style="height:64px"></div>
+			<div class="tm-skel" style="height:64px"></div>
+			<div class="tm-skel" style="height:64px"></div>
+			<div class="tm-skel" style="height:64px"></div>
+		</div>
 	{:else if gone}
 		<!-- A revoked token and a token that never existed are the same answer.
 		     Saying which would confirm that a given link once worked. -->

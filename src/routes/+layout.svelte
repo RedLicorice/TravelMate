@@ -30,8 +30,10 @@
 	});
 
 	onMount(() => {
-		// autoUpdate: a traveller should never be asked to approve a refresh of
-		// a trip planner. Registered here because the static fallback page gets
+		// A new version is fetched without being announced and without being
+		// imposed: no prompt to approve a refresh, and no reload of a page
+		// someone is in the middle of using. It waits, and the next cold start
+		// is the new one. Registered here because the static fallback page gets
 		// no build-time injection.
 		registerSW({ immediate: true });
 		const stopWatching = watchSession();
