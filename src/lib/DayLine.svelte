@@ -89,8 +89,11 @@
 		`${String(Math.floor(m / 60) % 24).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 </script>
 
+<!-- Its scale, for whoever reads a moment off it: the drag does. -->
 <div
 	class="tm-rail"
+	data-rail-from={win ? midnight + span.from * 60_000 : undefined}
+	data-rail-to={win ? midnight + span.to * 60_000 : undefined}
 	class:tm-rail--near={kind === 'neighbour'}
 	class:tm-rail--stub={kind === 'stub'}
 	class:tm-rail--lit={lit}

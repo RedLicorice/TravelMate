@@ -877,22 +877,6 @@
 
 	const current = $derived(result?.days[dayIndex] ?? null);
 
-	/**
-	 * When the held card would land, while it is being held over a stop.
-	 *
-	 * The stop it is dropped onto is the moment it takes: that is what the
-	 * mark on the line says, before anything is written.
-	 */
-	const dropAt = $derived.by(() => {
-		const target = drag.state.target;
-		if (!target || target.kind !== 'slot' || !current) return null;
-		if (target.at) return new Date(target.at);
-		// Landing above a card is landing when that card does; landing at the
-		// end of the day is landing when the last of it does.
-		const stop = current.stops[target.index] ?? current.stops[target.index - 1];
-		return stop?.arrive ?? null;
-	});
-
 	/** poi id -> the day it sits on, for colouring the wishlist and the map. */
 	const dayOf = $derived(
 		new Map<string, number>(
@@ -931,25 +915,15 @@
 	 */
 	function momentOf(target: DropTarget, draggedId: string): string | null {
 		if (!target) return null;
-		const day = target.kind === 'day' ? target.index : target.day;
-		const drawn = result?.days[day]?.stops ?? [];
 		// The card being moved is not one of its own neighbours.
-		const cards = drawn.filter((st) => st.placementId !== draggedId);
-
-		// A gap knows its own moment: it is the hour the traveller aimed at.
-		if (target.kind === 'slot' && target.at) return target.at;
-
-		let index: number;
-		if (target.kind === 'day') {
-			// Back past the furniture the day finishes on: a visit after the
-			// hotel is a visit made in the traveller's sleep.
-			index = cards.length;
-			while (index > 0 && cards[index - 1].anchor) index--;
-		} else {
-			index = drawn.slice(0, target.index).filter((st) => st.placementId !== draggedId).length;
-		}
-
-		return free(spaceAt(cards, index, day), cards);
+		const cards = (result?.days[target.day]?.stops ?? []).filter((st) => st.placementId !== draggedId);
+		// Read off the rail: the moment is the rail's at the finger's height.
+		if (target.at) return free(target.at, cards);
+		// A day's tab has no rail. Dropped there, it goes after the last thing
+		// the day does and before the hotel it is slept in.
+		let index = cards.length;
+		while (index > 0 && cards[index - 1].anchor) index--;
+		return free(spaceAt(cards, index, target.day), cards);
 	}
 
 	/**
@@ -963,7 +937,9 @@
 	 */
 	function free(at: string, cards: PlannedStop[]): string {
 		const taken = new Set(cards.map((st) => st.arrive.getTime()));
-		let when = Date.parse(at);
+		// Whole minutes: the rail says 15:12, so the drop writes 15:12, not the
+		// 15:12:47 a finger's height happens to work out at.
+		let when = Math.round(Date.parse(at) / 60_000) * 60_000;
 		while (taken.has(when)) when += 60_000;
 		return new Date(when).toISOString();
 	}
@@ -1019,15 +995,14 @@
 	async function applyMove(draggedId: string, target: DropTarget) {
 		track('drag.drop', {
 			dragged: draggedId,
-			target: target?.kind ?? 'none',
-			day: target && 'day' in target ? target.day : null,
-			index: target && 'index' in target ? target.index : null
+			day: target?.day ?? null,
+			at: target?.at ?? null
 		});
 		if (draggedId.startsWith(SLOT_DRAG)) return moveSlot(draggedId, target);
 
 		if (!target) return;
-		const day = target.kind === 'day' ? target.index : target.day;
-		const when = momentOf(target, draggedId);
+		const day = target.day;
+		const when = dropMoment(draggedId, target);
 		if (when === null) return;
 
 		// Its old card time is where it used to be, and it is not there any
@@ -1040,8 +1015,7 @@
 		// The move and the day re-timed around it, as one edit: the card lands
 		// under the finger, walked on the travel times already in hand. Real
 		// road times come afterwards, and may shift the day by a few minutes.
-		const name = placements.find((pl) => pl.id === draggedId)?.name ?? result?.days[day]?.stops.find((st) => st.placementId === draggedId)?.name;
-		await edit(`Moved ${name ?? 'a card'}`, (w) => {
+		await edit(`Moved ${nameOf(draggedId) || 'a card'}`, (w) => {
 			moveTo(w, draggedId, when, day);
 			retime(w);
 		});
@@ -1068,16 +1042,50 @@
 		// Let go in an opened gap it happens at the moment it was let go; let go
 		// on a card it happens when that card does. A meal is a stop like any
 		// other and lands where it was put.
-		const stops = result?.days[day]?.stops ?? [];
-		const at =
-			target.kind === 'slot'
-				? (target.at ??
-					(stops[target.index] ?? stops[target.index - 1])?.arrive.toISOString() ??
-					null)
-				: null;
+		const at = dropMoment(draggedId, target);
 		if (!at) return;
 		await sayMeal(day, meal as MealName, { at });
 	}
+
+	/**
+	 * The moment a held card would be put at, if it were let go here.
+	 *
+	 * One function for both: the hour on the card under the finger and the
+	 * hour the drop writes are the same number, so what the traveller sees
+	 * while holding is what they get.
+	 */
+	function dropMoment(draggedId: string, target: DropTarget): string | null {
+		if (!target) return null;
+		if (!draggedId.startsWith(SLOT_DRAG)) return momentOf(target, draggedId);
+		// A meal container stays on its own day, and happens at the moment on
+		// the rail where it was let go.
+		const day = Number(draggedId.split(':')[1]);
+		if (target.day !== day || !target.at) return null;
+		return new Date(Math.round(Date.parse(target.at) / 60_000) * 60_000).toISOString();
+	}
+
+	/** Where the held card would go: the moment, and the day it is on. */
+	const held = $derived.by(() => {
+		const id = drag.state.id;
+		const target = drag.state.target;
+		if (!id || !target) return null;
+		const at = dropMoment(id, target);
+		return at ? { at: new Date(at), day: target.day } : null;
+	});
+
+	/** What a card is called, by the id it is dragged by: its place, its meal, or its own name. */
+	function nameOf(id: string): string {
+		if (id.startsWith(SLOT_DRAG)) return MEAL_LABEL[id.split(':')[2] as MealName];
+		for (const d of result?.days ?? []) {
+			const card = d.stops.find((st) => st.placementId === id);
+			if (card) return card.name;
+		}
+		return '';
+	}
+
+	const heldName = $derived.by(() => (drag.state.id ? nameOf(drag.state.id) : ''));
+
+
 
 	/**
 	 * Everything known about how long journeys take, best first.
@@ -1180,19 +1188,6 @@
 
 	const drag = createDrag((id, target) => applyMove(id, target));
 
-	/**
-	 * Where the held card would land, as a position among the cards on screen.
-	 *
-	 * Null when nothing is held or the finger is over another day. The card
-	 * above that position wears a line under it and the card below one over
-	 * it, so the answer to "where is this going" is drawn where it is going
-	 * rather than left to be guessed from an outline.
-	 */
-	const landing = $derived(
-		drag.state.id && drag.state.target?.kind === 'slot' && drag.state.target.day === dayIndex
-			? drag.state.target.index
-			: null
-	);
 
 
 	/**
@@ -2168,6 +2163,7 @@
 
 				<div
 					class="tm-rails"
+					data-ruler
 					class:tm-rails--on={expanded || !!drag.state.id}
 					class:tm-rails--drag={!!drag.state.id}
 				>
@@ -2189,6 +2185,7 @@
 										? 'here'
 										: 'next'}"
 								data-drop-day={within ? i : undefined}
+								data-ruler-here={offset === 0 ? '' : undefined}
 							>
 								<DayLine
 									day={within ? (result?.days[i] ?? null) : null}
@@ -2197,8 +2194,8 @@
 									dayColor={dayColor(within ? i : dayIndex)}
 									kind={offset === 0 ? 'here' : within ? 'neighbour' : 'stub'}
 									label={offset === 0 || !within ? null : dayLabel(days[i].date, row.timezone)}
-									lit={drag.state.target?.kind === 'day' && drag.state.target.index === i}
-									marker={offset === 0 ? dropAt : null}
+									lit={offset !== 0 && held?.day === i}
+									marker={held?.day === i ? held.at : null}
 								/>
 							</div>
 						{/each}
@@ -2227,12 +2224,6 @@
 						{@const after = emptyMeal
 							? current.stops.slice(i + 1).find((x) => x.poiId)
 							: undefined}
-						<!-- The way in and the way out: the tickets the traveller
-						     holds, in the order the tickets say. Nothing goes
-						     between an airport and its flight, so these take no
-						     drop. -->
-						{@const journey =
-							stop.anchorKind === 'terminal' || stop.anchorKind === 'service'}
 						{@const t = cardTimes(
 							stop.timeLabel,
 							hhmm(stop.arrive, row.timezone),
@@ -2262,7 +2253,6 @@
 							class:tm-stop--meal={stop.anchorKind === 'meal'}
 							class:tm-stop--blocked={stop.warnings.some((w) => w.kind === 'blocked')}
 							class:tm-stop--conflict={!!conflictOf(stop, dayIndex)}
-							data-drop-stop={stop.placementId ?? undefined}
 							{@attach stop.poiId
 								? longPress(() => openCard(stop.placementId ?? stop.poiId!))
 								: stop.anchorKind === 'meal'
@@ -2270,11 +2260,6 @@
 									: stop.placementId || allowanceOf(stop, dayIndex)
 										? longPress(() => holdAllowance(stop, dayIndex))
 										: () => {}}
-							class:tm-stop--above={landing === i}
-							class:tm-stop--below={landing === i + 1 && i === current.stops.length - 1}
-							{...journey
-								? {}
-								: { 'data-slot-index': i, 'data-slot-day': dayIndex }}
 							style={grabId && drag.state.id === grabId ? 'opacity:0.35' : ''}
 							role={emptyMeal ? 'button' : undefined}
 							tabindex={emptyMeal ? 0 : undefined}
@@ -2420,10 +2405,6 @@
 								start={stop.depart}
 								end={new Date(+next.arrive - (next.legIn?.minutes ?? 0) * 60_000)}
 								timezone={row.timezone}
-								day={dayIndex}
-								index={i + 1}
-								landing={landing === i + 1}
-								before={following?.poiId ?? null}
 								open={gapOpen(key)}
 								forced={!!drag.state.id}
 								fillable={canEdit}
@@ -2734,22 +2715,23 @@
 		{/if}
 
 		{#if drag.state.id}
+			<!-- Under the finger, not beside it, and see-through, so the day it
+			     is moving over reads through it. The hour is on the rail, at the
+			     finger's height: that is what the rails are for. -->
 			<div
 				aria-hidden="true"
-				style="position:fixed;left:{drag.state.x}px;top:{drag.state.y}px;transform:translate(-50%,-140%);
-				pointer-events:none;z-index:50;background:var(--tm-surface);border:1px solid var(--tm-primary);
+				style="position:fixed;left:{drag.state.x}px;top:{drag.state.y}px;transform:translate(-50%,-50%);
+				pointer-events:none;z-index:50;opacity:0.75;background:var(--tm-surface);border:1px solid var(--tm-primary);
 				border-radius:var(--tm-r-md);padding:6px 12px;font:600 var(--tm-text-sm)/1 var(--tm-font);
-				box-shadow:0 6px 20px rgba(0,0,0,0.18)"
+				box-shadow:0 6px 20px rgba(0,0,0,0.18);white-space:nowrap"
 			>
-				{drag.state.id.startsWith(SLOT_DRAG)
-					? MEAL_LABEL[drag.state.id.split(':')[2] as MealName]
-					: (pois.find((p) => p.id === drag.state.id)?.name ?? 'Moving')}
+				{heldName}
 			</div>
 			<p
 				class="tm-hint"
 				style="position:fixed;left:0;right:0;bottom:84px;text-align:center;z-index:50;pointer-events:none"
 			>
-				Drop on another stop to reorder, or on a day to move it
+				Let go where the line shows the hour you want, or on another day’s line
 			</p>
 		{/if}
 

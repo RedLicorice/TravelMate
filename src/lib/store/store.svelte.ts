@@ -493,35 +493,59 @@ export function pullProfile(userId: string): Promise<void> {
 }
 
 /**
+ * Redraw once for a burst of changes, not once per row.
+ *
+ * A move re-times the day, and the server's copy of it comes back over
+ * realtime as a row per card -- twenty in a second. Redrawing the trip for
+ * each of them froze a phone for seconds after every drop.
+ */
+let redrawing: ReturnType<typeof setTimeout> | null = null;
+function redrawSoon() {
+	redrawing ??= setTimeout(() => {
+		redrawing = null;
+		bump();
+		announce('synced');
+	}, 100);
+}
+
+/**
  * A row another traveller -- or the refiner, or this device's own edit coming
  * back -- changed on the server. Laid into the confirmed rows like any other
- * write: an older version than the one held is news already had.
+ * write, in memory and on the device together; the device is not read back.
+ *
+ * News already had is dropped: a version no newer than the one held is this
+ * device's own edit coming back, or older than it. The trip's row is the
+ * exception at an equal version -- saving the plan stamps it without counting
+ * as a change -- and the plan's rows carry no version, so they always land.
  */
 async function received(table: Table, event: string, fresh: Row | null, old: Row | null) {
 	if (pulling) {
 		held_.push([table, event, fresh, old]);
 		return;
 	}
-	await tx(['rows'], 'readwrite', async (t) => {
-		const s = t.objectStore('rows');
-		if (event === 'DELETE') {
-			// A deleted row arrives as its primary key only. Meals are known
-			// by their day and sitting here, so they are found by id.
-			const id =
-				table === 'trip_meals'
-					? [...confirmed.values()].find((h) => h.table === table && h.row.id === old?.id)?.id
-					: old && rowId(table, keyOf(table, old));
-			if (id) s.delete(id);
-			return;
-		}
-		if (!fresh) return;
-		const h = held(table, fresh);
-		const had = (await req(s.get(h.id) as IDBRequest<Held | undefined>))?.row.version as number | undefined;
-		if (had !== undefined && (fresh.version as number) < had) return;
-		s.put(h);
-	});
-	await load();
-	announce('synced');
+	if (event === 'DELETE') {
+		// A deleted row arrives as its primary key only. Meals are known by
+		// their day and sitting here, so they are found by id.
+		const id =
+			table === 'trip_meals'
+				? [...confirmed.values()].find((h) => h.table === table && h.row.id === old?.id)?.id
+				: old && rowId(table, keyOf(table, old));
+		if (!id || !confirmed.has(id)) return;
+		await tx(['rows'], 'readwrite', (t) => void t.objectStore('rows').delete(id));
+		confirmed.delete(id);
+		redrawSoon();
+		return;
+	}
+	if (!fresh) return;
+	const h = held(table, fresh);
+	const had = confirmed.get(h.id)?.row.version as number | undefined;
+	if (had !== undefined && fresh.version !== undefined) {
+		const version = fresh.version as number;
+		if (version < had || (version === had && table !== 'trips')) return;
+	}
+	await tx(['rows'], 'readwrite', (t) => void t.objectStore('rows').put(h));
+	confirmed.set(h.id, h);
+	redrawSoon();
 }
 
 const LIVE: Table[] = ['trips', 'pois', 'placements', 'trip_meals', 'plan_stops', 'trip_members', 'profiles'];

@@ -10,22 +10,17 @@
  * be a target by declaring one.
  */
 /**
- * Where a held card would land.
+ * Where a held card would land: a day, and when on it.
  *
- * A slot is a position in the day as it is drawn: `index` is how many cards
- * come before it, so 0 is the top of the day and stops.length is the end of
- * it. Every card is a target -- the hotel, a terminal, an empty meal
- * container, anything -- because a card is not a thing you drop onto, it is a
- * place in a line you drop above or below. The upper half of a card is the
- * position before it, the lower half the position after it.
+ * The rails are the ruler. Each draws its day to scale from top to bottom,
+ * so the moment is read straight off the rail at the finger's height: over
+ * the day on screen, the rail behind its cards; over a neighbour, that day's
+ * own rail. What the rail says there is what the card is put at.
  *
- * `at` is set when the card was let go in an opened gap, which is drawn to
- * scale: there, where the finger was is a time as well as a place.
+ * `at` is null only for a target with no rail -- a day's tab -- which means
+ * the end of that day.
  */
-export type DropTarget =
-	| { kind: 'slot'; day: number; index: number; at: string | null }
-	| { kind: 'day'; index: number }
-	| null;
+export type DropTarget = { day: number; at: string | null } | null;
 
 /**
  * The nearest thing the card is scrolling inside.
@@ -97,40 +92,20 @@ export function createDrag(onDrop: (draggedId: string, target: DropTarget) => vo
 
 	function targetAt(x: number, y: number): DropTarget {
 		const el = document.elementFromPoint(x, y);
-
-		// An opened gap: a place in the order and, because the gap is drawn to
-		// scale, a time as well.
-		const gap = el?.closest<HTMLElement>('[data-drop-gap]');
-		if (gap && gap.dataset.gapStart && gap.dataset.gapEnd) {
-			const box = gap.getBoundingClientRect();
-			const fraction = Math.min(1, Math.max(0, (y - box.top) / box.height));
-			const from = Date.parse(gap.dataset.gapStart);
-			const to = Date.parse(gap.dataset.gapEnd);
-			return {
-				kind: 'slot',
-				day: Number(gap.dataset.gapDay),
-				index: Number(gap.dataset.slotIndex),
-				at: new Date(from + fraction * (to - from)).toISOString()
-			};
-		}
-
-		// A card: which half of it decides whether the held one goes above or
-		// below. Every card answers, whatever kind it is.
-		const card = el?.closest<HTMLElement>('[data-slot-index]');
-		if (card?.dataset.slotIndex !== undefined) {
-			const box = card.getBoundingClientRect();
-			const below = y > box.top + box.height / 2;
-			return {
-				kind: 'slot',
-				day: Number(card.dataset.slotDay),
-				index: Number(card.dataset.slotIndex) + (below ? 1 : 0),
-				at: null
-			};
-		}
-
-		const day = el?.closest<HTMLElement>('[data-drop-day]');
-		if (day?.dataset.dropDay !== undefined) return { kind: 'day', index: Number(day.dataset.dropDay) };
-		return null;
+		// A neighbour's rail or a day's tab, or else anywhere over the day on
+		// screen -- its cards sit on its rail, so under the finger is that rail.
+		const zone =
+			el?.closest<HTMLElement>('[data-drop-day]') ??
+			el?.closest<HTMLElement>('[data-ruler]')?.querySelector<HTMLElement>('[data-ruler-here]');
+		if (!zone?.dataset.dropDay) return null;
+		const day = Number(zone.dataset.dropDay);
+		const scale = zone.querySelector<HTMLElement>('[data-rail-from]');
+		if (!scale) return { day, at: null };
+		const box = scale.getBoundingClientRect();
+		const fraction = Math.min(1, Math.max(0, (y - box.top) / box.height));
+		const from = Number(scale.dataset.railFrom);
+		const to = Number(scale.dataset.railTo);
+		return { day, at: new Date(from + fraction * (to - from)).toISOString() };
 	}
 
 	function move(event: PointerEvent) {
