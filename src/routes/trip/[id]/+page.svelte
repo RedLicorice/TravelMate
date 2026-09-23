@@ -309,6 +309,8 @@
 			else if (change.skipped) skipMeal(w, tripId, dayIdx, meal, at);
 			else if (change.poiId) chooseMeal(w, tripId, dayIdx, meal, change.poiId, at);
 			else addMeal(w, tripId, dayIdx, meal, at);
+			const card = mealCard(tripId, dayIdx, meal);
+			if (card) pushDown(w, card.id);
 			retime(w, [dayIdx]);
 		});
 	}
@@ -1011,7 +1013,7 @@
 		const from = placements.find((pl) => pl.id === draggedId)?.day_index ?? day;
 		await edit(`Moved ${nameOf(draggedId) || 'a card'}`, (w) => {
 			moveTo(w, draggedId, when, day);
-			pushDown(w, draggedId, when, day);
+			pushDown(w, draggedId);
 			retime(w, [...new Set([from, day])]);
 		});
 		// It has a card of its own again, so it is held to that from here.
@@ -1019,25 +1021,31 @@
 	}
 
 	/**
-	 * Make room below a card that has just been put somewhere.
+	 * Make room below a card that has just been put somewhere -- dropped,
+	 * added from a sheet, a meal said or moved: every card, however it got
+	 * there, the same way.
 	 *
-	 * A drop sets when the card starts; it ends its own length later. What is
+	 * The card starts when it was put and ends its own length later. What is
 	 * below it on the day and now starts before it ends is pushed down to
 	 * start when it ends, and so on down the day, each by only as much as it
-	 * has to: the traveller put this card here, and the day gives way.
+	 * has to: the traveller put this card here, and the day gives way. A pin
+	 * does not: it and everything after it stay, and the card that runs into
+	 * it is the one the walk warns.
 	 */
-	function pushDown(w: Writer, movedId: string, when: string, day: number) {
-		// Everything read before the first move: each move changes what the
-		// trip reads as.
+	function pushDown(w: Writer, id: string) {
+		// Read as this edit has left it -- the card is new, or has just moved --
+		// and all of it before the first push: each push changes what the trip
+		// reads as.
 		const length = (pl: PlacementRow) => (visitOf(pl, null)?.durationMin ?? 0) * 60_000;
-		const moved = placements.find((pl) => pl.id === movedId);
-		if (!moved) return;
-		let end = Date.parse(when) + length(moved);
+		const card = placements.find((pl) => pl.id === id);
+		if (!card) return;
+		let end = Date.parse(card.at) + length(card);
 		const below = placements
-			.filter((pl) => pl.day_index === day && pl.id !== movedId && Date.parse(pl.at) >= Date.parse(when))
+			.filter((pl) => pl.day_index === card.day_index && pl.id !== id && pl.at >= card.at)
 			.sort((a, b) => a.at.localeCompare(b.at))
-			.map((pl) => ({ id: pl.id, at: Date.parse(pl.at), length: length(pl) }));
+			.map((pl) => ({ id: pl.id, at: Date.parse(pl.at), length: length(pl), pinned: pl.pinned }));
 		for (const pl of below) {
+			if (pl.pinned) break;
 			const start = Math.max(pl.at, end);
 			if (start !== pl.at) moveTo(w, pl.id, new Date(start).toISOString());
 			end = start + pl.length;
@@ -1549,8 +1557,8 @@
 		if (!target || !row) return;
 		slot = null;
 		dayIndex = target.day;
-		// Nothing else on the day moves: the new card takes a free minute and
-		// the day reads in the order the clocks say.
+		// The new card goes where it was put, and what is below it that it now
+		// overlaps is pushed down to make room.
 		// A day with a night away skipped: the hotel added back is that night
 		// coming back -- the one the tap is nearer, morning or evening --
 		// rather than an afternoon return beside it.
@@ -1569,10 +1577,11 @@
 			}
 		}
 		await edit(kind === 'chore' ? 'Added time to yourself' : 'Added a return to the hotel', (w) => {
-			placeAnchor(w, tripId, kind, target.day, momentFor(target), {
+			const card = placeAnchor(w, tripId, kind, target.day, momentFor(target), {
 				name: kind === 'chore' ? 'Time to yourself' : null,
 				minutes: kind === 'chore' ? 60 : 0
 			});
+			pushDown(w, card.id);
 			retime(w, [target.day]);
 		});
 	}
@@ -1626,15 +1635,15 @@
 
 	/**
 	 * When it happens is the whole of where it goes: the minute it was put at,
-	 * or the space above the card it was put before. Nothing else on the day
-	 * is touched, and the day is re-timed around it in the same edit.
+	 * or the space above the card it was put before. What it now overlaps is
+	 * pushed down, and the day is re-timed around it in the same edit.
 	 */
 	function placeInto(
 		w: Writer,
 		poiId: string,
 		target: { day: number; before: string | null; at?: string; hold?: boolean }
 	) {
-		place(w, tripId, poiId, target.day, momentFor(target));
+		pushDown(w, place(w, tripId, poiId, target.day, momentFor(target)).id);
 		dayIndex = target.day;
 		retime(w, [target.day]);
 	}
