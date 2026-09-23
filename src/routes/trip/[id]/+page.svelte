@@ -87,6 +87,7 @@
 	import Autocomplete from '$lib/Autocomplete.svelte';
 	import Stars from '$lib/Stars.svelte';
 	import LegDetail from '$lib/LegDetail.svelte';
+	import LegSheet from '$lib/LegSheet.svelte';
 	import { dayTruncated, dayUrl, routePoints } from '$lib/maps';
 	import { createDrag, measure, placeOf, type DropTarget, type Ruler } from '$lib/dnd.svelte';
 	import { cardTimes } from '$lib/cardtime';
@@ -244,6 +245,16 @@
 	/** The place whose card is open. Read from the device, so an edit shows on it at once. */
 	let cardedId = $state<string | null>(null);
 	const carded = $derived(cardedId ? (poiById.get(cardedId) ?? null) : null);
+	/** The journey whose sheet is open: tapping a leg shows it here rather than leaving for Google Maps. */
+	let legShown = $state<{
+		from: LatLng;
+		to: LatLng;
+		fromName: string;
+		toName: string;
+		mode: Mode;
+		departAt: string;
+		planned: { minutes: number; km: number; source?: 'estimate' | 'routed' };
+	} | null>(null);
 
 	// A sheet opened for one slot should not still be filtered by what was
 	// typed into the last one.
@@ -2401,14 +2412,21 @@
 						     place: the journey chain, where nothing is travelled. -->
 						{#if stop.legIn && stop.legIn.minutes > 0 && i > 0}
 							{@const previous = current.stops[i - 1]}
+							{@const legIn = stop.legIn}
 							<LegDetail
-								from={previous.exitAt ?? previous.at}
-								to={stop.at}
-								mode={stop.legIn.mode}
-								departAt={previous.depart.toISOString()}
-								timezone={row.timezone}
-								estimate={{ minutes: stop.legIn.minutes, km: stop.legIn.km }}
-								source={stop.legIn.source}
+								mode={legIn.mode}
+								estimate={{ minutes: legIn.minutes, km: legIn.km }}
+								source={legIn.source}
+								onopen={() =>
+									(legShown = {
+										from: previous.exitAt ?? previous.at,
+										to: stop.at,
+										fromName: previous.name,
+										toName: stop.name,
+										mode: legIn.mode,
+										departAt: previous.depart.toISOString(),
+										planned: { minutes: legIn.minutes, km: legIn.km, source: legIn.source }
+									})}
 							/>
 						{/if}
 						<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
@@ -2710,6 +2728,10 @@
 				onrelease={(id) => togglePin(id)}
 				onclose={() => ((cardedId = null), (cardedVisit = null))}
 			/>
+		{/if}
+
+		{#if legShown && row}
+			<LegSheet {...legShown} timezone={row.timezone} onclose={() => (legShown = null)} />
 		{/if}
 
 		{#if conflict}

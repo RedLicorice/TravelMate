@@ -210,12 +210,13 @@ export async function legRoute(
 		const { data, error } = await supabase.functions.invoke('route', {
 			body: { from, to, mode, departAt, prefer }
 		});
-		const route = error ? null : ((data?.route ?? null) as LegRoute | null);
+		if (error) return null;
+		const route = (data?.route ?? null) as LegRoute | null;
 		legCache.set(key, route);
 		return route;
 	} catch {
-		// Offline, or the function is down. The leg still shows its estimate.
-		legCache.set(key, null);
+		// Offline, or the function is down. Not remembered: asking again, once
+		// there is a signal, is what Retry is for.
 		return null;
 	}
 }
