@@ -116,10 +116,23 @@
 		draft[keyOf(i, field)] = (e.currentTarget as HTMLInputElement).value;
 	};
 
+	/**
+	 * Legs whose arrival, as typed, is before their departure. Such a time is
+	 * not saved: the box keeps what was typed and says why, and the traveller
+	 * fixes the date -- the app does not guess which day was meant.
+	 */
+	let backwards = $state<Record<string, boolean>>({});
+
 	/** Done with it: tidy the text and let the trip have it. */
 	const commit = (i: number, field: 'service' | 'bookingRef' | 'departLocal' | 'arriveLocal') =>
 		(e: Event) => {
 			const raw = (e.currentTarget as HTMLInputElement).value.trim();
+			if (field === 'departLocal' || field === 'arriveLocal') {
+				const next = { ...legs[i], [field]: raw || null };
+				const wrong = !!(next.departLocal && next.arriveLocal && next.arriveLocal < next.departLocal);
+				backwards[keyOf(i, 'times')] = wrong;
+				if (wrong) return;
+			}
 			delete draft[keyOf(i, field)];
 			patch(i, { [field]: raw || null });
 		};
@@ -236,6 +249,9 @@
 					oninput={typing(i, 'arriveLocal')}
 					onchange={commit(i, 'arriveLocal')}
 				/>
+				{#if backwards[keyOf(i, 'times')]}
+					<p class="tm-hint tm-hint--error mt-1">Arrives before it departs</p>
+				{/if}
 			</div>
 		</div>
 
