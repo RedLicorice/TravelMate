@@ -105,6 +105,28 @@ function lay(): Map<string, Held> {
 	return view;
 }
 
+/**
+ * One row as the screens see it: the confirmed row with the queued edits to
+ * it laid over, the same as lay() does for all of them. For the writer, which
+ * reads a row before each write it makes -- reading the whole laid view
+ * there re-laid every row on the device after every write, so an edit that
+ * re-times twenty cards laid the trip twenty times over.
+ */
+function current(table: Table, key: Key): Row | null {
+	const id = rowId(table, key);
+	let now = confirmed.get(id)?.row ?? null;
+	for (const m of open ? [...queue, open] : queue) {
+		if (m.state !== 'queued') continue;
+		for (const op of m.ops) {
+			if (op.op === 'plan' || rowId(op.table, op.key) !== id) continue;
+			if (op.op === 'delete') now = null;
+			else if (op.op === 'insert') now = op.values;
+			else if (now) now = { ...now, ...op.values };
+		}
+	}
+	return now;
+}
+
 type Index = { rows: Map<string, Held>; byTrip: Map<string, Map<Table, Row[]>>; trips: Row[] };
 
 const view = $derived.by<Index>(() => {
@@ -243,7 +265,7 @@ export async function mutate(
 			push({ op: 'insert', table, key: keyOf(table, values), lock: lockOf(table, values), base: null, values });
 		},
 		update(table, key, values) {
-			const was = view.rows.get(rowId(table, key))?.row;
+			const was = current(table, key);
 			if (!was) throw new Error(`“${name}”: there is no such ${table} row on this device.`);
 			const changed = Object.fromEntries(Object.entries(values).filter(([k, v]) => !same(was[k], v)));
 			if (!Object.keys(changed).length) return;
@@ -258,7 +280,7 @@ export async function mutate(
 			push({ op: 'update', table, key, lock: lockOf(table, was), base, values: changed, before: was });
 		},
 		remove(table, key) {
-			const was = view.rows.get(rowId(table, key))?.row;
+			const was = current(table, key);
 			if (!was) return;
 			// Made and unmade in one edit: nothing to send.
 			const created = made(table, key);

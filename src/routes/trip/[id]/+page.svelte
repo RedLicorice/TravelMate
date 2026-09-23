@@ -994,17 +994,20 @@
 	 * has to: the traveller put this card here, and the day gives way.
 	 */
 	function pushDown(w: Writer, movedId: string, when: string, day: number) {
+		// Everything read before the first move: each move changes what the
+		// trip reads as.
 		const length = (pl: PlacementRow) => (visitOf(pl, null)?.durationMin ?? 0) * 60_000;
 		const moved = placements.find((pl) => pl.id === movedId);
 		if (!moved) return;
 		let end = Date.parse(when) + length(moved);
 		const below = placements
 			.filter((pl) => pl.day_index === day && pl.id !== movedId && Date.parse(pl.at) >= Date.parse(when))
-			.sort((a, b) => a.at.localeCompare(b.at));
+			.sort((a, b) => a.at.localeCompare(b.at))
+			.map((pl) => ({ id: pl.id, at: Date.parse(pl.at), length: length(pl) }));
 		for (const pl of below) {
-			const start = Math.max(Date.parse(pl.at), end);
-			if (start !== Date.parse(pl.at)) moveTo(w, pl.id, new Date(start).toISOString());
-			end = start + length(pl);
+			const start = Math.max(pl.at, end);
+			if (start !== pl.at) moveTo(w, pl.id, new Date(start).toISOString());
+			end = start + pl.length;
 		}
 	}
 
@@ -1165,10 +1168,13 @@
 		// the planner had an opinion is how a restaurant dragged into a free
 		// hour went back to the wishlist with nothing said. Re-timing writes
 		// times; it does not decide what is on the trip.
+		// Read once, before any of the moves below: each one changes what the
+		// trip reads as, and reading it again after each would lay it again.
+		const before = new Map(placements.map((pl) => [pl.id, pl]));
 		for (const d of next.days) {
 			for (const st of d.stops) {
 				if (!st.placementId) continue;
-				const was = placements.find((pl) => pl.id === st.placementId);
+				const was = before.get(st.placementId);
 				if (was && Date.parse(was.at) !== st.arrive.getTime()) moveTo(w, was.id, st.arrive.toISOString());
 			}
 		}
@@ -2236,7 +2242,7 @@
 						<p class="tm-card__meta">Add some places and the days will arrange themselves.</p>
 					</div>
 				{:else if current}
-					{#each current.stops as stop, i (stop.name + i)}
+					{#each current.stops as stop, i (stop.id ?? `${stop.name}:${i}`)}
 						<!-- A meal container drags as itself: it owns no row in the
 						     wishlist, so its name while held is its day and its meal. -->
 						<!-- A card is dragged as the visit it is, not as the place it
