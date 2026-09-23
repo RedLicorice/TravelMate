@@ -1215,7 +1215,9 @@ function walkClock(
  * where and when, and that is not the meal pass's to reconsider.
  */
 function split(list: PlanPoi[]): { route: PlanPoi[]; diners: PlanPoi[]; containers: Map<string, PlanPoi> } {
-	const diners = list.filter((p) => p.poiId !== null && isMeal(p.category) && !p.pinned);
+	// A meal card holding a restaurant is already a sitting, not a restaurant
+	// waiting for one: it is a container, with its place chosen.
+	const diners = list.filter((p) => p.kind !== 'meal' && p.poiId !== null && isMeal(p.category) && !p.pinned);
 	const containers = new Map<string, PlanPoi>();
 	for (const p of list) if (p.kind === 'meal' && p.meal && !p.pinned && !isSkipped(p)) containers.set(p.meal, p);
 	return {

@@ -1612,11 +1612,23 @@
 				// just been given a day for the first time, so it needs a row of
 				// its own; the rest already have one and only move. Anchors
 				// included: they are placements too.
+				//
+				// A restaurant off the wishlist that Replan seated at a mealtime
+				// is that sitting: it becomes the day's meal card for it, holding
+				// the place, and its own stop card goes -- one card for lunch,
+				// not two. Where the day already has the card, the card takes the
+				// place; where it has none, one is made.
 				for (const d of ordered.days) {
 					for (const st of d.stops) {
 						if (!st.placementId) continue;
 						const at = st.arrive.toISOString();
-						if (st.placementId.startsWith(NEW)) {
+						const meal = st.anchorKind === 'meal' && st.poiId ? mealFor(st) : null;
+						const card = meal ? mealCard(tripId, d.index, meal) : null;
+						if (meal && card?.id !== st.placementId) {
+							if (card) w.update('placements', { id: card.id }, { poi_id: st.poiId, skipped: false, at });
+							else placeAnchor(w, tripId, 'meal', d.index, at, { meal, poiId: st.poiId });
+							if (!st.placementId.startsWith(NEW)) dropPlacement(w, st.placementId);
+						} else if (st.placementId.startsWith(NEW)) {
 							if (st.poiId) place(w, tripId, st.poiId, d.index, at);
 						} else {
 							moveTo(w, st.placementId, at, d.index);
