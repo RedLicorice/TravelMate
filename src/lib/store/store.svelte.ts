@@ -364,18 +364,67 @@ export async function mutate(
 
 // --- The device database ---------------------------------------------------
 
-/** Read everything the device holds into memory. */
+/**
+ * The trips whose rows are in memory. Only what a screen needs is read from
+ * the device: the list of trips and the profiles always, and a trip's own
+ * rows when it is opened -- with the next one or two read a moment later, so
+ * going to them is instant too.
+ */
+const loaded = new Set<string>();
+
+/** Rows of one trip, read inside a transaction. */
+const tripRows = (t: IDBTransaction, trip: string) =>
+	req(t.objectStore('rows').index('trip').getAll(IDBKeyRange.only(trip)) as IDBRequest<Held[]>);
+const tableRows = (t: IDBTransaction, table: Table) =>
+	req(t.objectStore('rows').index('table').getAll(IDBKeyRange.only(table)) as IDBRequest<Held[]>);
+
+/** Read into memory what is loaded -- the trip list, the profiles, the open trips -- and the queue. */
 async function load(): Promise<void> {
-	const [rows, kept] = await tx(['rows', 'queue'], 'readonly', (t) =>
+	const [lists, trips, kept] = await tx(['rows', 'queue'], 'readonly', (t) =>
 		Promise.all([
-			req(t.objectStore('rows').getAll() as IDBRequest<Held[]>),
+			Promise.all([tableRows(t, 'trips'), tableRows(t, 'profiles')]),
+			Promise.all([...loaded].map((trip) => tripRows(t, trip))),
 			req(t.objectStore('queue').getAll() as IDBRequest<Mutation[]>)
 		])
 	);
-	confirmed = new Map(rows.map((h) => [h.id, h]));
+	confirmed = new Map([...lists.flat(), ...trips.flat()].map((h) => [h.id, h]));
 	// An edit still on its way into the database is not in `kept` yet.
 	queue = [...kept, ...queue.filter((m) => m.seq === undefined)];
 	bump();
+}
+
+/**
+ * A trip's own rows, read before its first screen draws. Called by every
+ * screen under /trip/[id]; after the first time it is instant.
+ */
+export async function openTrip(id: string): Promise<void> {
+	if (!loaded.has(id)) {
+		const rows = await tx(['rows'], 'readonly', (t) => tripRows(t, id));
+		loaded.add(id);
+		for (const h of rows) confirmed.set(h.id, h);
+		bump();
+	}
+	prefetch(id);
+}
+
+/**
+ * The next trip or two by date, read when the device is idle: the ones a
+ * traveller is likeliest to open next.
+ */
+function prefetch(after: string | null) {
+	const next = [...(view.trips as { id: string; arrival_at: string }[])]
+		.sort((a, b) => a.arrival_at.localeCompare(b.arrival_at))
+		.filter((t) => t.id !== after && !loaded.has(t.id))
+		.slice(0, 2);
+	if (!next.length) return;
+	const idle = (globalThis.requestIdleCallback ?? ((f: () => void) => setTimeout(f, 200))) as (f: () => void) => void;
+	idle(() => {
+		void tx(['rows'], 'readonly', (t) => Promise.all(next.map((trip) => tripRows(t, trip.id)))).then((sets) => {
+			next.forEach((trip) => loaded.add(trip.id));
+			for (const h of sets.flat()) if (!confirmed.has(h.id)) confirmed.set(h.id, h);
+			bump();
+		});
+	});
 }
 
 /** Called once, before the first screen draws. */
@@ -386,6 +435,7 @@ export async function openStore(): Promise<void> {
 	} finally {
 		store.ready = true;
 	}
+	prefetch(null);
 	channel?.addEventListener('message', (e: MessageEvent<{ from: string; kind: string; name?: string }>) => {
 		if (e.data.from === tab) return;
 		void load();
@@ -404,6 +454,7 @@ export async function forgetAll(): Promise<void> {
 	// before the clearing and not after it, which would put the leaving
 	// account's rows back on the device.
 	await navigator.locks.request(SYNC_LOCK, forget);
+	loaded.clear();
 	confirmed = new Map();
 	queue = [];
 	bump();
@@ -544,6 +595,8 @@ export function pullTrips(): Promise<void> {
 
 /** Everything about one trip, as the server holds it now. */
 export function pullTrip(id: string): Promise<void> {
+	// What is pulled is read back into memory with the rest of the trip.
+	loaded.add(id);
 	return pull(async (signal) => {
 		if (!store.asked.includes(id)) store.asked.push(id);
 		const [trip, pois, placements, meals, plan, members] = await Promise.all([

@@ -10,18 +10,22 @@
  *   auth   the signed-in session, where the worker can read it too
  */
 const NAME = 'travelmate';
-const VERSION = 1;
+/** 2: rows are indexed by table too, so the trip list is read without every trip. */
+const VERSION = 2;
 
 let opened: Promise<IDBDatabase> | null = null;
 
 export function db(): Promise<IDBDatabase> {
 	opened ??= new Promise((resolve, reject) => {
 		const req = indexedDB.open(NAME, VERSION);
-		req.onupgradeneeded = () => {
+		req.onupgradeneeded = (e) => {
 			const d = req.result;
-			d.createObjectStore('rows', { keyPath: 'id' }).createIndex('trip', 'trip');
-			d.createObjectStore('queue', { keyPath: 'seq', autoIncrement: true });
-			d.createObjectStore('auth');
+			if (e.oldVersion < 1) {
+				d.createObjectStore('rows', { keyPath: 'id' }).createIndex('trip', 'trip');
+				d.createObjectStore('queue', { keyPath: 'seq', autoIncrement: true });
+				d.createObjectStore('auth');
+			}
+			if (e.oldVersion < 2) req.transaction!.objectStore('rows').createIndex('table', 'table');
 		};
 		req.onsuccess = () => {
 			// Another tab opening a newer version of the app needs this one to
