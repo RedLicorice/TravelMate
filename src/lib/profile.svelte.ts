@@ -98,11 +98,27 @@ export function saveMyProfile(
  * share a trip with. This is the whole reason preferences moved out of
  * auth user_metadata, which only its owner can read.
  */
+let lastPeople: { members: unknown[]; rows: (ProfileRow | null)[]; people: Profile[] } | null = null;
+
 export function tripProfiles(tripId: string): Profile[] {
-	return ofTrip<{ user_id: string; role: TripRole }>('trip_members', tripId).flatMap((m) => {
-		const p = row<ProfileRow>('profiles', { user_id: m.user_id });
+	const members = ofTrip<{ user_id: string; role: TripRole }>('trip_members', tripId);
+	const rows = members.map((m) => row<ProfileRow>('profiles', { user_id: m.user_id }));
+	// The same members with the same profiles are the same people: handed out
+	// again as the same list, so nothing worked out from them moves.
+	if (
+		lastPeople &&
+		lastPeople.members === members &&
+		lastPeople.rows.length === rows.length &&
+		lastPeople.rows.every((r, i) => r === rows[i])
+	) {
+		return lastPeople.people;
+	}
+	const people = members.flatMap((m, i) => {
+		const p = rows[i];
 		return p ? [{ ...toProfile(p), role: m.role }] : [];
 	});
+	lastPeople = { members, rows, people };
+	return people;
 }
 
 /** Hand someone the pen, or take it back. Only the owner may. */

@@ -1,4 +1,4 @@
-import { ofTrip, type Writer } from '$lib/store/store.svelte';
+import { ofTrip, perList, type Writer } from '$lib/store/store.svelte';
 import { PLANNER_VERSION } from '$lib/plan/planner';
 import type { PlanResult, PlannedDay, PlannedStop, Warning } from '$lib/plan/planner';
 import type { Day } from './days';
@@ -192,10 +192,11 @@ export function savePlan(
 }
 
 /** The plan as stored, by day and in the order it was written. */
+const inWrittenOrder = perList((list: PlanStopRow[]) =>
+	[...list].sort((a, b) => a.day_index - b.day_index || a.order_index - b.order_index)
+);
 export const loadPlan = (tripId: string): PlanStopRow[] =>
-	ofTrip<PlanStopRow>('plan_stops', tripId).sort(
-		(a, b) => a.day_index - b.day_index || a.order_index - b.order_index
-	);
+	inWrittenOrder(ofTrip<PlanStopRow>('plan_stops', tripId));
 
 /**
  * A day's rows in the order they happen.

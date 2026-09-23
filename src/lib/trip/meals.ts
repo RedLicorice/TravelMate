@@ -1,4 +1,4 @@
-import { ofTrip, row, type Writer } from '$lib/store/store.svelte';
+import { ofTrip, perList, row, type Writer } from '$lib/store/store.svelte';
 import type { MealName } from '$lib/plan/meals';
 
 /**
@@ -27,8 +27,8 @@ export const mealKey = (dayIndex: number, meal: MealName) => `${dayIndex}:${meal
 export const toMealPlan = (rows: MealSlotRow[]): MealPlan =>
 	new Map(rows.map((r) => [mealKey(r.day_index, r.meal), r]));
 
-export const loadMeals = (tripId: string): MealSlotRow[] =>
-	ofTrip<MealSlotRow>('trip_meals', tripId).sort((a, b) => a.day_index - b.day_index);
+const byDay = perList((list: MealSlotRow[]) => [...list].sort((a, b) => a.day_index - b.day_index));
+export const loadMeals = (tripId: string): MealSlotRow[] => byDay(ofTrip<MealSlotRow>('trip_meals', tripId));
 
 /**
  * Record a say about one meal. One row per day and meal, because there is

@@ -129,12 +129,22 @@ function current(table: Table, key: Key): Row | null {
 
 type Index = { rows: Map<string, Held>; byTrip: Map<string, Map<Table, Row[]>>; trips: Row[] };
 
+/** Same rows, same order: nothing in the list changed. */
+const sameRows = (a: Row[], b: Row[]) => a.length === b.length && a.every((r, i) => r === b[i]);
+
+/**
+ * The laid view, and the last one it was, so that what did not change is
+ * handed out again as the very same list. A screen reading a list that is the
+ * same list does no work: one card changing no longer redraws the whole trip.
+ */
+let last: Index | null = null;
+
 const view = $derived.by<Index>(() => {
 	void tick;
 	void queue;
 	const rows = lay();
 	const byTrip = new Map<string, Map<Table, Row[]>>();
-	const trips: Row[] = [];
+	let trips: Row[] = [];
 	for (const h of rows.values()) {
 		if (h.table === 'trips') trips.push(h.row);
 		if (!h.trip || h.table === 'trips') continue;
@@ -144,7 +154,18 @@ const view = $derived.by<Index>(() => {
 		if (!list) tables.set(h.table, (list = []));
 		list.push(h.row);
 	}
-	return { rows, byTrip, trips };
+	if (last) {
+		for (const [trip, tables] of byTrip) {
+			const was = last.byTrip.get(trip);
+			if (!was) continue;
+			for (const [table, list] of tables) {
+				const before = was.get(table);
+				if (before && sameRows(before, list)) tables.set(table, before);
+			}
+		}
+		if (sameRows(last.trips, trips)) trips = last.trips;
+	}
+	return (last = { rows, byTrip, trips });
 });
 
 // --- Reads -----------------------------------------------------------------
@@ -159,8 +180,23 @@ export const store = $state({ ready: false, listed: false, asked: [] as string[]
 export const allTrips = <T = Row>(): T[] => view.trips as T[];
 export const row = <T = Row>(table: Table, key: Key): T | null =>
 	(view.rows.get(rowId(table, key))?.row as T) ?? null;
+/** One empty list for everything that has none, so "still nothing" is not a change. */
+const NONE: never[] = [];
+
 export const ofTrip = <T = Row>(table: Table, trip: string): T[] =>
-	(view.byTrip.get(trip)?.get(table) as T[]) ?? [];
+	(view.byTrip.get(trip)?.get(table) as T[]) ?? NONE;
+
+/**
+ * Work done on a list, done once per list: the same list in gives the same
+ * answer out, the very same object, so nothing downstream of it moves.
+ */
+export function perList<T, R>(work: (list: T[]) => R): (list: T[]) => R {
+	const done = new WeakMap<T[], R>();
+	return (list) => {
+		if (!done.has(list)) done.set(list, work(list));
+		return done.get(list)!;
+	};
+}
 export const rows = <T = Row>(table: Table): T[] =>
 	[...view.rows.values()].filter((h) => h.table === table).map((h) => h.row as T);
 

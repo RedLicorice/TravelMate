@@ -1,4 +1,4 @@
-import { allTrips, mutate, row as held, type Writer } from '$lib/store/store.svelte';
+import { allTrips, mutate, perList, row as held, type Writer } from '$lib/store/store.svelte';
 import { session } from '$lib/session.svelte';
 import type { BBox } from '$lib/poi';
 import { reinterpret } from './days';
@@ -198,8 +198,10 @@ export function toTrip(row: TripRow): Trip {
 }
 
 /** Every trip on this device, soonest first. */
-export const listTrips = (): TripRow[] =>
-	allTrips<TripRow>().sort((a, b) => a.arrival_at.localeCompare(b.arrival_at));
+const soonestFirst = perList((list: TripRow[]) =>
+	[...list].sort((a, b) => a.arrival_at.localeCompare(b.arrival_at))
+);
+export const listTrips = (): TripRow[] => soonestFirst(allTrips<TripRow>());
 
 export const getTrip = (id: string): TripRow | null => held<TripRow>('trips', { id });
 

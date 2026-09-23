@@ -1,4 +1,4 @@
-import { ofTrip, row, type Writer } from '$lib/store/store.svelte';
+import { ofTrip, perList, row, type Writer } from '$lib/store/store.svelte';
 import type { Poi } from '$lib/poi';
 import type { PlanPoi } from '$lib/plan/planner';
 import type { PlacementRow } from '$lib/trip/placements';
@@ -74,8 +74,10 @@ export const toPlanPoi = (
 });
 
 /** The wishlist, in the order places were added. */
-export const listPois = (tripId: string): PoiRow[] =>
-	ofTrip<PoiRow>('pois', tripId).sort((a, b) => a.created_at.localeCompare(b.created_at));
+const byAdded = perList((list: PoiRow[]) =>
+	[...list].sort((a, b) => a.created_at.localeCompare(b.created_at))
+);
+export const listPois = (tripId: string): PoiRow[] => byAdded(ofTrip<PoiRow>('pois', tripId));
 
 /**
  * Captured stops land in the wishlist; putting one on a day is a placement.

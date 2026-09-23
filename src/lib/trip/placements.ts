@@ -1,4 +1,4 @@
-import { ofTrip, type Writer } from '$lib/store/store.svelte';
+import { ofTrip, perList, type Writer } from '$lib/store/store.svelte';
 
 /**
  * A place on a day, in a position: what the traveller has actually decided.
@@ -48,10 +48,11 @@ export type PlacementRow = {
 };
 
 /** A trip's visits, by day and then by clock. */
+const byDayAndClock = perList((list: PlacementRow[]) =>
+	[...list].sort((a, b) => a.day_index - b.day_index || a.at.localeCompare(b.at))
+);
 export const listPlacements = (tripId: string): PlacementRow[] =>
-	ofTrip<PlacementRow>('placements', tripId).sort(
-		(a, b) => a.day_index - b.day_index || a.at.localeCompare(b.at)
-	);
+	byDayAndClock(ofTrip<PlacementRow>('placements', tripId));
 
 type Furniture = 'hotel' | 'chore' | 'meal';
 
