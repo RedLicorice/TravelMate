@@ -3,6 +3,7 @@
 	import { formatter } from '$lib/clock';
 	import { legUrl } from '$lib/maps';
 	import { legRoute, type LegRoute } from '$lib/plan/route';
+	import { track } from '$lib/telemetry';
 	import type { LatLng } from '$lib/trip/days';
 	import type { Mode } from '$lib/plan/modes';
 
@@ -24,21 +25,49 @@
 
 	/** Google's journey: undefined while it is asked for, null when it has none. */
 	let route = $state<LegRoute | null | undefined>(undefined);
-	/** No network, or the picture would not load: the map says so and offers to try again. */
-	let noSignal = $state(false);
+	/**
+	 * Why there is no map, when there is none: the phone is offline, or it is
+	 * online and the picture was refused. Either way the map says so and offers
+	 * to try again.
+	 */
+	let failed = $state<'offline' | 'refused' | null>(null);
 	/** Changed on a retry, so the browser asks for the picture again rather than reusing the failure. */
 	let attempt = $state(0);
 
 	async function load() {
-		noSignal = false;
+		failed = null;
 		route = undefined;
 		if (!navigator.onLine) {
-			noSignal = true;
+			failed = 'offline';
 			route = null;
 			return;
 		}
 		route = await legRoute(from, to, mode, departAt);
-		if (!route && !navigator.onLine) noSignal = true;
+		if (!route && !navigator.onLine) failed = 'offline';
+	}
+
+	/**
+	 * The picture did not load. An image cannot say why, so the same address
+	 * is fetched to read Google's answer -- it allows that -- and the reason
+	 * goes into the trail. The address itself is not recorded: it carries the
+	 * key.
+	 */
+	async function mapFailed(url: string) {
+		if (!navigator.onLine) {
+			failed = 'offline';
+			return;
+		}
+		failed = 'refused';
+		let status: number | null = null;
+		let reason = '';
+		try {
+			const res = await fetch(url);
+			status = res.status;
+			reason = res.ok ? 'loaded when fetched' : (await res.text()).slice(0, 300);
+		} catch (error) {
+			reason = String((error as Error)?.message ?? error).slice(0, 300);
+		}
+		track('leg.map_failed', { status, reason, mode, withPath: !!route?.polyline });
 	}
 	$effect(() => {
 		void load();
@@ -84,21 +113,22 @@
 >
 	<!-- The map on top, with where from and where to written across it. -->
 	<div style="position:relative;height:220px;background:var(--tm-surface-2)">
-		{#if noSignal}
+		{#if failed}
 			<div
 				style="height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:var(--tm-text-muted);font:600 var(--tm-text-sm)/1.2 var(--tm-font)"
 			>
-				No signal
+				{failed === 'offline' ? 'No signal' : 'Map not available'}
 				<button class="tm-btn tm-btn--secondary" onclick={retry}>Retry</button>
 			</div>
 		{:else if staticMap}
+			{@const url = staticMap}
 			<img
 				src={staticMap}
 				alt=""
 				width="640"
 				height="220"
 				style="width:100%;height:220px;object-fit:cover;display:block"
-				onerror={() => (noSignal = true)}
+				onerror={() => void mapFailed(url)}
 			/>
 		{:else}
 			<div class="tm-skel" style="height:100%;border-radius:0" aria-busy="true"></div>
