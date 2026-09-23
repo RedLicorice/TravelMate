@@ -2213,7 +2213,7 @@
 							class="tm-chip"
 							data-drop-day={i}
 							style={on
-								? `background:${dayColor(i)};color:#fff`
+								? `background:${dayColor(i)};color:var(--tm-day-ink)`
 								: drag.state.id
 									? 'opacity:1;outline:2px dashed var(--tm-border-strong);outline-offset:2px'
 									: 'opacity:0.55'}

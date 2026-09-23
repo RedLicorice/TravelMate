@@ -129,6 +129,8 @@
 		const el = document.createElement('div');
 		el.className = 'tm-pin-el';
 		el.style.background = m.color ?? 'var(--tm-day-none)';
+		// A day's highlighter takes dark text; white does not read on it.
+		if (/^var\(--tm-day-\d/.test(m.color ?? '')) el.style.color = 'var(--tm-day-ink)';
 		if (m.selected) el.classList.add('tm-pin-el--on');
 		if (m.glyph) el.textContent = m.glyph;
 		return el;
