@@ -44,7 +44,6 @@
 		schedule,
 		REASON_TEXT,
 		type PlanResult,
-		type PlannedDay,
 		type PlannedStop,
 		PLANNER_VERSION,
 		type PlanPoi,
@@ -252,7 +251,7 @@
 	/** Meals this day has no container for: skipped, or never offered. */
 	const missingMeals = $derived.by(() => {
 		if (!slot || !row) return [] as MealName[];
-		const day = (fresh ?? toPlannedDays(stored, days))[slot.day];
+		const day = drawn[slot.day];
 		const present = new Set(
 			(day?.stops ?? [])
 				.filter((st) => st.anchorKind === 'meal')
@@ -301,8 +300,6 @@
 			return true;
 		} catch (e) {
 			error = (e as Error).message;
-			// The walk drawn for an edit that did not land is not the day.
-			fresh = null;
 			return false;
 		}
 	}
@@ -542,47 +539,17 @@
 	const mealPlan = $derived(toMealPlan(mealRows));
 	const planAt = $derived(row?.plan_generated_at ?? null);
 	/**
-	 * The plan re-walked on this screen, when a journey time the server looked
-	 * up arrives: the day as it reads on the better figure, before anyone has
-	 * edited it. Drawn instead of `stored` until the stored plan changes for
-	 * any other reason -- an edit here, which writes its own re-walk into the
-	 * plan, or someone else's, which is what the trip now says.
-	 */
-	let fresh = $state<PlannedDay[] | null>(null);
-
-	/**
-	 * Real travel times, arriving after the fact -- and a fellow traveller's
-	 * edit, as it happens.
+	 * The plan as stored, which is the plan on screen -- built once here for
+	 * every view that draws it.
 	 *
-	 * The refiner routes the legs the plan guessed at and writes each answer
-	 * onto the stop it belongs to; the device takes it in like any other
-	 * change, and the day is re-walked here on the better figure, so the
-	 * cards after a longer journey happen later. Nothing is reordered -- only
-	 * the clock moves, and only by the difference -- and nothing is written:
-	 * a re-walk that wrote would come back, and be re-walked again.
-	 *
-	 * Only a journey that changed on a stop already held counts. The plan
-	 * arriving, or this device's own write coming back, is not news: opening
-	 * a trip draws what was stored.
+	 * Real journey times arrive after the fact: the server routes the legs the
+	 * plan guessed at and writes each answer onto its stop, and the screen
+	 * shows them as they land. The clocks are not re-walked here on each one.
+	 * That re-ran the whole trip through the planner for every leg that came
+	 * back, and a Replan on a real trip froze the phone while they did; the
+	 * clocks take the better figures at the next edit.
 	 */
-	let legs = new Map<string, string>();
-	$effect(() => {
-		const now = new Map(stored.map((r) => [r.id, `${r.leg_minutes}|${r.leg_km}|${r.leg_source}`]));
-		const routed = [...now].some(([id, leg]) => legs.has(id) && legs.get(id) !== leg);
-		legs = now;
-		untrack(() => {
-			if (!routed) {
-				fresh = null;
-				return;
-			}
-			// Not while a card is in the air: the plan under the finger is the
-			// traveller's, and it can take the better figure when they put it
-			// down.
-			if (drag.state.id || busy) return;
-			const input = planInput();
-			fresh = input ? schedule({ ...input, travel: known() }).days : null;
-		});
-	});
+	const drawn = $derived.by(() => toPlannedDays(stored, days));
 
 	/**
 	 * Put the usual furniture on a day nobody has furnished yet.
@@ -845,7 +812,7 @@
 	 * the scheduler: it showed on no day and on no list.
 	 */
 	const planned = $derived(
-		new Set((fresh ?? toPlannedDays(stored, days)).flatMap((d) => d.stops.map((s) => s.poiId)))
+		new Set(drawn.flatMap((d) => d.stops.map((s) => s.poiId)))
 	);
 
 	const unplaced = $derived<Unplaced[]>(
@@ -862,7 +829,7 @@
 	 */
 	const result = $derived<PlanResult | null>(
 		row && days.length
-			? { days: fresh ?? toPlannedDays(stored, days), unplaced }
+			? { days: drawn, unplaced }
 			: null
 	);
 
@@ -1102,7 +1069,7 @@
 	 */
 	const cardAt = $derived.by(() => {
 		const at = new Map<string, string>();
-		for (const day of fresh ?? toPlannedDays(stored, days)) {
+		for (const day of drawn) {
 			// Keyed by the visit, not the place: two coffees at the same cafe
 			// are two cards with two times, and keying by what they are of
 			// would hold both to whichever was written last.
@@ -1151,8 +1118,6 @@
 		// once the edit reaches the server, and arrive on their own.
 		const next = schedule({ ...input, travel: known() });
 		savePlan(w, tripId, next, stored);
-		// Drawn from the plan just written, like everything else on the trip.
-		fresh = null;
 
 		// A longer journey is a later afternoon.
 		//
@@ -1321,7 +1286,7 @@
 	/** Which day a place currently sits on, for the ones that sit on one. */
 	const dayOfPoi = $derived(
 		new Map(
-			(fresh ?? toPlannedDays(stored, days)).flatMap((d) =>
+			drawn.flatMap((d) =>
 				d.stops.filter((st) => st.poiId).map((st) => [st.poiId!, d.index] as [string, number])
 			)
 		)
@@ -1342,7 +1307,7 @@
 	const slotFrom = $derived.by(() => {
 		const here = slot;
 		if (!here) return null;
-		const day = (fresh ?? toPlannedDays(stored, days))[here.day];
+		const day = drawn[here.day];
 		if (!day) return null;
 		const before = here.before
 			? day.stops.findIndex((st) => st.poiId === here.before)
@@ -1514,8 +1479,9 @@
 			// The matrix prices every pair the ordering might need. This is the
 			// one thing worth paying for up front: which stops share a day, and
 			// in what order, cannot be decided on guesses.
-			step = 'Measuring…';
-			await refreshTravel();
+			// Journeys are turned off for now: no lookup.
+			// step = 'Measuring…';
+			// await refreshTravel();
 
 			step = 'Arranging…';
 			await edit('Replanned the trip', (w) => {
@@ -1595,7 +1561,6 @@
 				// hold, and not something a later drag could move.
 				const settled = schedule({ ...input, pois: everyVisit(), travel: known() });
 				savePlan(w, tripId, settled, stored);
-				fresh = null;
 				track('plan.replan', {
 					days: settled.days.length,
 					cards: settled.days.reduce((n, d) => n + d.stops.length, 0),
@@ -1770,6 +1735,8 @@
 
 	$effect(() => {
 		const wanted = shownDays;
+		// Journeys are turned off for now: no routes are looked up for the map.
+		return;
 		if (view !== 'map' || !row) return;
 		for (const day of wanted) {
 			const points = day.stops.map((st) => st.at);

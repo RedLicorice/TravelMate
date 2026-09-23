@@ -206,7 +206,9 @@ export async function drain(
 				// them; it writes the answers onto the stops, and they come back
 				// over realtime. Not waited on.
 				const plan = next.ops.find((o): o is PlanOp => o.op === 'plan');
-				if (plan) void server.functions.invoke('refine', { body: { tripId: plan.trip } }).catch(() => {});
+				// Journeys are turned off for now: nothing to route.
+				// if (plan) void server.functions.invoke('refine', { body: { tripId: plan.trip } }).catch(() => {});
+				void plan;
 			} else {
 				await putAside(next, answer.conflicts);
 				told({ kind: 'aside', mutation: next });
