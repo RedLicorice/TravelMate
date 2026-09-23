@@ -168,22 +168,12 @@ export async function resolveTravel(
 ): Promise<TravelTable> {
 	if (points.length < 2) return noTravel;
 
-	// Google first, one request per mode in use. The function caps the matrix
-	// itself and returns an error rather than a truncated answer.
-	const google = await resolveFromFunction(points, modes, departAt ?? null);
-
-	// Valhalla fills whatever Google could not answer -- a city it does not
-	// cover, or a request that was refused. Skipped entirely when Google has
-	// answered every mode already: it is a shared courtesy service, and when
-	// it is down the browser logs a failed request for every call whether the
-	// result is needed or not.
-	const unanswered = [...new Set(modes)].filter(
-		(mode) => !google.get(points[0], points[1], mode)
-	);
-	if (!unanswered.length) return google;
-
-	const valhalla = await resolveFromValhalla(points, unanswered, signal);
-	return firstOf([google, valhalla]);
+	// Google is out of the picture for now: Valhalla answers, and the speed
+	// model on the phone covers whatever it cannot. The Google path is kept
+	// for when it comes back.
+	// const google = await resolveFromFunction(points, modes, departAt ?? null);
+	void departAt;
+	return resolveFromValhalla(points, [...new Set(modes)], signal);
 }
 
 async function resolveFromFunction(
@@ -259,10 +249,12 @@ async function resolveFromValhalla(
 
 	return {
 		get(from, to, mode) {
+			// Routed: a real journey over the real streets, so it is kept with the
+			// plan and a later re-time reuses it instead of guessing again.
 			const road = table.get(cellKey(from, to, COSTING[mode]));
 			if (!road) return null;
-			if (mode !== 'transit') return road;
-			return { minutes: transitFrom(road.minutes, road.km), km: road.km };
+			if (mode !== 'transit') return { ...road, source: 'routed' as const };
+			return { minutes: transitFrom(road.minutes, road.km), km: road.km, source: 'routed' as const };
 		}
 	};
 }

@@ -42,7 +42,7 @@
 		unplace as dropPlacement,
 		type PlacementRow
 	} from '$lib/trip/placements';
-	import { tripDays, type Day } from '$lib/trip/days';
+	import { tripDays, type Day, type LatLng } from '$lib/trip/days';
 	import {
 		replan,
 		schedule,
@@ -71,7 +71,7 @@
 	} from '$lib/plan/meals';
 	import { resolveCurves, type CrowdCurves } from '$lib/plan/crowd';
 	import { routeShape } from '$lib/plan/route';
-	import { firstOf, resolveTravel, type TravelTable } from '$lib/plan/travel';
+	import { firstOf, noTravel, resolveTravel, type TravelTable } from '$lib/plan/travel';
 	import { BLOCK_CATEGORY } from '$lib/plan/planner';
 	import { pool } from '$lib/pool';
 	import { avatarDataUri } from '$lib/avatar';
@@ -743,36 +743,34 @@
 	 * at 100 elements and a day of stops plus anchors fits inside that, and a
 	 * transit answer needs the departure time, which is a property of the day.
 	 */
+	/**
+	 * Every point a day's journeys run between: the tickets at either end, and
+	 * every card on the day where it is -- the hotel, a meal at its place, both
+	 * ends of a stop you leave from somewhere else. What the router is asked
+	 * about is what the walk will travel between.
+	 */
+	function dayPoints(i: number): LatLng[] {
+		const day = days[i];
+		if (!day) return [];
+		const anchors = [...day.fixedStart, ...day.fixedEnd].map((w) => w.at);
+		const cards = placements
+			.filter((pl) => pl.day_index === i && !pl.skipped)
+			.map((pl) => visitOf(pl, null))
+			.filter((v): v is PlanPoi => !!v)
+			.flatMap((v) => (v.exitAt ? [{ lat: v.lat, lng: v.lng }, v.exitAt] : [{ lat: v.lat, lng: v.lng }]));
+		const seen = new Set<string>();
+		return [...anchors, ...cards].filter((p) => {
+			const key = `${p.lat.toFixed(5)},${p.lng.toFixed(5)}`;
+			if (seen.has(key)) return false;
+			seen.add(key);
+			return true;
+		});
+	}
+
 	async function refreshTravel() {
 		if (!row || !days.length) return;
 		const modes = row.allowed_modes as Mode[];
-
-		const perDay = days.map((day, i) => {
-			const anchors = [...day.fixedStart, ...day.fixedEnd].map((w) => w.at);
-			const stops = placements
-				.filter((pl) => pl.day_index === i && pl.poi_id)
-				.map((pl) => poiById.get(pl.poi_id!))
-				.filter((p): p is PoiRow => !!p)
-				.flatMap((p) =>
-					// Both ends of a stop you leave from somewhere else: the matrix
-					// is asked about legs out of the exit as well as in to the entrance.
-					p.exit_lat !== null && p.exit_lng !== null
-						? [
-								{ lat: p.lat, lng: p.lng },
-								{ lat: p.exit_lat, lng: p.exit_lng }
-							]
-						: [{ lat: p.lat, lng: p.lng }]
-				);
-
-			const seen = new Set<string>();
-			const points = [...anchors, ...stops].filter((p) => {
-				const key = `${p.lat.toFixed(5)},${p.lng.toFixed(5)}`;
-				if (seen.has(key)) return false;
-				seen.add(key);
-				return true;
-			});
-			return { points, departAt: day.start.toISOString() };
-		});
+		const perDay = days.map((day, i) => ({ points: dayPoints(i), departAt: day.start.toISOString() }));
 
 		// One day's matrix does not depend on another's, so they go out
 		// together rather than one trip's worth of round trips in a row.
@@ -1173,6 +1171,71 @@
 	 * stored plan is the plan of record, so it is written back too, or the
 	 * change would survive only until the page is next opened.
 	 */
+	/**
+	 * Real journey times, worked out after an edit rather than during it.
+	 *
+	 * An edit is re-timed at once on the phone's own estimate, so a card lands
+	 * where it was put without waiting on anything. The days it touched are
+	 * then asked of the router, and when the answers are in, the day is walked
+	 * again on them: a longer journey pushes the cards after it later, and a
+	 * pin that would be pushed stays and the card before it says so. Applied
+	 * as its own edit, only if a time actually changes, and never while a card
+	 * is in the air -- it waits for the finger to let go.
+	 */
+	const toRoute = new Set<number>();
+	let routing: ReturnType<typeof setTimeout> | null = null;
+	/** Set while the routed times are being written, so writing them does not ask again. */
+	let applyingRoutes = false;
+
+	function routeSoon(which: number[]) {
+		if (applyingRoutes) return;
+		for (const d of which) toRoute.add(d);
+		if (routing) clearTimeout(routing);
+		routing = setTimeout(routeDays, 800);
+	}
+
+	async function routeDays() {
+		routing = null;
+		if (!row || !navigator.onLine || !toRoute.size) return;
+		if (drag.state.id || busy) {
+			routing = setTimeout(routeDays, 1000);
+			return;
+		}
+		const which = [...toRoute];
+		toRoute.clear();
+		const modes = row.allowed_modes as Mode[];
+		const tables = await pool(which, 2, (i) => {
+			const points = dayPoints(i);
+			return points.length >= 2
+				? resolveTravel(points, modes, days[i]?.start.toISOString() ?? null)
+				: Promise.resolve(noTravel);
+		});
+		travel = firstOf([...tables, ...(travel ? [travel] : [])]);
+		// The finger may have come down while the router was answering.
+		while (drag.state.id || busy) await new Promise((r) => setTimeout(r, 300));
+		const input = planInput();
+		if (!input) return;
+		const next = schedule({ ...input, travel: known() }, new Set(which));
+		const moved = next.days.some((d) =>
+			d.stops.some((st) => {
+				const now = drawn[d.index]?.stops.find((x) => (st.placementId ? x.placementId === st.placementId : x.name === st.name));
+				return (
+					!now ||
+					now.arrive.getTime() !== st.arrive.getTime() ||
+					(now.legIn?.minutes ?? 0) !== (st.legIn?.minutes ?? 0) ||
+					(now.legIn?.source ?? null) !== (st.legIn?.source ?? null)
+				);
+			})
+		);
+		if (!moved) return;
+		applyingRoutes = true;
+		try {
+			await edit('Worked out the journeys', (w) => retime(w, which));
+		} finally {
+			applyingRoutes = false;
+		}
+	}
+
 	function retime(w: Writer, days?: number[]) {
 		const input = planInput();
 		if (!input) return;
@@ -1181,6 +1244,8 @@
 		// what made every edit cost as much as the whole trip.
 		const next = schedule({ ...input, travel: known() }, days ? new Set(days) : undefined);
 		savePlan(w, tripId, next, stored, days);
+		// And then, off the finger's path, the real journeys for these days.
+		routeSoon(next.days.map((d) => d.index));
 
 		// A longer journey is a later afternoon.
 		//
@@ -1595,9 +1660,8 @@
 			// The matrix prices every pair the ordering might need. This is the
 			// one thing worth paying for up front: which stops share a day, and
 			// in what order, cannot be decided on guesses.
-			// Journeys are turned off for now: no lookup.
-			// step = 'Measuring…';
-			// await refreshTravel();
+			step = 'Measuring…';
+			await refreshTravel();
 
 			step = 'Arranging…';
 			await edit('Replanned the trip', (w) => {
@@ -1862,8 +1926,6 @@
 
 	$effect(() => {
 		const wanted = shownDays;
-		// Journeys are turned off for now: no routes are looked up for the map.
-		return;
 		if (view !== 'map' || !row) return;
 		for (const day of wanted) {
 			const points = day.stops.map((st) => st.at);

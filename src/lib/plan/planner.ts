@@ -840,7 +840,9 @@ function walkClock(
 		// traveller checks in is something they stated, not something the plan
 		// worked out, and telling them they cannot reach their own hotel is
 		// noise on every card of every day.
-		if (late && !dayIsOver && !ticketed && !anchor) {
+		// A pin that cannot be reached is not told so itself: it is where the
+		// traveller put it. The card that runs into it is (see below).
+		if (late && !dayIsOver && !ticketed && !anchor && !pinned) {
 			warnings.push({
 				kind: pinned ? 'blocked' : 'overflow',
 				message: pinned
@@ -1082,12 +1084,12 @@ function walkClock(
 		// traveller's own furniture has one while the plan is arranging the day.
 		// Anything else happens when the walk gets there.
 		const held = !arrange || holdsClock(p) ? Date.parse(p.at) : null;
-		// Whether that clock is the card's to keep. A pin and the traveller's
-		// own furniture keep theirs whatever the walk says. On a re-time every
-		// other card takes its clock as a floor: it never happens earlier, and
-		// a leg that ran longer than the plan was built on pushes it later --
-		// and everything after it with it.
-		const holds = arrange || holdsClock(p);
+		// Whether that clock is the card's to keep. On a re-time only a pin
+		// keeps it, whatever the walk says. Every other card -- the day's own
+		// furniture too -- takes its clock as a floor: it never happens earlier,
+		// and a journey that takes longer pushes it later, and everything after
+		// it with it.
+		const holds = arrange || !!p.pinned;
 		// A block of time the traveller added themselves -- a rest, an errand,
 		// a nap -- happens wherever they already are, the same as a meal. Its
 		// stored coordinates are a formality. An anchor's are not: the hotel
@@ -1189,9 +1191,13 @@ function walkClock(
 		// told the plan, not something it worked out. The stop that runs into
 		// it is the one that does not fit, so that is the card that says so.
 		// One overflow warning per card, since the screen draws them by kind.
-		if (!arrange && missed && anchor && dayEndMs > day.start.getTime()) {
+		// A pin is never pushed: the card before it, which the walk could not
+		// finish in time, is the one that says so -- and the traveller moves it.
+		if (missed && (anchor || p.pinned) && dayEndMs > day.start.getTime()) {
 			const before = stops.at(-2);
-			if (before && !before.anchor && !before.warnings.some((w) => w.kind === 'overflow')) {
+			// Whatever it is -- a stop, or furniture now that furniture moves
+			// with the day -- it is what runs into the pin.
+			if (before && !before.warnings.some((w) => w.kind === 'overflow' || w.kind === 'blocked')) {
 				before.warnings.push({
 					kind: 'blocked',
 					message: `You cannot get to ${p.name} after this. Replan, or move something.`

@@ -55,31 +55,29 @@ export function leg(
 	// to use, and a routed distance would not change that answer.
 	const km = haversineKm(from, to) * DETOUR;
 	const mode = chooseMode(km, allowed, terminal);
-	// Journeys are turned off for now: every leg takes no time.
-	return { mode, minutes: 0, km: 0, source: 'routed' };
 
-	// // Going nowhere takes no time. Without this the transit overhead -- a flat
-	// // allowance for walking to the stop and waiting -- was charged on a leg of
-	// // zero length, which is what put "12 min · 0 km · transit" between two
-	// // cards standing in the same airport, and quietly spent an hour of the
-	// // arrival day on a journey that had already happened.
-	// // Routed, not estimated: there is nothing to look up about standing still,
-	// // so nothing will ever come back to improve it.
-	// if (km === 0) return { mode, minutes: 0, km: 0, source: 'routed' };
+	// Going nowhere takes no time. Without this the transit overhead -- a flat
+	// allowance for walking to the stop and waiting -- was charged on a leg of
+	// zero length, which is what put "12 min · 0 km · transit" between two
+	// cards standing in the same airport, and quietly spent an hour of the
+	// arrival day on a journey that had already happened.
+	// Routed, not estimated: there is nothing to look up about standing still,
+	// so nothing will ever come back to improve it.
+	if (km === 0) return { mode, minutes: 0, km: 0, source: 'routed' };
 
-	// // A time somebody resolved ahead of planning. A matrix cell is still an
-	// // estimate -- it was asked at the day's start hour, for every pair at once
-	// // -- so only a table that says 'routed' is taken as the real journey.
-	// const known = travel.get(from, to, mode, departAt);
-	// if (known) {
-	// return { mode, minutes: known.minutes, km: known.km, source: known.source ?? 'estimate' };
-	// }
+	// A time somebody resolved ahead of planning. A matrix cell is still an
+	// estimate -- it was asked at the day's start hour, for every pair at once
+	// -- so only a table that says 'routed' is taken as the real journey.
+	const known = travel.get(from, to, mode, departAt);
+	if (known) {
+		return { mode, minutes: known.minutes, km: known.km, source: known.source ?? 'estimate' };
+	}
 
-	// const minutes = (km / SPEED[mode]) * 60 + (mode === 'transit' ? TRANSIT_OVERHEAD_MIN : 0);
-	// return {
-	// mode,
-	// minutes: Math.round(minutes),
-	// km: Math.round(km * 10) / 10,
-	// source: 'estimate'
-	// };
+	const minutes = (km / SPEED[mode]) * 60 + (mode === 'transit' ? TRANSIT_OVERHEAD_MIN : 0);
+	return {
+		mode,
+		minutes: Math.round(minutes),
+		km: Math.round(km * 10) / 10,
+		source: 'estimate'
+	};
 }

@@ -1,3 +1,4 @@
+import { formatter } from '$lib/clock';
 import type { LatLng } from '$lib/trip/days';
 import type { Mode } from '$lib/plan/modes';
 
@@ -29,7 +30,32 @@ export function placeUrl(at: LatLng, name?: string | null): string {
 	return `https://www.google.com/maps/search/?${params}`;
 }
 
-export function legUrl(from: LatLng, to: LatLng, mode: Mode): string {
+/**
+ * One leg in Google Maps, from A to B in its mode.
+ *
+ * Google's documented links (Maps URLs) take no departure time, so a transit
+ * leg is opened with the older link form, which does -- and which Google Maps
+ * still reads. If it ever stops reading the time, Maps opens on "leave now",
+ * which is all the documented link would have done anyway. Walking, cycling
+ * and driving do not depend on the hour, and use the documented link.
+ */
+export function legUrl(
+	from: LatLng,
+	to: LatLng,
+	mode: Mode,
+	departAt?: string | null,
+	timezone?: string
+): string {
+	if (mode === 'transit' && departAt && timezone) {
+		const when = new Date(departAt);
+		const date = formatter('en-US', { timeZone: timezone, month: '2-digit', day: '2-digit', year: 'numeric' }).format(when);
+		const time = formatter('en-US', { timeZone: timezone, hour: 'numeric', minute: '2-digit', hour12: true })
+			.format(when)
+			.replace(/\s/g, '')
+			.toLowerCase();
+		const q = new URLSearchParams({ saddr: coord(from), daddr: coord(to), dirflg: 'r', ttype: 'dep', date, time });
+		return `https://maps.google.com/maps?${q}`;
+	}
 	const params = new URLSearchParams({
 		api: '1',
 		origin: coord(from),
