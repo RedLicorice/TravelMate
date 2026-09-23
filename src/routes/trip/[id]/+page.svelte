@@ -191,11 +191,12 @@
 			kind: pl.kind,
 			meal: pl.meal,
 			skipped: pl.skipped,
-			// A hotel card that says what happens there says where, too: the hotel's
-			// name goes in front when it is drawn, so it follows a change of hotel.
+			// Checking in and out say which hotel: its name goes in front when the
+			// card is drawn, so it follows a change of hotel. Check-out is a chore,
+			// not a night, so it is known by its name.
 			name:
 				venue?.name ??
-				(pl.kind === 'hotel' && pl.name ? `${row.hotel_name}: ${pl.name}` : pl.name) ??
+				((pl.kind === 'hotel' && pl.name) || pl.name === 'Check-Out' ? `${row.hotel_name}: ${pl.name}` : pl.name) ??
 				(pl.meal ? MEAL_LABEL[pl.meal] : row.hotel_name),
 			lat: venue?.lat ?? row.hotel_lat,
 			lng: venue?.lng ?? row.hotel_lng,
@@ -642,7 +643,7 @@
 				// station, and standing at the desk then means missing it.
 				wanted.push({
 					kind: 'chore',
-					name: 'Check-out',
+					name: 'Check-Out',
 					dayIndex: i,
 					at: new Date(end.getTime() - row.bag_drop_min * 60_000).toISOString()
 				});
