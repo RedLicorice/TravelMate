@@ -139,6 +139,34 @@ export function createDrag(
 	let moved = false;
 	let scroller: HTMLElement | null = null;
 	let crawling: number | null = null;
+	/** The finger doing the dragging. Every other one is ignored while it does. */
+	let pointer: number | null = null;
+
+	/**
+	 * While a card is held, it is the only thing the screen answers to: a
+	 * second finger's tap, a long press on another card, the page scrolling
+	 * or zooming under the finger, the long-press menu -- all swallowed before
+	 * the page sees them. The list still creeps at its edges, since that is
+	 * this code scrolling, not the browser.
+	 */
+	const swallow = (event: Event) => {
+		if (event instanceof PointerEvent && event.pointerId === pointer) return;
+		event.preventDefault();
+		event.stopPropagation();
+	};
+	const BLOCKED = ['pointerdown', 'click', 'contextmenu', 'touchstart', 'touchmove', 'gesturestart'] as const;
+	const blockOthers = (on: boolean) => {
+		for (const type of BLOCKED) {
+			if (on) window.addEventListener(type, swallow, { capture: true, passive: false });
+			else window.removeEventListener(type, swallow, { capture: true });
+		}
+		document.documentElement.style.touchAction = on ? 'none' : '';
+	};
+	/** The tap a finger makes when it lets go of a card is not a tap on what is under it. */
+	const swallowNextClick = () => {
+		window.addEventListener('click', swallow, { capture: true, once: true });
+		setTimeout(() => window.removeEventListener('click', swallow, { capture: true }), 400);
+	};
 
 	/** Creep the list along while the finger rests near one of its edges. */
 	function crawl() {
@@ -196,6 +224,7 @@ export function createDrag(
 	}
 
 	function move(event: PointerEvent) {
+		if (event.pointerId !== pointer) return;
 		if (!state.id) {
 			// Still in the hold window: a real scroll cancels the pick-up.
 			const far =
@@ -216,23 +245,28 @@ export function createDrag(
 		state.target = targetAt(event.clientX, event.clientY);
 	}
 
-	function finish() {
+	function finish(event: PointerEvent) {
+		if (event.pointerId !== pointer) return;
 		const id = state.id;
 		const target = state.target;
 		const went = moved;
 		cleanup();
+		if (id) swallowNextClick();
 		// Picked up and put straight back down is not a move: the card keeps
 		// the time it had, and nothing is written.
 		if (id && target && went) onDrop(id, target);
 	}
 
-	function cancel() {
+	function cancel(event?: PointerEvent) {
+		if (event && event.pointerId !== pointer) return;
 		cleanup();
 	}
 
 	function cleanup() {
 		if (holdTimer) clearTimeout(holdTimer);
 		holdTimer = null;
+		if (state.id) blockOthers(false);
+		pointer = null;
 		if (crawling !== null) cancelAnimationFrame(crawling);
 		crawling = null;
 		scroller = null;
@@ -253,7 +287,10 @@ export function createDrag(
 	function handle(node: HTMLElement, id: string) {
 		function down(event: PointerEvent) {
 			if (event.button !== 0 && event.pointerType === 'mouse') return;
+			// One card at a time: a second finger does not start a second pick-up.
+			if (pending || state.id) return;
 			pending = id;
+			pointer = event.pointerId;
 			moved = false;
 			origin = { x: event.clientX, y: event.clientY };
 			state.x = event.clientX;
@@ -269,6 +306,7 @@ export function createDrag(
 				// the DOM is still the one the traveller is looking at.
 				const before = node.getBoundingClientRect().top;
 				scroller = scrollParent(node);
+				blockOthers(true);
 				state.id = id;
 				if (crawling === null) crawling = requestAnimationFrame(crawl);
 				document.body.style.userSelect = 'none';
