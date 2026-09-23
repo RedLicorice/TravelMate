@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatter } from '$lib/clock';
 	import type { PlannedDay } from '$lib/plan/planner';
 	import type { Day } from '$lib/trip/days';
 
@@ -46,7 +47,7 @@
 
 	const midnight = $derived.by(() => {
 		if (!win) return 0;
-		const [h, m] = new Intl.DateTimeFormat('en-GB', {
+		const [h, m] = formatter('en-GB', {
 			timeZone: timezone,
 			hour: '2-digit',
 			minute: '2-digit',

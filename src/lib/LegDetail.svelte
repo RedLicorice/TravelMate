@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatter } from '$lib/clock';
 	import { groupSteps, legRoute, type LegRoute } from '$lib/plan/route';
 	import { legUrl } from '$lib/maps';
 	import type { LatLng } from '$lib/trip/days';
@@ -40,7 +41,7 @@
 
 	const hhmm = (iso: string | undefined) =>
 		iso
-			? new Intl.DateTimeFormat(undefined, {
+			? formatter(undefined, {
 					timeZone: timezone,
 					hour: '2-digit',
 					minute: '2-digit',

@@ -1,3 +1,4 @@
+import { formatter } from '$lib/clock';
 /**
  * Meal slots.
  *
@@ -176,7 +177,7 @@ export function effectiveDayStart(dayStart: string, ready: string | null): strin
 
 /** Local wall-clock hour, with minutes as a fraction. */
 function hourIn(at: Date, tz: string): number {
-	const [h, m] = new Intl.DateTimeFormat('en-GB', {
+	const [h, m] = formatter('en-GB', {
 		timeZone: tz,
 		hour: '2-digit',
 		minute: '2-digit',

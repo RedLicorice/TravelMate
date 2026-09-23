@@ -556,10 +556,22 @@ export function pullProfile(userId: string): Promise<void> {
  * each of them froze a phone for seconds after every drop.
  */
 let redrawing: ReturnType<typeof setTimeout> | null = null;
+/** Rows a burst brought, kept for the device in one write: a row to put, or an id gone. */
+let arrived: (Held | string)[] = [];
 function redrawSoon() {
-	redrawing ??= setTimeout(() => {
+	redrawing ??= setTimeout(async () => {
 		redrawing = null;
+		const rows = arrived;
+		arrived = [];
 		bump();
+		try {
+			await tx(['rows'], 'readwrite', (t) => {
+				const s = t.objectStore('rows');
+				for (const r of rows) typeof r === 'string' ? s.delete(r) : s.put(r);
+			});
+		} catch {
+			// The device missed them; the next read of the trip puts them back.
+		}
 		announce('synced');
 	}, 100);
 }
@@ -587,8 +599,8 @@ async function received(table: Table, event: string, fresh: Row | null, old: Row
 				? [...confirmed.values()].find((h) => h.table === table && h.row.id === old?.id)?.id
 				: old && rowId(table, keyOf(table, old));
 		if (!id || !confirmed.has(id)) return;
-		await tx(['rows'], 'readwrite', (t) => void t.objectStore('rows').delete(id));
 		confirmed.delete(id);
+		arrived.push(id);
 		redrawSoon();
 		return;
 	}
@@ -599,8 +611,8 @@ async function received(table: Table, event: string, fresh: Row | null, old: Row
 		const version = fresh.version as number;
 		if (version < had || (version === had && table !== 'trips')) return;
 	}
-	await tx(['rows'], 'readwrite', (t) => void t.objectStore('rows').put(h));
 	confirmed.set(h.id, h);
+	arrived.push(h);
 	redrawSoon();
 }
 

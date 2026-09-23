@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatter } from '$lib/clock';
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { base } from '$app/paths';
@@ -149,10 +150,10 @@
 	const worthBooking = $derived(windowsForCategory.some((w) => w.level >= 0.8));
 
 	const hhmm = (d: Date, tz: string) =>
-		new Intl.DateTimeFormat(undefined, { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false }).format(d);
+		formatter(undefined, { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false }).format(d);
 
 	const dayLabel = (iso: string, tz: string) =>
-		new Intl.DateTimeFormat(undefined, { timeZone: tz, weekday: 'long', day: 'numeric', month: 'short' })
+		formatter(undefined, { timeZone: tz, weekday: 'long', day: 'numeric', month: 'short' })
 			.format(new Date(`${iso}T12:00:00Z`));
 
 	async function persist(patch: Parameters<typeof updatePoi>[2]) {

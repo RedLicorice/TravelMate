@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatter } from '$lib/clock';
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import type { PoiRow } from '$lib/trip/pois';
@@ -71,10 +72,10 @@
 	);
 
 	const hhmm = (d: Date, tz: string) =>
-		new Intl.DateTimeFormat(undefined, { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false }).format(d);
+		formatter(undefined, { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false }).format(d);
 
 	const dayLabel = (iso: string, tz: string) =>
-		new Intl.DateTimeFormat(undefined, { timeZone: tz, weekday: 'long', day: 'numeric', month: 'short' })
+		formatter(undefined, { timeZone: tz, weekday: 'long', day: 'numeric', month: 'short' })
 			.format(new Date(`${iso}T12:00:00Z`));
 
 	const dayColor = (i: number) => `var(--tm-day-${Math.min(i + 1, 8)})`;

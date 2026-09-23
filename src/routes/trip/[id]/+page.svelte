@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatter } from '$lib/clock';
 	import { onMount, untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { base } from '$app/paths';
@@ -777,7 +778,10 @@
 	$effect(() => {
 		void pois.length;
 		void days.length;
-		refreshCurves();
+		// Untracked: refreshCurves reads the whole wishlist and every day
+		// before it awaits, and tracked that re-ran it on every change to any
+		// of them -- which is every change at all.
+		untrack(refreshCurves);
 	});
 
 	$effect(() => {
@@ -1729,15 +1733,15 @@
 	);
 
 	const hhmm = (d: Date, tz: string) =>
-		new Intl.DateTimeFormat(undefined, { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false }).format(d);
+		formatter(undefined, { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false }).format(d);
 
 	const dayLabel = (iso: string, tz: string) =>
-		new Intl.DateTimeFormat(undefined, { timeZone: tz, weekday: 'short', day: 'numeric' }).format(
+		formatter(undefined, { timeZone: tz, weekday: 'short', day: 'numeric' }).format(
 			new Date(`${iso}T12:00:00Z`)
 		);
 
 	const stamp = (iso: string, tz: string) =>
-		new Intl.DateTimeFormat(undefined, {
+		formatter(undefined, {
 			timeZone: tz, weekday: 'short', day: 'numeric', month: 'short',
 			hour: '2-digit', minute: '2-digit', hour12: false
 		}).format(new Date(iso));

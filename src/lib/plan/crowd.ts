@@ -1,3 +1,4 @@
+import { formatter } from '$lib/clock';
 /**
  * Crowd avoidance.
  *
@@ -88,7 +89,7 @@ export function busyWindows(category: string | null): { from: number; to: number
 export const hourLabel = (h: number) => `${String(h).padStart(2, '0')}:00`;
 
 const localParts = (at: Date, tz: string) => {
-	const f = new Intl.DateTimeFormat('en-CA', {
+	const f = formatter('en-CA', {
 		timeZone: tz,
 		year: 'numeric',
 		month: '2-digit',
@@ -101,7 +102,7 @@ const localParts = (at: Date, tz: string) => {
 };
 
 const weekdayIn = (at: Date, tz: string) =>
-	new Intl.DateTimeFormat('en-GB', { timeZone: tz, weekday: 'short' }).format(at);
+	formatter('en-GB', { timeZone: tz, weekday: 'short' }).format(at);
 
 /** The table's own answer for one venue-hour. Local, instant, never null. */
 export function categoryBusyness(category: string | null, at: Date, tz: string): Busyness {

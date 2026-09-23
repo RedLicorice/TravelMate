@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatter } from '$lib/clock';
 	import { slide } from 'svelte/transition';
 	/**
 	 * The time between two stops, as a space you can open.
@@ -62,7 +63,7 @@
 	);
 
 	const hhmm = (d: Date) =>
-		new Intl.DateTimeFormat(undefined, {
+		formatter(undefined, {
 			timeZone: timezone,
 			hour: '2-digit',
 			minute: '2-digit',

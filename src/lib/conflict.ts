@@ -1,3 +1,4 @@
+import { formatter } from '$lib/clock';
 import { upstream, type Mutation, type Row, type Table } from '$lib/store/store.svelte';
 import { MEAL_LABEL, type MealName } from '$lib/plan/meals';
 
@@ -71,7 +72,7 @@ function shown(field: string, value: unknown, ctx: Context): string {
 	if (field === 'role') return value === 'editor' ? 'yes' : 'no';
 	if (field.endsWith('_min') || field === 'minutes') return `${value} min`;
 	if (typeof value === 'string' && /^\d{4}-\d\d-\d\dT/.test(value)) {
-		return new Intl.DateTimeFormat(undefined, {
+		return formatter(undefined, {
 			timeZone: ctx.timezone,
 			weekday: 'short',
 			hour: '2-digit',

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatter } from '$lib/clock';
 	import { onMount } from 'svelte';
 	import { base } from '$app/paths';
 	import { listTrips, toTrip, type TripRow } from '$lib/trip/repo';
@@ -20,7 +21,7 @@
 	const dayCount = (row: TripRow) => tripDays(toTrip(row)).length;
 
 	const range = (row: TripRow) =>
-		new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short' }).formatRange(
+		formatter(undefined, { day: 'numeric', month: 'short' }).formatRange(
 			new Date(row.arrival_at),
 			new Date(row.departure_at)
 		);

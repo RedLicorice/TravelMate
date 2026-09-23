@@ -1,3 +1,4 @@
+import { formatter } from '$lib/clock';
 import type { JourneyLeg } from './journey';
 
 export type LatLng = { lat: number; lng: number };
@@ -84,7 +85,7 @@ const DAY = 24 * 60 * MIN;
  * Intl is the only timezone database available without a dependency.
  */
 function tzOffsetMs(at: Date, tz: string): number {
-	const parts = new Intl.DateTimeFormat('en-CA', {
+	const parts = formatter('en-CA', {
 		timeZone: tz,
 		year: 'numeric',
 		month: '2-digit',
@@ -104,7 +105,7 @@ function tzOffsetMs(at: Date, tz: string): number {
 
 /** The YYYY-MM-DD a given instant falls on, in `tz`. */
 function zonedDate(at: Date, tz: string): string {
-	return new Intl.DateTimeFormat('en-CA', {
+	return formatter('en-CA', {
 		timeZone: tz,
 		year: 'numeric',
 		month: '2-digit',
@@ -382,7 +383,7 @@ export function tripDays(trip: Trip): Day[] {
  * means 15:00 where they land.
  */
 export function toLocalInput(iso: string, tz: string): string {
-	const parts = new Intl.DateTimeFormat('en-CA', {
+	const parts = formatter('en-CA', {
 		timeZone: tz,
 		year: 'numeric', month: '2-digit', day: '2-digit',
 		hour: '2-digit', minute: '2-digit', hour12: false
