@@ -68,8 +68,13 @@ export function leg(
 	// A time somebody resolved ahead of planning. A matrix cell is still an
 	// estimate -- it was asked at the day's start hour, for every pair at once
 	// -- so only a table that says 'routed' is taken as the real journey.
+	//
+	// Two places apart are never a journey of no time, whoever says so. A zero
+	// kept in a saved plan was reused by every re-time after it and put cards
+	// in different places back to back; such an answer is not an answer, and
+	// the estimate stands until the router gives a real one.
 	const known = travel.get(from, to, mode, departAt);
-	if (known) {
+	if (known && known.minutes > 0) {
 		return { mode, minutes: known.minutes, km: known.km, source: known.source ?? 'estimate' };
 	}
 
