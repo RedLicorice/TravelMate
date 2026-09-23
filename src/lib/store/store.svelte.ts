@@ -25,6 +25,7 @@ import { supabase } from '$lib/supabase';
 import { forget, req, tx } from './idb';
 import {
 	CHANNEL,
+	REQUEST_MS,
 	SYNC_LOCK,
 	SYNC_TAG,
 	drain,
@@ -332,7 +333,7 @@ export async function openStore(): Promise<void> {
 		void load();
 		if (e.data.kind === 'changed' && e.data.name) tell(`Changed in another window: ${e.data.name}.`);
 	});
-	addEventListener('online', send);
+	addEventListener('online', () => send());
 }
 
 const channel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel(CHANNEL);
@@ -357,12 +358,30 @@ let sending: Promise<void> | null = null;
 let again = false;
 
 /**
+ * Trying again in the background, for as long as the app is open and the
+ * device says it has a network: soon at first, then each wait twice the last
+ * -- 2, 4, 8 seconds, and so on up to five minutes -- so a server that is
+ * down is not hammered by every phone waiting on it. An edit, the connection
+ * coming back, or the app being opened tries at once and starts the waits
+ * over.
+ */
+const FIRST_WAIT_MS = 2_000;
+const LONGEST_WAIT_MS = 5 * 60_000;
+let wait = FIRST_WAIT_MS;
+let retry: ReturnType<typeof setTimeout> | null = null;
+/** A retry is sent by the timer; anything else that sends starts the count over. */
+const retried = () => send(true);
+
+/**
  * Send the queue now, if there is a connection; and ask for Background Sync
  * in case the tab is closed first. Where the browser has no Background Sync
  * (Safari, Firefox) the page is what sends: now, when the connection comes
  * back, and when the app is next opened.
  */
-export function send(): void {
+export function send(fromRetry = false): void {
+	if (retry) clearTimeout(retry);
+	retry = null;
+	if (!fromRetry) wait = FIRST_WAIT_MS;
 	void navigator.serviceWorker?.ready
 		.then((r) => (r as ServiceWorkerRegistration & { sync?: { register(tag: string): Promise<void> } }).sync?.register(SYNC_TAG))
 		.catch(() => {});
@@ -371,16 +390,19 @@ export function send(): void {
 		return;
 	}
 	sending = (async () => {
+		let stopped = false;
 		do {
 			again = false;
 			const touched = new Set<string>();
 			try {
-				await drain(supabase, (o: Outcome) => {
-					if (o.kind === 'refused' && o.mutation.trip) touched.add(o.mutation.trip);
-				});
+				stopped =
+					(await drain(supabase, (o: Outcome) => {
+						if (o.kind === 'refused' && o.mutation.trip) touched.add(o.mutation.trip);
+					})) === 'stopped';
 			} catch {
 				// No locks API, or the database went away mid-send. What is queued
-				// stays queued; the next edit or reconnection tries again.
+				// stays queued and is tried again.
+				stopped = true;
 			}
 			await load();
 			announce('synced');
@@ -390,6 +412,14 @@ export function send(): void {
 			for (const trip of touched) await pullTrip(trip).catch(() => {});
 		} while (again);
 		sending = null;
+		if (!stopped) {
+			wait = FIRST_WAIT_MS;
+			return;
+		}
+		// Offline, the connection coming back is what tries again.
+		if (!navigator.onLine) return;
+		retry = setTimeout(retried, wait);
+		wait = Math.min(wait * 2, LONGEST_WAIT_MS);
 	})();
 }
 
@@ -408,10 +438,15 @@ async function replace(scope: (t: IDBTransaction) => Promise<void>, rows: Held[]
 	});
 }
 
-async function pull(work: () => Promise<void>) {
+/**
+ * Read from the server under the sync lock, with a time limit on the reads:
+ * a read that hangs would otherwise hold the lock -- and every send waiting
+ * on it -- for as long as it hangs.
+ */
+async function pull(work: (signal: AbortSignal) => Promise<void>) {
 	pulling++;
 	try {
-		await navigator.locks.request(SYNC_LOCK, work);
+		await navigator.locks.request(SYNC_LOCK, () => work(AbortSignal.timeout(REQUEST_MS)));
 	} finally {
 		pulling--;
 		if (!pulling) {
@@ -431,11 +466,11 @@ const must = <T>(r: { data: T | null; error: { message: string } | null }): T =>
 
 /** The trips this account can see, for the list. */
 export function pullTrips(): Promise<void> {
-	return pull(async () => {
+	return pull(async (signal) => {
 		// Asked, whether or not an answer comes: offline, the list is what
 		// the device holds.
 		store.listed = true;
-		const trips = must(await supabase.from('trips').select('*')) as Row[];
+		const trips = must(await supabase.from('trips').select('*').abortSignal(signal)) as Row[];
 		const seen = new Set(trips.map((t) => t.id as string));
 		await replace(async (t) => {
 			const s = t.objectStore('rows');
@@ -451,19 +486,19 @@ export function pullTrips(): Promise<void> {
 
 /** Everything about one trip, as the server holds it now. */
 export function pullTrip(id: string): Promise<void> {
-	return pull(async () => {
+	return pull(async (signal) => {
 		if (!store.asked.includes(id)) store.asked.push(id);
 		const [trip, pois, placements, meals, plan, members] = await Promise.all([
-			supabase.from('trips').select('*').eq('id', id).maybeSingle(),
-			supabase.from('pois').select('*').eq('trip_id', id),
-			supabase.from('placements').select('*').eq('trip_id', id),
-			supabase.from('trip_meals').select('*').eq('trip_id', id),
-			supabase.from('plan_stops').select('*').eq('trip_id', id),
-			supabase.from('trip_members').select('*').eq('trip_id', id)
+			supabase.from('trips').select('*').eq('id', id).abortSignal(signal).maybeSingle(),
+			supabase.from('pois').select('*').eq('trip_id', id).abortSignal(signal),
+			supabase.from('placements').select('*').eq('trip_id', id).abortSignal(signal),
+			supabase.from('trip_meals').select('*').eq('trip_id', id).abortSignal(signal),
+			supabase.from('plan_stops').select('*').eq('trip_id', id).abortSignal(signal),
+			supabase.from('trip_members').select('*').eq('trip_id', id).abortSignal(signal)
 		]);
 		const people = (must(members) as Row[]).map((m) => m.user_id as string);
 		const profiles = people.length
-			? (must(await supabase.from('profiles').select('*').in('user_id', people)) as Row[])
+			? (must(await supabase.from('profiles').select('*').in('user_id', people).abortSignal(signal)) as Row[])
 			: [];
 		const found = must(trip) as Row | null;
 		const rows = found
@@ -483,9 +518,9 @@ export function pullTrip(id: string): Promise<void> {
 
 /** The signed-in traveller's own profile. */
 export function pullProfile(userId: string): Promise<void> {
-	return pull(async () => {
+	return pull(async (signal) => {
 		const mine = must(
-			await supabase.from('profiles').select('*').eq('user_id', userId).maybeSingle()
+			await supabase.from('profiles').select('*').eq('user_id', userId).abortSignal(signal).maybeSingle()
 		) as Row | null;
 		await replace(async () => {}, mine ? [held('profiles', mine)] : []);
 	});

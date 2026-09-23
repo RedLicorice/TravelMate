@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_PUBLISHABLE_KEY } from '$env/static/public';
-import { authKey, authStorage } from './store/idb';
+import { authStorage } from './store/idb';
 
 // The publishable key is public by design: it names the project, it authorises
 // nothing. RLS is the boundary.
@@ -13,7 +13,6 @@ export const supabase = createClient(PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_PUBLIS
 		// Where the service worker can read it too: it is what sends queued
 		// edits once the tab has gone.
 		storage: authStorage,
-		storageKey: authKey(PUBLIC_SUPABASE_URL),
 		persistSession: true,
 		autoRefreshToken: true,
 		detectSessionInUrl: true,

@@ -93,23 +93,6 @@ export const forget = () =>
 	});
 
 /**
- * The name the session is kept under: supabase-js's own default for this
- * project, written down so the app can read whose session it is without
- * asking supabase-js -- which may want the network to answer.
- */
-export const authKey = (url: string) => `sb-${new URL(url).hostname.split('.')[0]}-auth-token`;
-
-/** The signed-in user's id, from the session kept on this device. No network. */
-export async function keptUser(url: string): Promise<string | null> {
-	const kept = await authStorage.getItem(authKey(url));
-	try {
-		return (JSON.parse(kept ?? 'null') as { user?: { id?: string } } | null)?.user?.id ?? null;
-	} catch {
-		return null;
-	}
-}
-
-/**
  * Where supabase-js keeps the session.
  *
  * In IndexedDB rather than localStorage because the worker has no

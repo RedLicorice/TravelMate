@@ -140,18 +140,31 @@ const retryable = (status: number, code?: string) =>
 const sameKey = (a: Op, b: Op) =>
 	a.op !== 'plan' && b.op !== 'plan' && a.table === b.table && rowId(a.table, a.key) === rowId(b.table, b.key);
 
-/** Send everything queued. Resolves when the queue is empty or cannot be sent now. */
+/**
+ * How long one request to the server may take while the sync lock is held.
+ * A request that hangs -- a signal that is there and carries nothing -- would
+ * otherwise hold the lock, and everything waiting on it, for as long as it
+ * hangs. Past this it is given up, the queue stays as it was, and it is tried
+ * again later.
+ */
+export const REQUEST_MS = 15_000;
+
+/**
+ * Send everything queued. Resolves 'done' when nothing queued is left, or
+ * 'stopped' when the rest cannot be sent now -- no signal, a server having a
+ * moment -- and has to be tried again later.
+ */
 export async function drain(
 	server: SupabaseClient,
 	told: (o: Outcome) => void
-): Promise<void> {
-	await navigator.locks.request(SYNC_LOCK, async () => {
+): Promise<'done' | 'stopped'> {
+	return navigator.locks.request(SYNC_LOCK, async (): Promise<'done' | 'stopped'> => {
 		for (;;) {
 			const queue = await tx(['queue'], 'readonly', (t) =>
 				req(t.objectStore('queue').getAll() as IDBRequest<Mutation[]>)
 			);
 			const next = queue.find((m) => m.state === 'queued');
-			if (!next) return;
+			if (!next) return 'done';
 
 			// An edit to a row that never reached the server: the edit that
 			// created it was refused, or is waiting on the traveller.
@@ -171,12 +184,13 @@ export async function drain(
 				continue;
 			}
 
-			const { data, error, status } = await server.rpc('apply_mutation', {
-				mutation: next.id,
-				ops: next.ops.map(wire)
-			});
+			const { data, error, status } = await server
+				.rpc('apply_mutation', { mutation: next.id, ops: next.ops.map(wire) })
+				.abortSignal(AbortSignal.timeout(REQUEST_MS));
 			if (error) {
-				if (retryable(status, error.code)) return;
+				// Given up, or cut short: the edit id makes sending it again
+				// harmless even if the server did apply it.
+				if (retryable(status, error.code)) return 'stopped';
 				const reason = refusal(next, error.message);
 				await refuse(next, reason);
 				told({ kind: 'refused', mutation: next, message: reason });

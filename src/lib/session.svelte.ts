@@ -19,7 +19,7 @@ const OWNER = 'tm:cached-for';
  * the previous account's trips before the server had said a word -- row-level
  * security stepped around by the device, with nobody doing anything wrong.
  */
-export async function ownedBy(id: string | null): Promise<void> {
+async function ownedBy(id: string | null): Promise<void> {
 	let owner: string | null = null;
 	try {
 		owner = localStorage.getItem(OWNER);
