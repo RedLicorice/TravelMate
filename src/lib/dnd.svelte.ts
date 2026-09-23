@@ -32,14 +32,25 @@ export type DropTarget = { day: number; at: string | null } | null;
  * (data-from, data-to on the ruler). So a card's beginning and end are
  * exactly where the ruler says its hours are, whatever height it is drawn.
  */
-export type Ruler = { top: number; height: number; points: [number, number][] };
+export type Ruler = {
+	top: number;
+	height: number;
+	points: [number, number][];
+	/** The cards themselves, top to bottom: where each sits (as fractions) and when it starts. */
+	cards: { id: string; top: number; bottom: number; start: number }[];
+};
 
 export function measure(ruler: HTMLElement): Ruler {
 	const box = ruler.getBoundingClientRect();
 	const from = Number(ruler.dataset.from);
 	const to = Number(ruler.dataset.to);
 	const cards = [...ruler.querySelectorAll<HTMLElement>('[data-start]')]
-		.map((el) => ({ r: el.getBoundingClientRect(), start: Number(el.dataset.start), end: Number(el.dataset.end) }))
+		.map((el) => ({
+			id: el.dataset.card ?? '',
+			r: el.getBoundingClientRect(),
+			start: Number(el.dataset.start),
+			end: Number(el.dataset.end)
+		}))
 		.sort((a, b) => a.r.top - b.r.top);
 	const frac = (y: number) => (y - box.top) / box.height;
 	const points: [number, number][] = [[0, Math.min(from, cards[0]?.start ?? from)]];
@@ -50,7 +61,12 @@ export function measure(ruler: HTMLElement): Ruler {
 	// Time only runs forward down the page: a card drawn below one it starts
 	// before (an overlap) does not pull the ruler back.
 	for (let i = 1; i < points.length; i++) points[i][1] = Math.max(points[i][1], points[i - 1][1]);
-	return { top: box.top, height: box.height, points };
+	return {
+		top: box.top,
+		height: box.height,
+		points,
+		cards: cards.map((c) => ({ id: c.id, top: frac(c.r.top), bottom: frac(c.r.bottom), start: c.start }))
+	};
 }
 
 const between = (points: [number, number][], x: number, from: 0 | 1, to: 0 | 1): number => {
@@ -159,7 +175,16 @@ export function createDrag(
 		if (here && onScreen) {
 			const box = onScreen.getBoundingClientRect();
 			const fraction = Math.min(1, Math.max(0, (y - box.top) / box.height));
-			return { day, at: new Date(timeAt(here, fraction)).toISOString() };
+			// Where the finger is decides the order: above a card, or on its
+			// upper half, the held card goes before it; lower down, after it.
+			// The line gives the minute -- unless the line's minute is later
+			// than the card it is going before starts (a card out of order with
+			// the one above it), and then it is that card's start, and that card
+			// and everything after it are pushed down.
+			let at = timeAt(here, fraction);
+			const next = here.cards.find((c) => c.id !== state.id && (c.top + c.bottom) / 2 > fraction);
+			if (next && next.start < at) at = next.start;
+			return { day, at: new Date(at).toISOString() };
 		}
 		const scale = zone.querySelector<HTMLElement>('[data-rail-from]');
 		if (!scale) return { day, at: null };

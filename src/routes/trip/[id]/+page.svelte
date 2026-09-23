@@ -2338,6 +2338,7 @@
 						<div
 							class="tm-stop"
 							data-start={stop.arrive.getTime()}
+							data-card={stop.placementId ?? ''}
 							data-end={stop.depart.getTime()}
 							class:tm-stop--anchor={stop.anchor}
 							class:tm-stop--terminal={stop.anchorKind === 'terminal'}
