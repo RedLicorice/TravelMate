@@ -119,6 +119,8 @@ export function createDrag(
 	let holdTimer: ReturnType<typeof setTimeout> | null = null;
 	let origin = { x: 0, y: 0 };
 	let pending: string | null = null;
+	/** Whether the finger has gone anywhere since picking the card up. */
+	let moved = false;
 	let scroller: HTMLElement | null = null;
 	let crawling: number | null = null;
 
@@ -178,6 +180,12 @@ export function createDrag(
 			return;
 		}
 		event.preventDefault();
+		if (
+			Math.abs(event.clientX - origin.x) > SLOP_PX ||
+			Math.abs(event.clientY - origin.y) > SLOP_PX
+		) {
+			moved = true;
+		}
 		state.x = event.clientX;
 		state.y = event.clientY;
 		state.target = targetAt(event.clientX, event.clientY);
@@ -186,8 +194,11 @@ export function createDrag(
 	function finish() {
 		const id = state.id;
 		const target = state.target;
+		const went = moved;
 		cleanup();
-		if (id && target) onDrop(id, target);
+		// Picked up and put straight back down is not a move: the card keeps
+		// the time it had, and nothing is written.
+		if (id && target && went) onDrop(id, target);
 	}
 
 	function cancel() {
@@ -218,6 +229,7 @@ export function createDrag(
 		function down(event: PointerEvent) {
 			if (event.button !== 0 && event.pointerType === 'mouse') return;
 			pending = id;
+			moved = false;
 			origin = { x: event.clientX, y: event.clientY };
 			state.x = event.clientX;
 			state.y = event.clientY;

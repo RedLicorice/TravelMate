@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { base } from '$app/paths';
-	import TripMap from '$lib/GoogleMap.svelte';
+	import { PUBLIC_GOOGLE_MAPS_BROWSER_KEY } from '$env/static/public';
 	import Stars from '$lib/Stars.svelte';
 	import { placeUrl } from '$lib/maps';
 	import { haversineKm } from '$lib/plan/geo';
@@ -64,6 +64,27 @@
 	});
 
 	const addedBy = $derived(people.find((p) => p.userId === poi.added_by) ?? null);
+
+	/** The place, and the hotel when there is one, as a still picture. */
+	const staticMap = $derived.by(() => {
+		if (!PUBLIC_GOOGLE_MAPS_BROWSER_KEY) return null;
+		const q = new URLSearchParams({
+			center: `${poi.lat},${poi.lng}`,
+			zoom: '15',
+			size: '640x180',
+			scale: '2',
+			key: PUBLIC_GOOGLE_MAPS_BROWSER_KEY
+		});
+		q.append('markers', `color:0xe98a5f|${poi.lat},${poi.lng}`);
+		if (hotel) q.append('markers', `color:0x5b8def|label:H|${hotel.lat},${hotel.lng}`);
+		return `https://maps.googleapis.com/maps/api/staticmap?${q}`;
+	});
+	/** A key not allowed the static map answers with an error: then the tile says what tapping does. */
+	let mapFailed = $state(false);
+	$effect(() => {
+		void poi.id;
+		mapFailed = false;
+	});
 	const km = $derived(
 		hotel ? haversineKm(hotel, { lat: poi.lat, lng: poi.lng }).toFixed(1) : null
 	);
@@ -77,18 +98,29 @@
 
 <div class="tm-sheet" style="position:fixed;z-index:61;max-height:86vh;overflow-y:auto;padding:0">
 	<!-- Map on top: where a place is answers most of what gets asked about it,
-	     and answers it before any reading. -->
-	<div style="height:180px">
-		<TripMap
-			markers={[
-				{ id: poi.id, lat: poi.lat, lng: poi.lng, color: 'var(--tm-primary)', selected: true },
-				...(hotel ? [{ id: 'hotel', lat: hotel.lat, lng: hotel.lng, glyph: 'H', color: 'var(--tm-sky)' }] : [])
-			]}
-			routes={[]}
-			center={{ lat: poi.lat, lng: poi.lng }}
-			zoom={15}
-		/>
-	</div>
+	     and answers it before any reading. A picture of the map, not a map:
+	     it does not scroll or zoom, it costs nothing to open the card, and
+	     tapping it opens the place in Google Maps. -->
+	<a
+		href={placeUrl({ lat: poi.lat, lng: poi.lng }, poi.name)}
+		target="_blank"
+		rel="noopener noreferrer"
+		aria-label="Open {poi.name} in Google Maps"
+		style="display:grid;place-items:center;height:180px;background:var(--tm-surface-2);color:var(--tm-text-muted);text-decoration:none;font:600 var(--tm-text-sm)/1 var(--tm-font)"
+	>
+		{#if staticMap && !mapFailed}
+			<img
+				src={staticMap}
+				alt=""
+				width="640"
+				height="180"
+				style="width:100%;height:180px;object-fit:cover"
+				onerror={() => (mapFailed = true)}
+			/>
+		{:else}
+			Open in Google Maps
+		{/if}
+	</a>
 
 	<div style="padding: var(--tm-space-3) var(--tm-space-4) var(--tm-space-4)">
 		<p class="tm-card__title">{poi.name}</p>
