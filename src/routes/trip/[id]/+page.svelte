@@ -36,6 +36,9 @@
 		moveTo,
 		setFurnished,
 		setPlacementMinutes,
+		nightCards,
+		nightOf,
+		skipNight,
 		unplace as dropPlacement,
 		type PlacementRow
 	} from '$lib/trip/placements';
@@ -448,8 +451,20 @@
 	async function unplace(placementId: string) {
 		const name = carded?.name;
 		cardedId = null;
+		const card = placements.find((pl) => pl.id === placementId);
+		const night = card ? nightOf(tripId, card) : null;
+		// The hotel a day ends at, or the one the next starts at, is a night:
+		// taking it off says the traveller is not sleeping there, so the night
+		// is skipped -- both of its cards -- rather than one card deleted.
+		if (night !== null) {
+			await edit(`Not sleeping at the hotel after ${days[night] ? dayLabel(days[night].date, row!.timezone) : 'that day'}`, (w) => {
+				skipNight(w, tripId, night, true);
+				retime(w, [night, night + 1].filter((d) => d < days.length));
+			});
+			return;
+		}
 		await edit(`Took ${name ?? 'a card'} off the day`, (w) => {
-			const day = placements.find((pl) => pl.id === placementId)?.day_index;
+			const day = card?.day_index;
 			dropPlacement(w, placementId);
 			retime(w, day === undefined ? undefined : [day]);
 		});
@@ -1465,6 +1480,23 @@
 		dayIndex = target.day;
 		// Nothing else on the day moves: the new card takes a free minute and
 		// the day reads in the order the clocks say.
+		// A day with a night away skipped: the hotel added back is that night
+		// coming back -- the one the tap is nearer, morning or evening --
+		// rather than an afternoon return beside it.
+		if (kind === 'hotel') {
+			const span = days[target.day];
+			const moment = Date.parse(momentFor(target));
+			const early = span ? moment < (span.start.getTime() + span.end.getTime()) / 2 : false;
+			const { morning, evening } = nightCards(tripId, target.day);
+			const night = early && morning?.skipped && target.day > 0 ? target.day - 1 : evening?.skipped ? target.day : null;
+			if (night !== null) {
+				await edit('Back at the hotel for the night', (w) => {
+					skipNight(w, tripId, night, false);
+					retime(w, [night, night + 1].filter((d) => d < days.length));
+				});
+				return;
+			}
+		}
 		await edit(kind === 'chore' ? 'Added time to yourself' : 'Added a return to the hotel', (w) => {
 			placeAnchor(w, tripId, kind, target.day, momentFor(target), {
 				name: kind === 'chore' ? 'Time to yourself' : null,

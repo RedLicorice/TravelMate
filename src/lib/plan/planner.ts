@@ -52,7 +52,7 @@ export type PlanPoi = {
 	kind?: 'stop' | 'hotel' | 'chore' | 'meal';
 	/** Which sitting a 'meal' card is. */
 	meal?: MealName | null;
-	/** A meal the traveller is not having that day: no time, not drawn, not invented again. */
+	/** A meal not had, or a night not at the hotel: no time, not drawn, not invented again. */
 	skipped?: boolean;
 	name: string;
 	lat: number;
@@ -504,8 +504,12 @@ type Rest = {
 
 const NO_POIS: Map<string, PlanPoi> = new Map();
 
-/** A meal the traveller is not having that day: counted as had, never walked or drawn. */
-const isSkipped = (p: PlanPoi) => p.kind === 'meal' && !!p.skipped;
+/**
+ * A card the traveller has said is not happening: a meal they are not having
+ * (counted as had, so none is offered) or a night away from the hotel. Never
+ * walked or drawn, and never put back.
+ */
+const isSkipped = (p: PlanPoi) => !!p.skipped;
 
 /**
  * Nearest-neighbour from wherever the day begins, then 2-opt against the full
@@ -520,7 +524,9 @@ export function orderDay(
 	curves: CrowdCurves,
 	slots: MealSlot[],
 	travel: TravelTable,
-	rest: Rest = {}
+	rest: Rest = {},
+	/** Where the traveller is when the day begins, when that is not the hotel. */
+	from: LatLng | null = null
 ): PlanPoi[] {
 	const skipped = pois.filter(isSkipped);
 	pois = pois.filter((p) => !isSkipped(p));
@@ -530,7 +536,7 @@ export function orderDay(
 	// that has one. On any other day there is nowhere to measure from until
 	// the first placement -- usually the hotel -- and the nearest neighbour to
 	// nowhere is simply the first stop offered, which is the most wanted.
-	const start = day.fixedStart.at(-1)?.at ?? null;
+	const start = day.fixedStart.at(-1)?.at ?? from;
 	// Held placements come out in the order their clocks say, whatever else is
 	// true of them; only the free stops are ordered, and they are threaded
 	// between the held ones by time. A held card's clock is when it happens.
@@ -1376,6 +1382,11 @@ export function replan(input: PlanInput): PlanResult {
 	const routes = new Map<number, PlanPoi[]>();
 	const rests = new Map<number, Rest>();
 	const spilled: PlanPoi[] = [];
+	/** A skipped hotel card in a day's later half: the night after it is spent away. */
+	const nightAway = (list: PlanPoi[], day: Day) =>
+		list.some(
+			(p) => p.kind === 'hotel' && isSkipped(p) && Date.parse(p.at) > (day.start.getTime() + day.end.getTime()) / 2
+		);
 	buckets.forEach((list, dayIndex) => {
 		const day = input.days[dayIndex];
 		const byWant = (a: PlanPoi, b: PlanPoi) =>
@@ -1397,12 +1408,20 @@ export function replan(input: PlanInput): PlanResult {
 		// Tell them apart by clock against the day's midpoint if it matters.
 		const anchors = route.filter(isAnchor).sort(byClock);
 		const last = anchors.at(-1);
-		if (input.hotel && !day.fixedEnd.length && (last?.kind !== 'hotel' || anchors.length < 2)) {
+		// Not on a night the traveller has said they spend away from it.
+		if (input.hotel && !day.fixedEnd.length && !nightAway(route, day) && (last?.kind !== 'hotel' || anchors.length < 2)) {
 			route.push(closingHotel(input.hotel, day, dayIndex));
 		}
 
 		const rest: Rest = { diners: seatable, containers };
 		rests.set(dayIndex, rest);
+		// After a night away the day starts where the last one ended, not at
+		// the hotel: the traveller wakes up wherever they were.
+		const before = dayIndex > 0 ? routes.get(dayIndex - 1) : undefined;
+		const awake =
+			before && nightAway(before, input.days[dayIndex - 1])
+				? (before.filter((p) => !isSkipped(p)).at(-1) ?? null)
+				: null;
 		routes.set(
 			dayIndex,
 			orderDay(
@@ -1413,7 +1432,8 @@ export function replan(input: PlanInput): PlanResult {
 				curves,
 				slots,
 				travel,
-				rest
+				rest,
+				awake ? at(awake.exitAt ?? awake) : null
 			)
 		);
 	});

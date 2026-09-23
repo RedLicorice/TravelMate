@@ -180,3 +180,45 @@ export const moveTo = (w: Writer, id: string, at: string, dayIndex?: number) =>
 /** Halfway between two moments: when a card put between two others happens. */
 export const between = (a: string | Date, b: string | Date): string =>
 	new Date((new Date(a).getTime() + new Date(b).getTime()) / 2).toISOString();
+
+/**
+ * The hotel cards that begin and end a day: its first card when that is a
+ * hotel -- the morning, woken up in -- and its last when that is one -- the
+ * evening, slept in. Skipped cards count: they keep their clock.
+ */
+export function nightCards(tripId: string, day: number): { morning?: PlacementRow; evening?: PlacementRow } {
+	const cards = listPlacements(tripId).filter((pl) => pl.day_index === day);
+	const first = cards[0];
+	const last = cards.at(-1);
+	return {
+		morning: first?.kind === 'hotel' ? first : undefined,
+		evening: last?.kind === 'hotel' && last !== first ? last : undefined
+	};
+}
+
+/**
+ * One night at the hotel is the evening card of `day` and the morning card of
+ * the day after: sleeping there is one fact. Skipping it -- sleeping elsewhere,
+ * or not at all -- marks both; bringing it back unmarks both.
+ */
+export function skipNight(w: Writer, tripId: string, day: number, skipped: boolean) {
+	const evening = nightCards(tripId, day).evening;
+	const morning = nightCards(tripId, day + 1).morning;
+	for (const pl of [evening, morning]) {
+		if (pl && pl.skipped !== skipped) w.update('placements', { id: pl.id }, { skipped });
+	}
+}
+
+/**
+ * The night a hotel card belongs to, as the day whose evening it is: its own
+ * day for an evening card, the day before for a morning one. Null for a
+ * hotel card in the middle of a day, and for the first day's check-in, which
+ * no night comes before.
+ */
+export function nightOf(tripId: string, pl: PlacementRow): number | null {
+	if (pl.kind !== 'hotel') return null;
+	const { morning, evening } = nightCards(tripId, pl.day_index);
+	if (evening?.id === pl.id) return pl.day_index;
+	if (morning?.id === pl.id && pl.day_index > 0) return pl.day_index - 1;
+	return null;
+}
