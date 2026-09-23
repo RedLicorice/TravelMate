@@ -38,7 +38,6 @@ import {
 	type Op,
 	type Outcome,
 	type Row,
-	type RowOp,
 	type Table
 } from './sync';
 
@@ -582,43 +581,41 @@ export function watchTrip(id: string): () => void {
 // --- Conflicts ---------------------------------------------------------------
 
 /**
- * Keep the put-aside edit: it is sent again, made against the rows as they
- * are upstream now, and overwrites what it touches.
+ * Keep the put-aside edit: it is made again, against the rows as they are
+ * upstream now, and overwrites what it touches -- through the writer, like
+ * any other edit, so it is versioned and lands whole in the same way.
  *
- * Not the plan it carried. That was drawn from the trip as it was when the
+ * Not the plan it carried: that was drawn from the trip as it was when the
  * edit was made, and the trip has moved on since -- a card it names may be
- * gone. The screen re-times the day from the trip as it now stands, as an
- * edit of its own, straight after.
+ * gone. `follow` is what follows from keeping it (the screen passes its
+ * re-time), written into the same edit, so the change and the day re-timed
+ * around it land together or not at all.
+ *
+ * The put-aside edit is taken off the device only once the new one is safely
+ * on it: a failure in between leaves the choice still waiting, not lost.
  */
-export async function accept(m: Mutation): Promise<void> {
-	const ops: Op[] = [];
-	for (const op of m.ops) {
-		if (op.op === 'plan') continue;
-		const now = confirmed.get(rowId(op.table, op.key))?.row;
-		const version = (now?.version as number | undefined) ?? null;
-		if (op.op === 'insert') {
-			if (!now) ops.push(op);
-			else {
-				const { id: _i, created_at: _c, ...values } = op.values;
-				ops.push({ ...op, op: 'update', base: version, values, before: now } as RowOp);
+export async function accept(m: Mutation, follow?: (w: Writer) => void): Promise<void> {
+	await mutate(m.name, m.trip, (w) => {
+		for (const op of m.ops) {
+			if (op.op === 'plan') continue;
+			const now = confirmed.get(rowId(op.table, op.key))?.row;
+			if (op.op === 'insert') {
+				if (!now) w.insert(op.table, op.values);
+				else {
+					const { id: _i, created_at: _c, ...values } = op.values;
+					w.update(op.table, op.key, values);
+				}
+			} else if (op.op === 'update') {
+				if (now) w.update(op.table, op.key, op.values);
+				else w.insert(op.table, { ...op.before, ...op.values });
+			} else if (now) {
+				w.remove(op.table, op.key);
 			}
-		} else if (op.op === 'update') {
-			if (now) ops.push({ ...op, base: version, before: now });
-			else ops.push({ op: 'insert', table: op.table, key: op.key, lock: op.lock, base: null, values: { ...op.before, ...op.values } });
-		} else if (now) {
-			ops.push({ ...op, base: version, before: now });
 		}
-	}
-	const { seq: _s, conflicts: _c, ...rest } = m;
-	const again: Mutation = { ...rest, ops, state: 'queued', at: new Date().toISOString() };
-	const seq = await tx(['queue'], 'readwrite', (t) => {
-		const q = t.objectStore('queue');
-		q.delete(m.seq!);
-		return req(q.add($state.snapshot(again)) as IDBRequest<number>);
+		follow?.(w);
 	});
-	queue = [...queue.filter((x) => x.seq !== m.seq), { ...again, seq }];
-	announce('changed', m.name);
-	send();
+	await tx(['queue'], 'readwrite', (t) => void t.objectStore('queue').delete(m.seq!));
+	queue = queue.filter((x) => x.seq !== m.seq);
 }
 
 /** Keep upstream: the put-aside edit is dropped, and the row is what the trip says. */
@@ -653,6 +650,20 @@ export async function joinTrip(token: string): Promise<string | null> {
 	const id = (data as string | null) ?? null;
 	if (id) await pullTrip(id);
 	return id;
+}
+
+/**
+ * The development trail (telemetry.ts): written straight to the server, not
+ * queued. It is not the traveller's data, and a trail that waited for a
+ * connection would only be a longer trail nobody asked for. A failure is
+ * dropped -- the trail is not worth a retry storm.
+ */
+export async function sendEvents(batch: object[]): Promise<void> {
+	try {
+		await supabase.from('events').insert(batch);
+	} catch {
+		// What is lost is lost.
+	}
 }
 
 /** A picture, uploaded; returns where it can be read from. Needs a connection. */

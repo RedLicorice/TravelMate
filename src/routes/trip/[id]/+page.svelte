@@ -407,12 +407,7 @@
 	 * the day re-timed around it, rather than sending them to another screen
 	 * and back to see what it did.
 	 */
-	async function editCarded(patch: {
-		duration_min?: number;
-		priority?: number;
-		pinned?: boolean;
-		notes?: string | null;
-	}) {
+	async function editCarded(patch: { duration_min?: number; priority?: number; notes?: string | null }) {
 		const held = carded;
 		if (!held) return;
 		// Written into the plan as well, so a longer visit is a longer card the
@@ -420,9 +415,8 @@
 		// closed. Nothing moves: every card holds its own clock, and a re-time
 		// writes times without rearranging anything. What it takes to fit the
 		// new length is Replan's question.
-		const { pinned: _pinned, ...change } = patch;
 		await edit(`Changed ${held.name}`, (w) => {
-			updatePoi(w, held.id, change);
+			updatePoi(w, held.id, patch);
 			retime(w);
 		});
 	}
@@ -1247,9 +1241,8 @@
 		conflict = null;
 		try {
 			if (keep === 'theirs') return await reject(m);
-			await accept(m);
-			// The day, re-timed around the change that was kept.
-			if (canEdit) await edit('Re-timed the days', retime);
+			// The change, and the day re-timed around it, as one edit.
+			await accept(m, canEdit ? retime : undefined);
 		} catch (e) {
 			error = (e as Error).message;
 		}

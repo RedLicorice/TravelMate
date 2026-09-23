@@ -22,7 +22,9 @@
 	 * which the stylesheet honours -- navigation is what it always was.
 	 */
 	onNavigate((navigation) => {
-		if (!document.startViewTransition) return;
+		// Nor for a page nobody is looking at, where the browser aborts the
+		// transition and says so as an error.
+		if (!document.startViewTransition || document.visibilityState !== 'visible') return;
 		return new Promise((resolve) => {
 			document.startViewTransition(async () => {
 				resolve();

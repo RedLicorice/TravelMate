@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { sendEvents } from './store/store.svelte';
 
 /**
  * What the app did, written down as it happens.
@@ -42,11 +42,7 @@ async function flush() {
 	timer = null;
 	const batch = queue.splice(0, queue.length);
 	if (!batch.length) return;
-	try {
-		await supabase.from('events').insert(batch);
-	} catch {
-		// The trail is not worth a retry storm. What is lost is lost.
-	}
+	await sendEvents(batch);
 }
 
 export function track(name: string, detail: Record<string, unknown> = {}) {
