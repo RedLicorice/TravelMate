@@ -150,7 +150,9 @@ export function savePlan(
 	w: Writer,
 	tripId: string,
 	result: PlanResult,
-	known: PlanStopRow[] = []
+	known: PlanStopRow[] = [],
+	/** The days the result is for, when it is not the whole trip. */
+	days?: number[]
 ): string {
 	const ids = new Map<string, string>();
 	const byDay = new Map<number, PlanStopRow[]>();
@@ -187,7 +189,8 @@ export function savePlan(
 	return w.plan(
 		tripId,
 		rows.map(({ trip_id: _ignored, ...rest }) => rest),
-		PLANNER_VERSION
+		PLANNER_VERSION,
+		days
 	);
 }
 

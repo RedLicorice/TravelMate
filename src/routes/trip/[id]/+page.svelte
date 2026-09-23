@@ -286,7 +286,7 @@
 			if (change !== 'reset' && change.poiId && !placements.some((pl) => pl.poi_id === change.poiId)) {
 				place(w, tripId, change.poiId, dayIdx, at);
 			}
-			retime(w);
+			retime(w, [dayIdx]);
 		});
 	}
 
@@ -396,7 +396,9 @@
 							? { arrival_buffer_min: minutes }
 							: { departure_buffer_min: minutes }
 				);
-			retime(w);
+			// This card's day; a trip's or a traveller's own allowance, every day.
+			const day = placementId ? placements.find((pl) => pl.id === placementId)?.day_index : undefined;
+			retime(w, day === undefined ? undefined : [day]);
 		});
 	}
 
@@ -414,8 +416,9 @@
 		// writes times without rearranging anything. What it takes to fit the
 		// new length is Replan's question.
 		await edit(`Changed ${held.name}`, (w) => {
+			const days = daysOf(held.id);
 			updatePoi(w, held.id, patch);
-			retime(w);
+			retime(w, days);
 		});
 	}
 
@@ -432,18 +435,25 @@
 		const name = carded?.name;
 		cardedId = null;
 		await edit(`Took ${name ?? 'a card'} off the day`, (w) => {
+			const day = placements.find((pl) => pl.id === placementId)?.day_index;
 			dropPlacement(w, placementId);
-			retime(w);
+			retime(w, day === undefined ? undefined : [day]);
 		});
 	}
+
+	/** The days a place is visited on. */
+	const daysOf = (poiId: string) => [
+		...new Set(placements.filter((pl) => pl.poi_id === poiId).map((pl) => pl.day_index))
+	];
 
 	/** Let Replan have every visit to this place back. */
 	async function unpin(poiId: string) {
 		const name = carded?.name;
 		cardedId = null;
 		await edit(`Let Replan move ${name ?? 'a place'} again`, (w) => {
+			const days = daysOf(poiId);
 			for (const pl of placements) if (pl.poi_id === poiId && pl.pinned) holdPlacement(w, pl.id, false);
-			retime(w);
+			retime(w, days);
 		});
 	}
 
@@ -980,10 +990,12 @@
 		// The move and the day re-timed around it, as one edit: the card lands
 		// under the finger, walked on the travel times already in hand. Real
 		// road times come afterwards, and may shift the day by a few minutes.
+		// The day it left and the day it went to: nothing else changed.
+		const from = placements.find((pl) => pl.id === draggedId)?.day_index ?? day;
 		await edit(`Moved ${nameOf(draggedId) || 'a card'}`, (w) => {
 			moveTo(w, draggedId, when, day);
 			pushDown(w, draggedId, when, day);
-			retime(w);
+			retime(w, [...new Set([from, day])]);
 		});
 		// It has a card of its own again, so it is held to that from here.
 		justMoved = null;
@@ -1149,14 +1161,14 @@
 	 * stored plan is the plan of record, so it is written back too, or the
 	 * change would survive only until the page is next opened.
 	 */
-	function retime(w: Writer) {
+	function retime(w: Writer, days?: number[]) {
 		const input = planInput();
 		if (!input) return;
-		// Scheduled on what is already known. The legs this invents are
-		// estimates, marked as such on screen; the real times are asked for
-		// once the edit reaches the server, and arrive on their own.
-		const next = schedule({ ...input, travel: known() });
-		savePlan(w, tripId, next, stored);
+		// Only the days the edit touched, when it says which: the rest of the
+		// trip did not change, and walking, saving and sending it again is
+		// what made every edit cost as much as the whole trip.
+		const next = schedule({ ...input, travel: known() }, days ? new Set(days) : undefined);
+		savePlan(w, tripId, next, stored, days);
 
 		// A longer journey is a later afternoon.
 		//
@@ -1245,7 +1257,7 @@
 
 		if (!stale && !placedButUnplanned && !plannedButGone) return;
 		retimed = true;
-		untrack(() => void edit('Re-timed the days', retime));
+		untrack(() => void edit('Re-timed the days', (w) => retime(w)));
 	});
 
 	/** The put-aside edit whose sheet is open. */
@@ -1282,7 +1294,7 @@
 		try {
 			if (keep === 'theirs') return await reject(m);
 			// The change, and the day re-timed around it, as one edit.
-			await accept(m, canEdit ? retime : undefined);
+			await accept(m, canEdit ? (w) => retime(w) : undefined);
 		} catch (e) {
 			error = (e as Error).message;
 		}
@@ -1461,7 +1473,7 @@
 				name: kind === 'chore' ? 'Time to yourself' : null,
 				minutes: kind === 'chore' ? 60 : 0
 			});
-			retime(w);
+			retime(w, [target.day]);
 		});
 	}
 
@@ -1524,7 +1536,7 @@
 	) {
 		place(w, tripId, poiId, target.day, momentFor(target));
 		dayIndex = target.day;
-		retime(w);
+		retime(w, [target.day]);
 	}
 
 	/**

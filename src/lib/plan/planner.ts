@@ -1262,7 +1262,12 @@ function split(list: PlanPoi[]): { route: PlanPoi[]; diners: PlanPoi[]; containe
  * made, rather than the plan inventing a fix. The day's limits belong to
  * Replan, which arranges the day itself and may spill what does not fit.
  */
-export function schedule(input: PlanInput): PlanResult {
+/**
+ * `only`, when given, is the days to walk: an edit on one day re-times that
+ * day, and the result holds just those days. The rest of the trip did not
+ * change and is not walked again.
+ */
+export function schedule(input: PlanInput, only?: Set<number>): PlanResult {
 	const curves = input.curves ?? categoryCurves(places(input.pois), input.days, input.timezone);
 	const slots = slotsFrom(input.mealWindows ?? DEFAULT_WINDOWS);
 	const travel = input.travel ?? noTravel;
@@ -1283,7 +1288,8 @@ export function schedule(input: PlanInput): PlanResult {
 		unplaced.push({ poi: p, reason: 'not-planned-yet' });
 	}
 
-	const days = input.days.map((day, i) => {
+	const days = input.days.flatMap((day, i) => {
+		if (only && !only.has(i)) return [];
 		const result = walkClock(
 			byDay.get(i)!.sort(byClock),
 			day,
@@ -1295,7 +1301,7 @@ export function schedule(input: PlanInput): PlanResult {
 			{},
 			false
 		);
-		return { index: i, date: day.date, stops: result.stops, overflowed: result.overflowed };
+		return [{ index: i, date: day.date, stops: result.stops, overflowed: result.overflowed }];
 	});
 
 	return { days, unplaced };

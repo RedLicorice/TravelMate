@@ -75,7 +75,10 @@ function lay(): Map<string, Held> {
 		if (m.state !== 'queued') continue;
 		for (const op of m.ops) {
 			if (op.op === 'plan') {
-				for (const [id, h] of view) if (h.table === 'plan_stops' && h.trip === op.trip) view.delete(id);
+				for (const [id, h] of view) {
+					if (h.table !== 'plan_stops' || h.trip !== op.trip) continue;
+					if (!op.days || op.days.includes(h.row.day_index as number)) view.delete(id);
+				}
 				for (const r of op.rows) {
 					const h = held('plan_stops', { ...r, trip_id: op.trip });
 					view.set(h.id, h);
@@ -244,8 +247,8 @@ export type Writer = {
 	/** Change some columns of a row. Unchanged columns are not sent. */
 	update(table: Table, key: Key, values: Row): void;
 	remove(table: Table, key: Key): void;
-	/** The trip's plan, as drawn, replacing the stored one whole. */
-	plan(trip: string, rows: Row[], plannerVersion: number): string;
+	/** The trip's plan, as drawn, replacing the stored one -- for the given days, or whole. */
+	plan(trip: string, rows: Row[], plannerVersion: number, days?: number[]): string;
 };
 
 /** What serialises edits to a row on the server: its trip, or its person. */
@@ -328,9 +331,9 @@ export async function mutate(
 			const base = (confirmed.get(rowId(table, key))?.row.version as number | undefined) ?? null;
 			push({ op: 'delete', table, key, lock: lockOf(table, was), base, before: was });
 		},
-		plan(trip, rows, plannerVersion) {
+		plan(trip, rows, plannerVersion, days) {
 			const generated_at = new Date().toISOString();
-			push({ op: 'plan', trip, rows, planner_version: plannerVersion, generated_at });
+			push({ op: 'plan', trip, rows, planner_version: plannerVersion, generated_at, ...(days ? { days } : {}) });
 			return generated_at;
 		}
 	};

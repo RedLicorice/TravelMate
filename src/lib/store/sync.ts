@@ -63,6 +63,8 @@ export type PlanOp = {
 	rows: Row[];
 	planner_version: number;
 	generated_at: string;
+	/** The days this plan is for; the other days' stops are left as they are. Absent: every day. */
+	days?: number[];
 };
 
 export type Op = RowOp | PlanOp;
@@ -257,7 +259,8 @@ async function applied(m: Mutation, written: (Row | null)[]) {
 		for (const [i, op] of m.ops.entries()) {
 			if (op.op === 'plan') {
 				await eachOfTrip(t, op.trip, (c) => {
-					if ((c.value as Held).table === 'plan_stops') c.delete();
+					const h = c.value as Held;
+					if (h.table === 'plan_stops' && (!op.days || op.days.includes(h.row.day_index as number))) c.delete();
 				});
 				for (const r of op.rows) rows.put(held('plan_stops', { ...r, trip_id: op.trip }));
 				continue;
