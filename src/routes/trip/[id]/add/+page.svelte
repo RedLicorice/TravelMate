@@ -11,7 +11,7 @@
 	import { poi as provider, type City, type Poi } from '$lib/poi';
 	import { durationFor } from '$lib/poi/photon';
 	import { isShortMapLink, parseLatLng } from '$lib/poi/manual';
-	import { branchesOf } from '$lib/poi/branches';
+	import { branchesOf, sameBrand } from '$lib/poi/branches';
 	import Autocomplete from '$lib/Autocomplete.svelte';
 	import { haversineKm } from '$lib/plan/geo';
 	import TripMap from '$lib/GoogleMap.svelte';
@@ -100,13 +100,19 @@
 	);
 
 	/**
-	 * Already on the wishlist? Matched on OSM id when both have one, since the
-	 * same place can come back with slightly different coordinates from a
-	 * different query. Coordinates are the fallback for hand-added stops.
+	 * Already on the wishlist? Matched on the source's id when both come from
+	 * the same source, since the same place can come back with slightly
+	 * different coordinates from a different query. A place saved from
+	 * OpenStreetMap and found again on Google has two ids for one place: it is
+	 * the same one when the name is and it stands within a street of it.
+	 * Coordinates are the fallback for hand-added stops.
 	 */
+	const google = (id: string) => id.startsWith('google/');
 	const matches = (p: Poi) => (s: PoiRow) =>
 		s.osm_id && p.osmId
-			? s.osm_id === p.osmId
+			? google(s.osm_id) === google(p.osmId)
+				? s.osm_id === p.osmId
+				: sameBrand(s.name, p.name) && haversineKm(s, p) < 0.15
 			: Math.abs(s.lat - p.lat) < 1e-6 && Math.abs(s.lng - p.lng) < 1e-6;
 
 	const onWishlist = (p: Poi) => saved.find(matches(p)) ?? null;

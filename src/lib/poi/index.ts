@@ -1,13 +1,10 @@
-import { photon } from './photon';
+import { google } from './google';
 export type { BBox, City, Place, Poi, PoiProvider, Terminal } from './types';
 export { ADVANCE_DEFAULT, terminalKind, type TerminalKind } from './photon';
 
 /**
- * The active provider. Photon answers partial words as the traveller types,
- * which is what a picker needs; Nominatim requires whole words. Both are free,
- * keyless, and read the same OSM data.
- *
- * Swapping to Google Places is a changed import here plus one new file
- * implementing PoiProvider. No caller changes.
+ * The active provider: Google, through the `places` server function, which
+ * keeps the key and charges each search to the traveller's daily budget.
+ * Photon -- free, keyless, OSM -- is still here, one changed line away.
  */
-export const poi = photon;
+export const poi = google;
