@@ -2598,6 +2598,28 @@
 						: `Add to ${dayLabel(days[target.day].date, row.timezone)}`}
 				</p>
 
+				{#if missingMeals.length}
+					<p class="tm-hint mb-2">A meal this day has not got</p>
+					<div class="mb-3 flex flex-wrap gap-2">
+						{#each missingMeals as meal}
+							<button
+								class="tm-chip"
+								style="background: var(--tm-blush-soft); color: var(--tm-blush-ink)"
+								disabled={busy}
+								onclick={() =>
+									sayMeal(target.day, meal, {
+										skipped: false,
+										// Where they tapped. Without a time a meal whose window
+										// the day never reached simply would not appear again.
+										at: (slotFrom?.depart ?? days[target.day].start).toISOString()
+									})}
+							>
+								{MEAL_LABEL[meal]}
+							</button>
+						{/each}
+					</div>
+				{/if}
+
 				<!-- Not everything on a day is a place on the wishlist. Going back
 				     to the hotel in the afternoon and an hour doing nothing are
 				     things the day is made of, and they go in the same way. -->
@@ -2611,6 +2633,44 @@
 						</button>
 					</div>
 				{/if}
+
+				<!-- Folded: most of the time what goes in a gap is a place or a meal. -->
+				<details class="mb-3">
+					<summary class="tm-hint" style="cursor:pointer">Or a stretch of time</summary>
+				<div class="tm-field mt-2">
+					<input
+						class="tm-input"
+						bind:value={blockName}
+						placeholder="Rest, shopping, a nap…"
+						aria-label="What the time is for"
+					/>
+					<div class="flex flex-wrap gap-2">
+						{#each [30, 60, 90, 120] as m}
+							<button
+								class="tm-chip"
+								aria-pressed={blockMin === m}
+								style={blockMin === m
+									? 'background: var(--tm-peach-soft); color: var(--tm-peach-ink)'
+									: 'opacity: 0.6'}
+								onclick={() => (blockMin = m)}
+							>
+								{m < 60 ? `${m} min` : `${m / 60} h`}
+							</button>
+						{/each}
+					</div>
+					<button
+						class="tm-btn tm-btn--secondary tm-btn--block"
+						disabled={!blockName.trim() || busy}
+						onclick={addBlock}
+					>
+						Add {blockName.trim() || 'a block'}
+					</button>
+					<span class="tm-hint">
+						No place of its own: it happens wherever the day has you at the time, and stays
+						where you put it.
+					</span>
+				</div>
+				</details>
 
 				<div class="tm-search mb-2">
 					<svg
@@ -2644,7 +2704,12 @@
 					<p class="tm-hint mb-2">
 						{target.meal ? 'From your wishlist, places to eat first' : 'From your wishlist'}
 					</p>
-					<div class="flex flex-col gap-1" style="margin: 0 calc(-1 * var(--tm-space-2))">
+					<!-- About four at a time, and the rest a scroll away: the sheet
+					     stays a sheet, not a list that pushes everything off it. -->
+					<div
+						class="flex flex-col gap-1"
+						style="margin: 0 calc(-1 * var(--tm-space-2)); max-height: 16rem; overflow-y: auto; border: 1px solid var(--tm-border); border-radius: var(--tm-r-md)"
+					>
 						{#each unassigned as p (p.id)}
 							{@const same = unassigned.filter((o) => o.name === p.name).length}
 							<button class="tm-result" onclick={() => placeHere(p.id)}>
@@ -2675,63 +2740,6 @@
 							? `Nothing on your wishlist matches “${slotQuery.trim()}”.`
 							: 'Nothing on your wishlist yet.'}
 					</p>
-				{/if}
-
-				<p class="tm-hint mt-4 mb-2">Or a stretch of time</p>
-				<div class="tm-field">
-					<input
-						class="tm-input"
-						bind:value={blockName}
-						placeholder="Rest, shopping, a nap…"
-						aria-label="What the time is for"
-					/>
-					<div class="flex flex-wrap gap-2">
-						{#each [30, 60, 90, 120] as m}
-							<button
-								class="tm-chip"
-								aria-pressed={blockMin === m}
-								style={blockMin === m
-									? 'background: var(--tm-peach-soft); color: var(--tm-peach-ink)'
-									: 'opacity: 0.6'}
-								onclick={() => (blockMin = m)}
-							>
-								{m < 60 ? `${m} min` : `${m / 60} h`}
-							</button>
-						{/each}
-					</div>
-					<button
-						class="tm-btn tm-btn--secondary tm-btn--block"
-						disabled={!blockName.trim() || busy}
-						onclick={addBlock}
-					>
-						Add {blockName.trim() || 'a block'}
-					</button>
-					<span class="tm-hint">
-						No place of its own: it happens wherever the day has you at the time, and stays
-						where you put it.
-					</span>
-				</div>
-
-				{#if missingMeals.length}
-					<p class="tm-hint mt-4 mb-2">Or a meal this day has not got</p>
-					<div class="flex flex-wrap gap-2">
-						{#each missingMeals as meal}
-							<button
-								class="tm-chip"
-								style="background: var(--tm-blush-soft); color: var(--tm-blush-ink)"
-								disabled={busy}
-								onclick={() =>
-									sayMeal(target.day, meal, {
-										skipped: false,
-										// Where they tapped. Without a time a meal whose window
-										// the day never reached simply would not appear again.
-										at: (slotFrom?.depart ?? days[target.day].start).toISOString()
-									})}
-							>
-								{MEAL_LABEL[meal]}
-							</button>
-						{/each}
-					</div>
 				{/if}
 
 				<a
