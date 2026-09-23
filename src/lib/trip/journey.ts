@@ -17,8 +17,11 @@ export type JourneyPoint = {
  * timezone per leg. Only the leg that touches the destination city is ever
  * converted to an instant, and that one is in the trip's own zone.
  */
-/** How a leg is travelled. It decides which fields the leg is asked for. */
-export type JourneyMode = 'flight' | 'train' | 'coach' | 'ferry' | 'car';
+/**
+ * How a leg is travelled. It decides which fields the leg is asked for.
+ * 'transit' is public transport in town: a bus, a tram, a metro line.
+ */
+export type JourneyMode = 'flight' | 'train' | 'coach' | 'ferry' | 'transit' | 'car';
 
 export type JourneyLeg = {
 	/**

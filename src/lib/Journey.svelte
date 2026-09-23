@@ -18,6 +18,7 @@
 		{ mode: 'train', label: 'Train' },
 		{ mode: 'coach', label: 'Coach' },
 		{ mode: 'ferry', label: 'Ferry' },
+		{ mode: 'transit', label: 'Public transport' },
 		{ mode: 'car', label: 'Car' }
 	];
 
@@ -26,7 +27,8 @@
 		flight: { label: 'Flight number', eg: 'BA117' },
 		train: { label: 'Train', eg: 'IC 9612' },
 		coach: { label: 'Coach', eg: 'FX010' },
-		ferry: { label: 'Sailing', eg: 'DFDS 1830' }
+		ferry: { label: 'Sailing', eg: 'DFDS 1830' },
+		transit: { label: 'Line', eg: 'Central line' }
 	};
 
 	/**
