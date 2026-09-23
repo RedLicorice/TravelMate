@@ -91,15 +91,18 @@
   --tm-conflict: oklch(0.66 0.170 50); /* an edit put aside */
   --tm-danger-ink:    oklch(0.48 0.15 25);
 
-  /* ---- day ramp: 8 days, even hue steps, fixed L and C ---- */
-  --tm-day-1: oklch(0.62 0.17 25);
-  --tm-day-2: oklch(0.72 0.15 62);
-  --tm-day-3: oklch(0.56 0.13 108);
-  --tm-day-4: oklch(0.68 0.16 152);
-  --tm-day-5: oklch(0.58 0.11 202);
-  --tm-day-6: oklch(0.60 0.16 258);
-  --tm-day-7: oklch(0.52 0.17 300);
-  --tm-day-8: oklch(0.68 0.16 345);
+  /* ---- day ramp: 8 days, red to violet only ----
+   * Green, blue, brown, beige, yellow and orange are the map's own: parks,
+   * water, land, roads. A day's line in any of them is lost on the tiles.
+   * Six hues, next days never alike; 7 and 8 are 1 and 2, lighter. */
+  --tm-day-1: oklch(0.60 0.19 25);
+  --tm-day-2: oklch(0.52 0.19 300);
+  --tm-day-3: oklch(0.66 0.19 345);
+  --tm-day-4: oklch(0.55 0.18 280);
+  --tm-day-5: oklch(0.58 0.19 5);
+  --tm-day-6: oklch(0.60 0.22 325);
+  --tm-day-7: oklch(0.74 0.14 25);
+  --tm-day-8: oklch(0.70 0.14 300);
   --tm-day-none: oklch(0.70 0.010 60);   /* unassigned wishlist pin */
   --tm-pin-halo: oklch(1 0 0 / 0.92);    /* ring that lifts a pin off map tiles */
 
@@ -183,14 +186,14 @@
 
     /* Hue angles are identical to light: a day keeps its identity when the
      * theme flips. Only lightness lifts, so pins hold against dark tiles. */
-    --tm-day-1: oklch(0.70 0.16 25);
-    --tm-day-2: oklch(0.80 0.14 62);
-    --tm-day-3: oklch(0.64 0.12 108);
-    --tm-day-4: oklch(0.78 0.15 152);
-    --tm-day-5: oklch(0.66 0.10 202);
-    --tm-day-6: oklch(0.68 0.15 258);
-    --tm-day-7: oklch(0.62 0.17 300);
-    --tm-day-8: oklch(0.80 0.15 345);
+    --tm-day-1: oklch(0.68 0.18 25);
+    --tm-day-2: oklch(0.62 0.18 300);
+    --tm-day-3: oklch(0.74 0.17 345);
+    --tm-day-4: oklch(0.64 0.17 280);
+    --tm-day-5: oklch(0.66 0.18 5);
+    --tm-day-6: oklch(0.68 0.20 325);
+    --tm-day-7: oklch(0.82 0.12 25);
+    --tm-day-8: oklch(0.78 0.12 300);
     --tm-day-none: oklch(0.45 0.010 55);
     --tm-pin-halo: oklch(0.17 0.008 55 / 0.92);
   }
@@ -219,10 +222,10 @@
   --tm-ok: oklch(0.88 0.085 155); --tm-ok-soft: oklch(0.955 0.045 155); --tm-ok-ink: oklch(0.44 0.11 155);
   --tm-danger-soft: oklch(0.955 0.045 25); --tm-danger-ink: oklch(0.48 0.15 25);
   --tm-conflict: oklch(0.66 0.170 50); /* an edit put aside */
-  --tm-day-1: oklch(0.62 0.17 25);  --tm-day-2: oklch(0.72 0.15 62);
-  --tm-day-3: oklch(0.56 0.13 108); --tm-day-4: oklch(0.68 0.16 152);
-  --tm-day-5: oklch(0.58 0.11 202); --tm-day-6: oklch(0.60 0.16 258);
-  --tm-day-7: oklch(0.52 0.17 300); --tm-day-8: oklch(0.68 0.16 345);
+  --tm-day-1: oklch(0.60 0.19 25);  --tm-day-2: oklch(0.52 0.19 300);
+  --tm-day-3: oklch(0.66 0.19 345); --tm-day-4: oklch(0.55 0.18 280);
+  --tm-day-5: oklch(0.58 0.19 5);   --tm-day-6: oklch(0.60 0.22 325);
+  --tm-day-7: oklch(0.74 0.14 25);  --tm-day-8: oklch(0.70 0.14 300);
   --tm-day-none: oklch(0.70 0.010 60); --tm-pin-halo: oklch(1 0 0 / 0.92);
 }
 
@@ -246,10 +249,10 @@
   --tm-ok: oklch(0.74 0.095 155); --tm-ok-soft: oklch(0.31 0.050 155); --tm-ok-ink: oklch(0.86 0.090 155);
   --tm-danger-soft: oklch(0.32 0.055 25); --tm-danger-ink: oklch(0.84 0.110 25);
   --tm-conflict: oklch(0.74 0.150 55); /* an edit put aside */
-  --tm-day-1: oklch(0.70 0.16 25);  --tm-day-2: oklch(0.80 0.14 62);
-  --tm-day-3: oklch(0.64 0.12 108); --tm-day-4: oklch(0.78 0.15 152);
-  --tm-day-5: oklch(0.66 0.10 202); --tm-day-6: oklch(0.68 0.15 258);
-  --tm-day-7: oklch(0.62 0.17 300); --tm-day-8: oklch(0.80 0.15 345);
+  --tm-day-1: oklch(0.68 0.18 25);  --tm-day-2: oklch(0.62 0.18 300);
+  --tm-day-3: oklch(0.74 0.17 345); --tm-day-4: oklch(0.64 0.17 280);
+  --tm-day-5: oklch(0.66 0.18 5);   --tm-day-6: oklch(0.68 0.20 325);
+  --tm-day-7: oklch(0.82 0.12 25);  --tm-day-8: oklch(0.78 0.12 300);
   --tm-day-none: oklch(0.45 0.010 55); --tm-pin-halo: oklch(0.17 0.008 55 / 0.92);
 }
 
