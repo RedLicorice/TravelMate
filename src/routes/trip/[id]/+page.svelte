@@ -1508,8 +1508,37 @@
 		return null;
 	});
 
+	/**
+	 * The last real place before the slot, which is what a choice's distance
+	 * is measured from. The hotel's own cards -- checking in, checking out --
+	 * happen at the hotel and read as the hotel. Getting ready, time to
+	 * yourself, a meal with nothing chosen and the slot itself have no place
+	 * of their own, and are walked past.
+	 */
+	const slotPlace = $derived.by(() => {
+		const here = slot;
+		if (!here || !row) return null;
+		const day = drawn[here.day];
+		if (!day) return null;
+		const filling = here.meal ? mealOf(here.meal) : null;
+		const found = here.before ? day.stops.findIndex((st) => st.poiId === here.before) : -1;
+		const before = found < 0 ? day.stops.length : found;
+		const hotel = { name: row.hotel_name, at: { lat: row.hotel_lat, lng: row.hotel_lng } };
+		for (let i = before - 1; i >= 0; i--) {
+			const st = day.stops[i];
+			if (st.anchorKind === 'hotel') return hotel;
+			if (st.anchorKind === 'chore') {
+				if (st.name.endsWith('Check-Out')) return hotel;
+				continue;
+			}
+			if (st.anchorKind === 'meal' && (!st.poiId || mealFor(st) === filling)) continue;
+			return { name: st.name, at: st.at };
+		}
+		return null;
+	});
+
 	const detour = (p: PoiRow) =>
-		slotFrom ? haversineKm(slotFrom.at, { lat: p.lat, lng: p.lng }).toFixed(1) : null;
+		slotPlace ? haversineKm(slotPlace.at, { lat: p.lat, lng: p.lng }).toFixed(1) : null;
 
 	const unassigned = $derived.by(() => {
 		const waiting = (p: PoiRow) => (dayOfPoi.has(p.id) ? 1 : 0);
@@ -2882,7 +2911,7 @@
 									<span class="tm-result__meta" style="display:block">
 										{p.category ?? 'place'} · {p.duration_min} min
 										{#if detour(p)}
-											· {detour(p)} km from {slotFrom?.name}
+											· {detour(p)} km from {slotPlace?.name}
 										{/if}
 										{#if dayOfPoi.has(p.id)}
 											· another, as well as {dayLabel(
