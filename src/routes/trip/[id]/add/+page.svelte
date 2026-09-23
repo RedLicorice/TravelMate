@@ -393,6 +393,7 @@
 						<p class="tm-result__name">
 							{r.name}{#if times > 1}<span class="tm-count">&times;{times}</span>{/if}
 						</p>
+						{#if r.label}<p class="tm-result__meta">{r.label}</p>{/if}
 						<p class="tm-result__meta">
 							{r.category ?? 'place'} · {kmFromHotel(r)} km · {r.durationMin} min
 							{#if onWishlist(r)} · on the wishlist{/if}
@@ -430,6 +431,7 @@
 				<div class="tm-sheet">
 					<div class="tm-sheet__grip"></div>
 					<p style="font: 700 var(--tm-text-lg)/1.2 var(--tm-font)">{selected.name}</p>
+					{#if selected.label}<p class="tm-result__meta">{selected.label}</p>{/if}
 					<p class="tm-result__meta">{selected.category ?? 'place'} · {kmFromHotel(selected)} km from hotel</p>
 					<div class="my-3 flex gap-2">
 						<span class="tm-chip tm-chip--peach">{selected.durationMin} min</span>
