@@ -902,33 +902,19 @@
 	 */
 	function momentOf(target: DropTarget, draggedId: string): string | null {
 		if (!target) return null;
-		// The card being moved is not one of its own neighbours.
+		const minute = (ms: number) => new Date(Math.round(ms / 60_000) * 60_000).toISOString();
+		// Read off the rail: exactly the minute the line shows at the finger.
+		// Whatever starts then or later is pushed down below it (pushDown), so
+		// two cards are never left at the same minute.
+		if (target.at) return minute(Date.parse(target.at));
+		// A day's tab has no rail: the card is added at the end of that day's
+		// activities -- when the last of them is over, before the hotel the day
+		// is slept in, which is pushed down to make room.
 		const cards = (result?.days[target.day]?.stops ?? []).filter((st) => st.placementId !== draggedId);
-		// Read off the rail: the moment is the rail's at the finger's height.
-		if (target.at) return free(target.at, cards);
-		// A day's tab has no rail. Dropped there, it goes after the last thing
-		// the day does and before the hotel it is slept in.
 		let index = cards.length;
 		while (index > 0 && cards[index - 1].anchor) index--;
-		return free(spaceAt(cards, index, target.day), cards);
-	}
-
-	/**
-	 * A minute of its own.
-	 *
-	 * Two cards at the same instant have no order to be in, and a day read by
-	 * the clock would then draw them in whichever order it happened to have
-	 * them. Dropping into a space of no length -- between a card and the hotel
-	 * that starts the moment it ends -- is exactly that case, so the card takes
-	 * the next free minute instead.
-	 */
-	function free(at: string, cards: PlannedStop[]): string {
-		const taken = new Set(cards.map((st) => st.arrive.getTime()));
-		// Whole minutes: the rail says 15:12, so the drop writes 15:12, not the
-		// 15:12:47 a finger's height happens to work out at.
-		let when = Math.round(Date.parse(at) / 60_000) * 60_000;
-		while (taken.has(when)) when += 60_000;
-		return new Date(when).toISOString();
+		const last = cards[index - 1];
+		return minute((last?.depart ?? days[target.day]?.start ?? new Date()).getTime());
 	}
 
 	/**
