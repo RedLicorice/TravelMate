@@ -191,7 +191,12 @@
 			kind: pl.kind,
 			meal: pl.meal,
 			skipped: pl.skipped,
-			name: venue?.name ?? pl.name ?? (pl.meal ? MEAL_LABEL[pl.meal] : row.hotel_name),
+			// A hotel card that says what happens there says where, too: the hotel's
+			// name goes in front when it is drawn, so it follows a change of hotel.
+			name:
+				venue?.name ??
+				(pl.kind === 'hotel' && pl.name ? `${row.hotel_name}: ${pl.name}` : pl.name) ??
+				(pl.meal ? MEAL_LABEL[pl.meal] : row.hotel_name),
 			lat: venue?.lat ?? row.hotel_lat,
 			lng: venue?.lng ?? row.hotel_lng,
 			category: venue?.category ?? null,
@@ -612,7 +617,7 @@
 				// which on the first day is when the journey in has finished.
 				wanted.push({
 					kind: 'hotel',
-					name: 'Check-in',
+					name: 'Check-In',
 					minutes: row.bag_drop_min,
 					dayIndex: i,
 					at: start.toISOString()
@@ -2147,7 +2152,7 @@
 			<div class="tm-seg" role="tablist" aria-label="View">
 				<button role="tab" aria-selected={view === 'plan'} onclick={() => (view = 'plan')}>Day</button>
 				<button role="tab" aria-selected={view === 'map'} onclick={() => (view = 'map')}>Map</button>
-				<button role="tab" aria-selected={view === 'wishlist'} onclick={() => (view = 'wishlist')}>List</button>
+				<button role="tab" aria-selected={view === 'wishlist'} onclick={() => (view = 'wishlist')}>Wishlist</button>
 			</div>
 
 			{#if view === 'plan' || view === 'map'}
