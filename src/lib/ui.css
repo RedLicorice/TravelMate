@@ -463,7 +463,7 @@ button.tm-slot {
   left: 50%;
   transform: translateX(-50%);
   width: 10px;
-  z-index: 0;
+  z-index: 1;
 }
 .tm-rails__rail--prev {
   left: 1px;
@@ -473,10 +473,15 @@ button.tm-slot {
   right: 1px;
   width: 10px;
 }
-/* The cards sit on top of the middle line, which is the whole point of it. */
+/* Three layers: the free time between cards at the bottom, the day's line
+   over it, and the cards on top of the line -- which is the whole point of
+   it. The hour a held card would land at is above all of them. */
 .tm-rails--on > :not(.tm-rails__rail) {
   position: relative;
-  z-index: 1;
+  z-index: 2;
+}
+.tm-rails--on > .tm-gap {
+  z-index: 0;
 }
 /* Wider than they are drawn: a finger aiming for a 10px line is aiming for
    the day, not for the pixels. */

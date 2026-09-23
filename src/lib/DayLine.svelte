@@ -23,6 +23,13 @@
 		    rather than a position, so the rail does the timezone arithmetic
 		    once, here, where the day's midnight is already known. */
 		marker?: Date | null;
+		/**
+		 * Where a moment is on this rail, as a percentage from the top -- given
+		 * for the day on screen, whose rail is read off its own cards so that
+		 * a card's start and end are where the rail says. Absent, the rail is
+		 * to scale from the start of its day to the end.
+		 */
+		place?: ((ms: number) => number) | null;
 	};
 
 	let {
@@ -33,7 +40,8 @@
 		kind,
 		label = null,
 		lit = false,
-		marker = null
+		marker = null,
+		place = null
 	}: Props = $props();
 
 	const midnight = $derived.by(() => {
@@ -60,7 +68,8 @@
 		return { from, to: Math.max(to, from + 120) };
 	});
 
-	const pc = (minutes: number) => ((minutes - span.from) / (span.to - span.from)) * 100;
+	const pc = (minutes: number) =>
+		place ? place(midnight + minutes * 60_000) : ((minutes - span.from) / (span.to - span.from)) * 100;
 
 	/** Hours the day is not the traveller's: before landing, after leaving. */
 	const dead = $derived(
@@ -164,10 +173,14 @@
 		color: var(--tm-text-faint);
 	}
 
+	/* Hours that are not the traveller's. Underneath everything, and see-
+	   through: scenery, never in the way of a card or a time. */
 	.tm-rail__dead {
 		position: absolute;
 		left: 0;
 		right: 0;
+		z-index: 0;
+		opacity: 0.5;
 		background: repeating-linear-gradient(135deg, var(--tm-border) 0 2px, transparent 2px 5px);
 	}
 
@@ -186,19 +199,20 @@
 		right: -6px;
 		height: 0;
 		border-top: 2px solid var(--tm-primary);
-		z-index: 2;
+		z-index: 70;
 	}
 
 	.tm-rail__mark span {
 		position: absolute;
 		left: 50%;
-		top: -0.8em;
+		top: -0.9em;
 		transform: translateX(-50%);
-		padding: 1px 5px;
+		padding: 3px 10px;
 		border-radius: 999px;
 		background: var(--tm-primary);
 		color: var(--tm-primary-ink);
-		font: 700 10px/1.3 var(--tm-font-num);
+		font: 700 15px/1.3 var(--tm-font-num);
 		white-space: nowrap;
+		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
 	}
 </style>

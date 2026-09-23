@@ -84,7 +84,7 @@
 	import Stars from '$lib/Stars.svelte';
 	import LegDetail from '$lib/LegDetail.svelte';
 	import { dayTruncated, dayUrl, routePoints } from '$lib/maps';
-	import { createDrag, type DropTarget } from '$lib/dnd.svelte';
+	import { createDrag, measure, placeOf, type DropTarget, type Ruler } from '$lib/dnd.svelte';
 	import { cardTimes } from '$lib/cardtime';
 	import { haversineKm } from '$lib/plan/geo';
 	import { longPress } from '$lib/longpress.svelte';
@@ -978,10 +978,34 @@
 		// road times come afterwards, and may shift the day by a few minutes.
 		await edit(`Moved ${nameOf(draggedId) || 'a card'}`, (w) => {
 			moveTo(w, draggedId, when, day);
+			pushDown(w, draggedId, when, day);
 			retime(w);
 		});
 		// It has a card of its own again, so it is held to that from here.
 		justMoved = null;
+	}
+
+	/**
+	 * Make room below a card that has just been put somewhere.
+	 *
+	 * A drop sets when the card starts; it ends its own length later. What is
+	 * below it on the day and now starts before it ends is pushed down to
+	 * start when it ends, and so on down the day, each by only as much as it
+	 * has to: the traveller put this card here, and the day gives way.
+	 */
+	function pushDown(w: Writer, movedId: string, when: string, day: number) {
+		const length = (pl: PlacementRow) => (visitOf(pl, null)?.durationMin ?? 0) * 60_000;
+		const moved = placements.find((pl) => pl.id === movedId);
+		if (!moved) return;
+		let end = Date.parse(when) + length(moved);
+		const below = placements
+			.filter((pl) => pl.day_index === day && pl.id !== movedId && Date.parse(pl.at) >= Date.parse(when))
+			.sort((a, b) => a.at.localeCompare(b.at));
+		for (const pl of below) {
+			const start = Math.max(Date.parse(pl.at), end);
+			if (start !== Date.parse(pl.at)) moveTo(w, pl.id, new Date(start).toISOString());
+			end = start + length(pl);
+		}
 	}
 
 	/**
@@ -1089,7 +1113,15 @@
 		if (!row || !days.length) return null;
 		return {
 			pois: placements
-				.map((pl) => visitOf(pl, pl.id === justMoved ? null : (cardAt.get(pl.id) ?? null)))
+				.map((pl) => {
+					// The card just put somewhere starts at the hour it was put at:
+					// held there for this walk, as a pin would hold it.
+					if (pl.id === justMoved) {
+						const v = visitOf(pl, pl.at);
+						return v && { ...v, pinned: true, pinnedAt: pl.at };
+					}
+					return visitOf(pl, cardAt.get(pl.id) ?? null);
+				})
 				.filter((v): v is NonNullable<typeof v> => !!v),
 			days,
 			allowedModes: row.allowed_modes as Mode[],
@@ -1145,7 +1177,40 @@
 	/** What a meal container is called while it is being dragged. */
 	const SLOT_DRAG = 'meal:';
 
-	const drag = createDrag((id, target) => applyMove(id, target));
+	const drag = createDrag(
+		(id, target) => applyMove(id, target),
+		() => ruler
+	);
+
+	/**
+	 * The day on screen as a ruler, read off its own cards: a card's top is
+	 * its start and its bottom its end (see measure). Measured whenever the
+	 * rails show -- once the layout has settled, which takes two frames when a
+	 * held card has just opened the day up -- and again when the day, the
+	 * gaps or the window change.
+	 */
+	let railsEl = $state<HTMLElement | null>(null);
+	let ruler = $state<Ruler | null>(null);
+	$effect(() => {
+		const el = railsEl;
+		const on = expanded || !!drag.state.id;
+		void drawn;
+		void dayIndex;
+		void opened;
+		if (!el || !on) {
+			ruler = null;
+			return;
+		}
+		let frame = requestAnimationFrame(() => (frame = requestAnimationFrame(() => (ruler = measure(el)))));
+		const watch = new ResizeObserver(() => (ruler = measure(el)));
+		watch.observe(el);
+		return () => {
+			cancelAnimationFrame(frame);
+			watch.disconnect();
+		};
+	});
+	/** Where a moment sits on the day on screen's rail, as a percentage. */
+	const railPlace = $derived(ruler ? (ms: number) => placeOf(ruler!, ms) * 100 : null);
 
 
 
@@ -2124,6 +2189,9 @@
 				<div
 					class="tm-rails"
 					data-ruler
+					data-from={days[dayIndex]?.start.getTime()}
+					data-to={days[dayIndex]?.end.getTime()}
+					bind:this={railsEl}
 					class:tm-rails--on={expanded || !!drag.state.id}
 					class:tm-rails--drag={!!drag.state.id}
 				>
@@ -2155,7 +2223,8 @@
 									kind={offset === 0 ? 'here' : within ? 'neighbour' : 'stub'}
 									label={offset === 0 || !within ? null : dayLabel(days[i].date, row.timezone)}
 									lit={offset !== 0 && held?.day === i}
-									marker={held?.day === i ? held.at : null}
+									marker={offset !== 0 && held?.day === i ? held.at : null}
+									place={offset === 0 ? railPlace : null}
 								/>
 							</div>
 						{/each}
@@ -2206,6 +2275,8 @@
 						<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 						<div
 							class="tm-stop"
+							data-start={stop.arrive.getTime()}
+							data-end={stop.depart.getTime()}
 							class:tm-stop--anchor={stop.anchor}
 							class:tm-stop--terminal={stop.anchorKind === 'terminal'}
 							class:tm-stop--service={stop.anchorKind === 'service'}
@@ -2687,6 +2758,21 @@
 			>
 				{heldName}
 			</div>
+			<!-- The hour the card would be put at, at the finger's height on the
+			     day's line: bigger than anything around it, and above all of it. -->
+			{#if held && held.day === dayIndex}
+				<div
+					aria-hidden="true"
+					style="position:fixed;left:0;right:0;top:{drag.state.y}px;height:0;border-top:2px solid var(--tm-primary);
+					pointer-events:none;z-index:60"
+				>
+					<span
+						style="position:absolute;left:50%;top:0;transform:translate(-50%,-50%);padding:4px 12px;border-radius:999px;
+						background:var(--tm-primary);color:var(--tm-primary-ink);font:700 17px/1.2 var(--tm-font-num);
+						box-shadow:0 2px 10px rgba(0,0,0,0.3);white-space:nowrap"
+					>{hhmm(held.at, row.timezone)}</span>
+				</div>
+			{/if}
 			<p
 				class="tm-hint"
 				style="position:fixed;left:0;right:0;bottom:84px;text-align:center;z-index:50;pointer-events:none"

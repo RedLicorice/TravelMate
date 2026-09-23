@@ -163,9 +163,11 @@
 		padding: 3px 0;
 		border: 1px dashed var(--tm-border-strong);
 		border-radius: var(--tm-r-md);
+		/* See-through stripes: free time is scenery, and the day's line and
+		   its hour show through it. */
 		background: repeating-linear-gradient(
 			135deg,
-			var(--tm-surface-2) 0 6px,
+			color-mix(in srgb, var(--tm-surface-2) 50%, transparent) 0 6px,
 			transparent 6px 12px
 		);
 		color: var(--tm-text-faint);

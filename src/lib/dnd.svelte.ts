@@ -23,6 +23,54 @@
 export type DropTarget = { day: number; at: string | null } | null;
 
 /**
+ * The day on screen, as a ruler read off its own cards.
+ *
+ * Each card declares when it starts and ends (data-start, data-end, in ms);
+ * its top edge is its start and its bottom edge its end, and the space
+ * between two cards runs evenly from the one's end to the next one's start.
+ * Above the first card and below the last it runs to the day's own edges
+ * (data-from, data-to on the ruler). So a card's beginning and end are
+ * exactly where the ruler says its hours are, whatever height it is drawn.
+ */
+export type Ruler = { top: number; height: number; points: [number, number][] };
+
+export function measure(ruler: HTMLElement): Ruler {
+	const box = ruler.getBoundingClientRect();
+	const from = Number(ruler.dataset.from);
+	const to = Number(ruler.dataset.to);
+	const cards = [...ruler.querySelectorAll<HTMLElement>('[data-start]')]
+		.map((el) => ({ r: el.getBoundingClientRect(), start: Number(el.dataset.start), end: Number(el.dataset.end) }))
+		.sort((a, b) => a.r.top - b.r.top);
+	const frac = (y: number) => (y - box.top) / box.height;
+	const points: [number, number][] = [[0, Math.min(from, cards[0]?.start ?? from)]];
+	for (const c of cards) {
+		points.push([frac(c.r.top), c.start], [frac(c.r.bottom), c.end]);
+	}
+	points.push([1, Math.max(to, cards.at(-1)?.end ?? to)]);
+	// Time only runs forward down the page: a card drawn below one it starts
+	// before (an overlap) does not pull the ruler back.
+	for (let i = 1; i < points.length; i++) points[i][1] = Math.max(points[i][1], points[i - 1][1]);
+	return { top: box.top, height: box.height, points };
+}
+
+const between = (points: [number, number][], x: number, from: 0 | 1, to: 0 | 1): number => {
+	for (let i = 1; i < points.length; i++) {
+		const [a, b] = [points[i - 1], points[i]];
+		if (x <= b[from] || i === points.length - 1) {
+			const span = b[from] - a[from];
+			const t = span > 0 ? Math.min(1, Math.max(0, (x - a[from]) / span)) : 0;
+			return a[to] + t * (b[to] - a[to]);
+		}
+	}
+	return points[0]?.[to] ?? 0;
+};
+
+/** The moment at a height on the ruler, as a fraction of it (0 top, 1 bottom). */
+export const timeAt = (r: Ruler, fraction: number) => between(r.points, fraction, 0, 1);
+/** Where a moment is on the ruler, as a fraction of it. */
+export const placeOf = (r: Ruler, ms: number) => between(r.points, ms, 1, 0);
+
+/**
  * The nearest thing the card is scrolling inside.
  *
  * Needed because picking a card up opens the whole day, which pushes what is
@@ -56,7 +104,11 @@ const SLOP_PX = 8;
 const EDGE_PX = 90;
 const EDGE_SPEED_PX = 16;
 
-export function createDrag(onDrop: (draggedId: string, target: DropTarget) => void) {
+export function createDrag(
+	onDrop: (draggedId: string, target: DropTarget) => void,
+	/** The day on screen's ruler, as the screen last measured it. */
+	ruler: () => Ruler | null
+) {
 	const state = $state({
 		id: null as string | null,
 		x: 0,
@@ -99,6 +151,14 @@ export function createDrag(onDrop: (draggedId: string, target: DropTarget) => vo
 			el?.closest<HTMLElement>('[data-ruler]')?.querySelector<HTMLElement>('[data-ruler-here]');
 		if (!zone?.dataset.dropDay) return null;
 		const day = Number(zone.dataset.dropDay);
+		// The day on screen reads its own cards: where they are is when they are.
+		const here = zone.dataset.rulerHere !== undefined ? ruler() : null;
+		const onScreen = zone.closest<HTMLElement>('[data-ruler]');
+		if (here && onScreen) {
+			const box = onScreen.getBoundingClientRect();
+			const fraction = Math.min(1, Math.max(0, (y - box.top) / box.height));
+			return { day, at: new Date(timeAt(here, fraction)).toISOString() };
+		}
 		const scale = zone.querySelector<HTMLElement>('[data-rail-from]');
 		if (!scale) return { day, at: null };
 		const box = scale.getBoundingClientRect();
