@@ -2,7 +2,6 @@ import { ofTrip, perList, row, type Writer } from '$lib/store/store.svelte';
 import type { Poi } from '$lib/poi';
 import type { PlanPoi } from '$lib/plan/planner';
 import type { PlacementRow } from '$lib/trip/placements';
-import type { MealSlotRow } from '$lib/trip/meals';
 import { session } from '$lib/session.svelte';
 
 export type PoiRow = {
@@ -149,18 +148,18 @@ export function updatePoi(
 /**
  * Take a place off the trip altogether.
  *
- * Its visits and the meals it was chosen for go with it, here as on the
- * server, where the foreign keys cascade: the trip on the device has to read
- * the same as the trip upstream.
+ * Its visits go with it, here as on the server, where the foreign key
+ * cascades. A meal it was chosen for keeps its card, emptied first so the
+ * cascade does not take it: the traveller is still having lunch.
  */
 export function removePoi(w: Writer, id: string): void {
 	const poi = getPoi(id);
 	if (!poi) return;
 	for (const pl of ofTrip<PlacementRow>('placements', poi.trip_id)) {
-		if (pl.poi_id === id) w.remove('placements', { id: pl.id });
-	}
-	for (const m of ofTrip<MealSlotRow>('trip_meals', poi.trip_id)) {
-		if (m.poi_id === id) w.update('trip_meals', { trip_id: poi.trip_id, day_index: m.day_index, meal: m.meal }, { poi_id: null });
+		if (pl.poi_id !== id) continue;
+		// A meal it was chosen for is still a meal: the card stays, still to decide.
+		if (pl.kind === 'meal') w.update('placements', { id: pl.id }, { poi_id: null });
+		else w.remove('placements', { id: pl.id });
 	}
 	w.remove('pois', { id });
 }

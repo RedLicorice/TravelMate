@@ -42,6 +42,8 @@ export type PlacementRow = {
 	at: string;
 	/** Replan may not move this one. When it happens is the card's to say. */
 	pinned: boolean;
+	/** A meal the traveller is not having that day. Only a meal card is skipped; see meals.ts. */
+	skipped: boolean;
 	created_at: string;
 	/** Which edit of this row the server last confirmed. */
 	version: number;
@@ -69,6 +71,7 @@ function visit(
 		dayIndex: number;
 		at: string;
 		pinned?: boolean;
+		skipped?: boolean;
 		id?: string;
 	}
 ): PlacementRow {
@@ -83,6 +86,7 @@ function visit(
 		day_index: v.dayIndex,
 		at: v.at,
 		pinned: v.pinned ?? false,
+		skipped: v.skipped ?? false,
 		created_at: new Date().toISOString(),
 		version: 1
 	};
@@ -118,7 +122,14 @@ export const placeAnchor = (
 	kind: Furniture,
 	dayIndex: number,
 	at: string,
-	opts: { name?: string | null; minutes?: number | null; meal?: PlacementRow['meal'] } = {}
+	opts: {
+		name?: string | null;
+		minutes?: number | null;
+		meal?: PlacementRow['meal'];
+		/** A meal's place, when it is decided. */
+		poiId?: string | null;
+		skipped?: boolean;
+	} = {}
 ): PlacementRow => visit(w, tripId, { kind, dayIndex, at, ...opts });
 
 /**

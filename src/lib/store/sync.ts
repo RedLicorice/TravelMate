@@ -35,7 +35,6 @@ export type Table =
 	| 'trips'
 	| 'pois'
 	| 'placements'
-	| 'trip_meals'
 	| 'trip_members'
 	| 'profiles'
 	| 'plan_stops';
@@ -88,13 +87,11 @@ export type Mutation = {
 
 /** What a stored row is called in the rows store. */
 export const keyOf = (table: Table, row: Row): Key =>
-	table === 'trip_meals'
-		? { trip_id: row.trip_id, day_index: row.day_index, meal: row.meal }
-		: table === 'trip_members'
-			? { trip_id: row.trip_id, user_id: row.user_id }
-			: table === 'profiles'
-				? { user_id: row.user_id }
-				: { id: row.id };
+	table === 'trip_members'
+		? { trip_id: row.trip_id, user_id: row.user_id }
+		: table === 'profiles'
+			? { user_id: row.user_id }
+			: { id: row.id };
 
 export const rowId = (table: Table, key: Key) => `${table}:${Object.values(key).join(':')}`;
 

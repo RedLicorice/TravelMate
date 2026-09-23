@@ -53,8 +53,6 @@ function label(table: Table, row: Row, ctx: Context): string {
 			) + ` · ${ctx.dayName(row.day_index as number)}`;
 		case 'pois':
 			return row.name as string;
-		case 'trip_meals':
-			return `${MEAL_LABEL[row.meal as MealName]} · ${ctx.dayName(row.day_index as number)}`;
 		case 'trip_members':
 			return ctx.personName(row.user_id as string);
 		case 'profiles':

@@ -25,7 +25,7 @@
 		type PoiRow
 	} from '$lib/trip/pois';
 	import { describe as describeJourney } from '$lib/trip/journey';
-	import { loadMeals, mealKey, resetMeal, saveMeal, toMealPlan } from '$lib/trip/meals';
+	import { addMeal, chooseMeal, emptyMeal, mealCard, skipMeal } from '$lib/trip/meals';
 	import {
 		holdPlacement,
 		listPlacements,
@@ -179,16 +179,20 @@
 			return poi ? toPlanPoi(poi, pl, heldAt) : null;
 		}
 		if (!row) return null;
+		// A meal at a place the traveller chose is had there, for as long as
+		// that place takes; one still to decide is had wherever the day is.
+		const venue = pl.kind === 'meal' && pl.poi_id ? poiById.get(pl.poi_id) : undefined;
 		return {
 			id: pl.id,
-			poiId: null,
+			poiId: venue?.id ?? null,
 			kind: pl.kind,
 			meal: pl.meal,
-			name: pl.name ?? (pl.meal ? MEAL_LABEL[pl.meal] : row.hotel_name),
-			lat: row.hotel_lat,
-			lng: row.hotel_lng,
-			category: null,
-			durationMin: pl.minutes ?? allowanceFor(pl),
+			skipped: pl.skipped,
+			name: venue?.name ?? pl.name ?? (pl.meal ? MEAL_LABEL[pl.meal] : row.hotel_name),
+			lat: venue?.lat ?? row.hotel_lat,
+			lng: venue?.lng ?? row.hotel_lng,
+			category: venue?.category ?? null,
+			durationMin: pl.skipped ? 0 : (pl.minutes ?? venue?.duration_min ?? allowanceFor(pl)),
 			priority: 3,
 			dayIndex: pl.day_index,
 			at: pl.at,
@@ -197,8 +201,9 @@
 			// time that is wrong once would then stay wrong for ever.
 			pinned: pl.pinned,
 			pinnedAt: pl.pinned ? heldAt : null,
-			branches: null,
-			exitAt: null
+			branches: venue?.any_branch ? (venue.branches ?? []) : null,
+			exitAt:
+				venue && venue.exit_lat !== null && venue.exit_lng !== null ? { lat: venue.exit_lat, lng: venue.exit_lng } : null
 		};
 	};
 
@@ -262,6 +267,11 @@
 		return MEAL_NAMES.filter((m) => !present.has(m));
 	});
 
+	/**
+	 * What the traveller says about a sitting, as one edit to its card: a
+	 * place for it, skip it, bring it back, move it, or give it back to the
+	 * plan -- and the day re-timed around that.
+	 */
 	async function sayMeal(
 		dayIdx: number,
 		meal: MealName,
@@ -269,23 +279,27 @@
 	) {
 		mealed = null;
 		slot = null;
-		// At the meal's own hour: the sitting is a card on the day like any
-		// other, and the place chosen for it happens when it does. Read before
-		// the edit changes the day under it.
+		// At the meal's own hour: read before the edit changes the day under it.
 		const sitting = (result?.days[dayIdx]?.stops ?? []).find(
 			(st) => st.anchorKind === 'meal' && mealFor(st) === meal
 		);
-		const at = sitting ? sitting.arrive.toISOString() : momentFor({ day: dayIdx, before: null });
-		await edit(change === 'reset' ? `Gave ${MEAL_LABEL[meal]} back to the plan` : `Said what ${MEAL_LABEL[meal].toLowerCase()} is`, (w) => {
-			if (change === 'reset') resetMeal(w, tripId, dayIdx, meal);
-			else saveMeal(w, tripId, { dayIndex: dayIdx, meal, ...change });
-			// The place keeps its day. A meal is a stop like any other, and the
-			// slot only says which meal it is -- taking its day away is what
-			// used to lift it out of the route and re-seat it by window,
-			// which is how dropping a card before it did nothing at all.
-			if (change !== 'reset' && change.poiId && !placements.some((pl) => pl.poi_id === change.poiId)) {
-				place(w, tripId, change.poiId, dayIdx, at);
-			}
+		const at = (change !== 'reset' && change.at) || (sitting ? sitting.arrive.toISOString() : momentFor({ day: dayIdx, before: null }));
+		const label = MEAL_LABEL[meal];
+		const name =
+			change === 'reset'
+				? `Gave ${label.toLowerCase()} back to the plan`
+				: change.skipped
+					? `Skipped ${label.toLowerCase()}`
+					: change.poiId
+						? `Said what ${label.toLowerCase()} is`
+						: change.skipped === false
+							? `Added ${label.toLowerCase()}`
+							: `Moved ${label.toLowerCase()}`;
+		await edit(name, (w) => {
+			if (change === 'reset') emptyMeal(w, tripId, dayIdx, meal);
+			else if (change.skipped) skipMeal(w, tripId, dayIdx, meal, at);
+			else if (change.poiId) chooseMeal(w, tripId, dayIdx, meal, change.poiId, at);
+			else addMeal(w, tripId, dayIdx, meal, at);
 			retime(w, [dayIdx]);
 		});
 	}
@@ -546,8 +560,6 @@
 	/** The plan of record, as Regenerate last wrote it. */
 	const stored = $derived(loadPlan(tripId));
 	/** What the traveller has said about particular meals. */
-	const mealRows = $derived(loadMeals(tripId));
-	const mealPlan = $derived(toMealPlan(mealRows));
 	const planAt = $derived(row?.plan_generated_at ?? null);
 	/**
 	 * The plan as stored, which is the plan on screen -- built once here for
@@ -1147,7 +1159,6 @@
 			timezone: row.timezone,
 			mealWindows: agreed.windows,
 			curves,
-			meals: mealPlan,
 			// Where the day sleeps. A day ends at the hotel, and when there is
 			// none on it Replan puts one there rather than leaving the evening
 			// to trail off.
@@ -1250,7 +1261,8 @@
 		const stale = (row.plan_version ?? 0) < PLANNER_VERSION;
 
 		const inPlan = new Set(stored.map((r) => r.placement_id).filter(Boolean));
-		const placedButUnplanned = placements.some((pl) => !inPlan.has(pl.id));
+		// A skipped meal is never in the plan: that is what skipping it means.
+		const placedButUnplanned = placements.some((pl) => !pl.skipped && !inPlan.has(pl.id));
 		// A card whose visit is gone -- the place was removed from its own page.
 		const visits = new Set(placements.map((pl) => pl.id));
 		const plannedButGone = stored.some((r) => r.placement_id && !visits.has(r.placement_id));
@@ -1273,8 +1285,7 @@
 			const place = asideFor('pois', { id: stop.poiId });
 			if (place) return place;
 		}
-		const meal = stop.anchorKind === 'meal' ? mealFor(stop) : null;
-		return meal ? asideFor('trip_meals', { trip_id: tripId, day_index: dayIdx, meal }) : null;
+		return null;
 	}
 
 	/** What a put-aside edit would change, in words the traveller uses. */
@@ -1587,8 +1598,7 @@
 					timezone: trip.timezone,
 					mealWindows: agreed.windows,
 					curves,
-					meals: mealPlan,
-					hotel: { name: trip.hotel_name, lat: trip.hotel_lat, lng: trip.hotel_lng }
+							hotel: { name: trip.hotel_name, lat: trip.hotel_lat, lng: trip.hotel_lng }
 				};
 				const ordered = replan({ ...input, travel });
 
@@ -2478,7 +2488,7 @@
 
 		{#if mealed}
 			{@const m = mealed}
-			{@const said = mealPlan.get(mealKey(m.day, m.meal))}
+			{@const said = mealCard(tripId, m.day, m.meal)}
 			<div
 				role="presentation"
 				style="position:fixed;inset:0;z-index:60;background:rgba(0,0,0,0.35)"

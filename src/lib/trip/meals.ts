@@ -1,68 +1,45 @@
-import { ofTrip, perList, row, type Writer } from '$lib/store/store.svelte';
+import type { Writer } from '$lib/store/store.svelte';
 import type { MealName } from '$lib/plan/meals';
+import { listPlacements, placeAnchor, type PlacementRow } from './placements';
 
 /**
- * What the traveller has said about one meal on one day.
+ * A meal is one card: a placement of kind 'meal', one per sitting per day.
  *
- * A row exists only once they have had a say. Absent means the plan decides,
- * which is the ordinary case and the reason this table stays small.
+ * The card says everything about the sitting. It holds the place it is at, or
+ * nothing -- still to decide, drawn as the container the traveller taps to
+ * choose -- or it is skipped: no breakfast that day, on purpose. A skipped
+ * card takes no time and is not drawn, and because the card is there Replan
+ * does not invent that meal again.
  */
-export type MealSlotRow = {
-	id: string;
-	trip_id: string;
-	day_index: number;
-	meal: MealName;
-	/** Null with `skipped` false is a container emptied on purpose. */
-	poi_id: string | null;
-	skipped: boolean;
-	created_at: string;
-	version: number;
-};
 
-/** Keyed `${dayIndex}:${meal}`, which is how the planner asks about one. */
-export type MealPlan = Map<string, MealSlotRow>;
+/** The card for one sitting on one day, when the day has one. */
+export const mealCard = (tripId: string, day: number, meal: MealName): PlacementRow | null =>
+	listPlacements(tripId).find((pl) => pl.kind === 'meal' && pl.day_index === day && pl.meal === meal) ??
+	null;
 
-export const mealKey = (dayIndex: number, meal: MealName) => `${dayIndex}:${meal}`;
-
-export const toMealPlan = (rows: MealSlotRow[]): MealPlan =>
-	new Map(rows.map((r) => [mealKey(r.day_index, r.meal), r]));
-
-const byDay = perList((list: MealSlotRow[]) => [...list].sort((a, b) => a.day_index - b.day_index));
-export const loadMeals = (tripId: string): MealSlotRow[] => byDay(ofTrip<MealSlotRow>('trip_meals', tripId));
-
-/**
- * Record a say about one meal. One row per day and meal, because there is
- * one breakfast on 3 October however many times the traveller changes it.
- *
- * Only what was passed is written, so a row that is only being emptied keeps
- * whatever else it said -- sending the whole row instead is how skipping a
- * meal used to clear the place the traveller had chosen for it.
- */
-export function saveMeal(
-	w: Writer,
-	tripId: string,
-	slot: { dayIndex: number; meal: MealName; poiId?: string | null; skipped?: boolean }
-): void {
-	const key = { trip_id: tripId, day_index: slot.dayIndex, meal: slot.meal };
-	const said = {
-		...(slot.poiId !== undefined ? { poi_id: slot.poiId } : {}),
-		...(slot.skipped !== undefined ? { skipped: slot.skipped } : {})
-	};
-	if (row('trip_meals', key)) {
-		w.update('trip_meals', key, said);
-		return;
-	}
-	w.insert('trip_meals', {
-		id: crypto.randomUUID(),
-		...key,
-		poi_id: null,
-		skipped: false,
-		created_at: new Date().toISOString(),
-		version: 1,
-		...said
-	});
+/** Have this sitting at this place. A day without the card gets one, at `at`. */
+export function chooseMeal(w: Writer, tripId: string, day: number, meal: MealName, poiId: string, at: string) {
+	const card = mealCard(tripId, day, meal);
+	if (card) w.update('placements', { id: card.id }, { poi_id: poiId, skipped: false });
+	else placeAnchor(w, tripId, 'meal', day, at, { meal, poiId });
 }
 
-/** Hand the meal back to the plan. */
-export const resetMeal = (w: Writer, tripId: string, dayIndex: number, meal: MealName) =>
-	w.remove('trip_meals', { trip_id: tripId, day_index: dayIndex, meal });
+/** No such meal that day. A day without the card gets a skipped one, so Replan leaves it alone. */
+export function skipMeal(w: Writer, tripId: string, day: number, meal: MealName, at: string) {
+	const card = mealCard(tripId, day, meal);
+	if (card) w.update('placements', { id: card.id }, { skipped: true, poi_id: null });
+	else placeAnchor(w, tripId, 'meal', day, at, { meal, skipped: true });
+}
+
+/** The sitting on the day at `at`: brought back if it was skipped, made if it was never there. */
+export function addMeal(w: Writer, tripId: string, day: number, meal: MealName, at: string) {
+	const card = mealCard(tripId, day, meal);
+	if (card) w.update('placements', { id: card.id }, { skipped: false, at });
+	else placeAnchor(w, tripId, 'meal', day, at, { meal });
+}
+
+/** Still to decide: the card keeps its time and lets go of its place. */
+export function emptyMeal(w: Writer, tripId: string, day: number, meal: MealName) {
+	const card = mealCard(tripId, day, meal);
+	if (card) w.update('placements', { id: card.id }, { poi_id: null, skipped: false });
+}

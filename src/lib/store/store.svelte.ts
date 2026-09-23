@@ -602,11 +602,10 @@ export function pullTrip(id: string): Promise<void> {
 	loaded.add(id);
 	return pull(async (signal) => {
 		if (!store.asked.includes(id)) store.asked.push(id);
-		const [trip, pois, placements, meals, plan, members] = await Promise.all([
+		const [trip, pois, placements, plan, members] = await Promise.all([
 			supabase.from('trips').select('*').eq('id', id).abortSignal(signal).maybeSingle(),
 			supabase.from('pois').select('*').eq('trip_id', id).abortSignal(signal),
 			supabase.from('placements').select('*').eq('trip_id', id).abortSignal(signal),
-			supabase.from('trip_meals').select('*').eq('trip_id', id).abortSignal(signal),
 			supabase.from('plan_stops').select('*').eq('trip_id', id).abortSignal(signal),
 			supabase.from('trip_members').select('*').eq('trip_id', id).abortSignal(signal)
 		]);
@@ -620,7 +619,6 @@ export function pullTrip(id: string): Promise<void> {
 					held('trips', found),
 					...(must(pois) as Row[]).map((r) => held('pois', r)),
 					...(must(placements) as Row[]).map((r) => held('placements', r)),
-					...(must(meals) as Row[]).map((r) => held('trip_meals', r)),
 					...(must(plan) as Row[]).map((r) => held('plan_stops', r)),
 					...(must(members) as Row[]).map((r) => held('trip_members', r)),
 					...profiles.map((r) => held('profiles', r))
@@ -684,12 +682,8 @@ async function received(table: Table, event: string, fresh: Row | null, old: Row
 		return;
 	}
 	if (event === 'DELETE') {
-		// A deleted row arrives as its primary key only. Meals are known by
-		// their day and sitting here, so they are found by id.
-		const id =
-			table === 'trip_meals'
-				? [...confirmed.values()].find((h) => h.table === table && h.row.id === old?.id)?.id
-				: old && rowId(table, keyOf(table, old));
+		// A deleted row arrives as its primary key only, which is its key here.
+		const id = old && rowId(table, keyOf(table, old));
 		if (!id || !confirmed.has(id)) return;
 		confirmed.delete(id);
 		arrived.push(id);
@@ -708,7 +702,7 @@ async function received(table: Table, event: string, fresh: Row | null, old: Row
 	redrawSoon();
 }
 
-const LIVE: Table[] = ['trips', 'pois', 'placements', 'trip_meals', 'plan_stops', 'trip_members', 'profiles'];
+const LIVE: Table[] = ['trips', 'pois', 'placements', 'plan_stops', 'trip_members', 'profiles'];
 
 /**
  * Keep one trip current while it is open: read it once, then take every
