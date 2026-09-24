@@ -84,7 +84,7 @@
 		tripProfiles,
 		type Profile
 	} from '$lib/profile.svelte';
-	import type { Mode } from '$lib/plan/modes';
+	import { leg, type Mode } from '$lib/plan/modes';
 	import Autocomplete from '$lib/Autocomplete.svelte';
 	import Stars from '$lib/Stars.svelte';
 	import LegDetail from '$lib/LegDetail.svelte';
@@ -1203,12 +1203,12 @@
 		return {
 			pois: placements
 				.map((pl) => {
-					// The card just put somewhere starts at the hour it was put at:
-					// held there for this walk, as a pin would hold it.
-					if (pl.id === justMoved) {
-						const v = visitOf(pl, pl.at);
-						return v && { ...v, pinned: true, pinnedAt: pl.at };
-					}
+					// The card just put somewhere starts no earlier than the minute it
+					// was put at -- not the time its old card showed -- and, like any
+					// other card, later if the one above runs into it. Holding it at
+					// the minute, as a pin, drew it there and then let the next walk
+					// move it: the card slid a few minutes after the finger let go.
+					if (pl.id === justMoved) return visitOf(pl, pl.at);
 					return visitOf(pl, cardAt.get(pl.id) ?? null);
 				})
 				.filter((v): v is NonNullable<typeof v> => !!v),
@@ -1337,8 +1337,34 @@
 
 	const drag = createDrag(
 		(id, target) => applyMove(id, target),
-		() => ruler
+		() => ruler,
+		earliestAt
 	);
+
+	/**
+	 * The earliest a dragged card can start at `at` on `day`: when the card
+	 * above it there is over, plus the journey from it -- the walk's own rule,
+	 * on the travel times the walk would use. A meal with nothing chosen and
+	 * time to yourself are had wherever the traveller already is: no journey.
+	 */
+	function earliestAt(id: string, day: number, at: number): number {
+		const stops = (drawn[day]?.stops ?? []).filter((st) => st.placementId !== id);
+		let above: PlannedStop | undefined;
+		for (const st of stops) {
+			const starts = st.arrive.getTime();
+			if (starts < at || (starts === at && st.depart.getTime() <= at)) above = st;
+			else break;
+		}
+		if (!above || !row) return at;
+		const pl = placementById.get(id);
+		const me = drawn.flatMap((d) => d.stops).find((st) => st.placementId === id);
+		const category = pl?.poi_id ? poiById.get(pl.poi_id)?.category : null;
+		const inPlace = !me || (pl?.kind === 'meal' && !pl.poi_id) || category === BLOCK_CATEGORY;
+		const journey = inPlace
+			? 0
+			: leg(above.exitAt ?? above.at, me.at, row.allowed_modes as Mode[], false, known()).minutes;
+		return Math.max(at, above.depart.getTime() + journey * 60_000);
+	}
 
 	/**
 	 * The day on screen as a ruler, read off its own cards: a card's top is

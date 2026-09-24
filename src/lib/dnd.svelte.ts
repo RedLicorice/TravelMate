@@ -120,10 +120,28 @@ const SLOP_PX = 8;
 const EDGE_PX = 90;
 const EDGE_SPEED_PX = 16;
 
+/**
+ * Two speeds. Close to where the card was picked up, the finger moves it a
+ * minute at a time -- 8 px a minute, for 40 px either way -- so a card can
+ * be nudged by exactly the few minutes wanted. Further than that it follows
+ * the rail, a sweep across the day, and lands on five minutes.
+ */
+const FINE_PX = 40;
+const FINE_PX_PER_MIN = 8;
+const MIN_MS = 60_000;
+const SNAP_MS = 5 * MIN_MS;
+
 export function createDrag(
 	onDrop: (draggedId: string, target: DropTarget) => void,
 	/** The day on screen's ruler, as the screen last measured it. */
-	ruler: () => Ruler | null
+	ruler: () => Ruler | null,
+	/**
+	 * The earliest a card can start at `at` on `day`: when the card above it
+	 * is over and the traveller has got from there to here. A drop lands no
+	 * earlier -- the same rule the day is walked by afterwards, so the card
+	 * stays where it lands and the pill says where that is.
+	 */
+	earliest: (draggedId: string, day: number, at: number) => number = (_id, _day, at) => at
 ) {
 	const state = $state({
 		id: null as string | null,
@@ -209,9 +227,25 @@ export function createDrag(
 			// than the card it is going before starts (a card out of order with
 			// the one above it), and then it is that card's start, and that card
 			// and everything after it are pushed down.
-			let at = timeAt(here, fraction);
+			const frac = (py: number) => Math.min(1, Math.max(0, (py - box.top) / box.height));
+			const picked = here.cards.find((c) => c.id === state.id);
+			const dy = y - origin.y;
+			let at: number;
+			if (picked) {
+				// From where the card starts: a minute per step close in, the
+				// rail's own pace further out.
+				const near = Math.max(-FINE_PX, Math.min(FINE_PX, dy));
+				at = picked.start + Math.round(near / FINE_PX_PER_MIN) * MIN_MS;
+				if (Math.abs(dy) > FINE_PX) {
+					const edge = origin.y + Math.sign(dy) * FINE_PX;
+					at = Math.round((at + timeAt(here, frac(y)) - timeAt(here, frac(edge))) / SNAP_MS) * SNAP_MS;
+				}
+			} else {
+				at = Math.round(timeAt(here, fraction) / SNAP_MS) * SNAP_MS;
+			}
 			const next = here.cards.find((c) => c.id !== state.id && (c.top + c.bottom) / 2 > fraction);
 			if (next && next.start < at) at = next.start;
+			if (state.id) at = Math.max(at, earliest(state.id, day, at));
 			return { day, at: new Date(at).toISOString() };
 		}
 		const scale = zone.querySelector<HTMLElement>('[data-rail-from]');
