@@ -7,7 +7,9 @@ import type { Mode } from './modes';
 const pointKeyOf = (p: LatLng) => `${p.lat.toFixed(5)},${p.lng.toFixed(5)}`;
 
 export type RouteStep = {
-	kind: 'transit' | 'walk' | 'drive' | 'wait';
+	kind: 'transit' | 'walk' | 'drive' | 'bike' | 'wait';
+	/** For transit, what carries you: Google's vehicle type (BUS, SUBWAY, HEAVY_RAIL, TRAM, FERRY...). */
+	vehicle?: string;
 	/** Raw, so steps sum without the drift of rounding each one. */
 	seconds: number;
 	line?: string;

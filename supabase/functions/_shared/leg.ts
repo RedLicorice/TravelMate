@@ -62,7 +62,9 @@ const secondsOf = (duration: string | undefined) =>
 	Number(String(duration ?? '0s').replace('s', '')) || 0;
 
 type Step = {
-	kind: 'transit' | 'walk' | 'drive' | 'wait';
+	kind: 'transit' | 'walk' | 'drive' | 'bike' | 'wait';
+	/** For transit, what carries you: Google's vehicle type (BUS, SUBWAY, HEAVY_RAIL, TRAM, FERRY...). */
+	vehicle?: string;
 	/** Raw, so a client can sum steps without drift. */
 	seconds: number;
 	line?: string;
@@ -122,6 +124,7 @@ function toSteps(legs: Record<string, unknown>[], departedAt: string | null): St
 					// nameShort is "Central" where name is "Central line"; the short
 					// form is what is written on the platform.
 					line: (line.nameShort as string) ?? (line.name as string) ?? 'Service',
+					vehicle: ((line.vehicle ?? {}) as Record<string, unknown>).type as string | undefined,
 					headsign: transit.headsign as string,
 					from: departure.name as string,
 					to: arrival.name as string,
@@ -139,7 +142,7 @@ function toSteps(legs: Record<string, unknown>[], departedAt: string | null): St
 				// is how a plan quietly claims more free time than it has: four
 				// "under a minute" transfers is a quarter of an hour.
 				out.push({
-					kind: travelMode === 'drive' ? 'drive' : 'walk',
+					kind: travelMode === 'drive' ? 'drive' : travelMode === 'bicycle' ? 'bike' : 'walk',
 					seconds,
 					minutes: Math.round(seconds / 60),
 					instruction: (

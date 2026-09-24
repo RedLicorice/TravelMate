@@ -6,6 +6,7 @@
 	import { track } from '$lib/telemetry';
 	import { swipeToClose } from '$lib/swipe';
 	import { mapSize } from '$lib/mapsize';
+	import RouteIcons from '$lib/RouteIcons.svelte';
 	import type { LatLng } from '$lib/trip/days';
 	import type { Mode } from '$lib/plan/modes';
 
@@ -176,6 +177,9 @@
 				{:else if !routes?.length}
 					<span class="tm-hint">not available</span>
 				{:else if routes.length === 1 || !onchoose}
+					{#if route}
+						<RouteIcons steps={route.steps} fallback={mode === 'car' || mode === 'carshare' ? 'car' : mode === 'bike' ? 'bike' : mode === 'walk' ? 'walk' : 'train'} />
+					{/if}
 					{route?.minutes} min · {route?.km} km · {route?.summary}
 				{:else}
 					<!-- Google's alternatives, to choose from: the one chosen sets the
@@ -195,7 +199,10 @@
 									}}
 								>
 									<span class="tm-route__time">{r.minutes} min</span>
-									<span class="tm-one-line" style="min-width:0">{r.summary} · {r.km} km</span>
+									<span style="min-width:0;display:flex;flex-direction:column;gap:2px">
+										<RouteIcons steps={r.steps} fallback={mode === 'car' || mode === 'carshare' ? 'car' : mode === 'bike' ? 'bike' : mode === 'walk' ? 'walk' : 'train'} />
+										<span class="tm-one-line">{r.summary} · {r.km} km</span>
+									</span>
 									{#if on}<span aria-hidden="true">✓</span>{/if}
 								</button>
 							</li>
