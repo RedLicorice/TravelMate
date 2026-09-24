@@ -10,6 +10,8 @@
 		color?: string;
 		/** Glyph inside the pin: a day number, 'H' for the hotel, an icon. */
 		glyph?: string;
+		/** A meal wears a thin ring; the hotel is dark whatever the theme. */
+		kind?: 'meal' | 'hotel';
 		selected?: boolean;
 	};
 
@@ -128,7 +130,9 @@
 	function pinFor(m: MapMarker): HTMLElement {
 		const el = document.createElement('div');
 		el.className = 'tm-pin-el';
-		el.style.background = m.color ?? 'var(--tm-day-none)';
+		if (m.kind === 'hotel') el.classList.add('tm-pin-el--hotel');
+		else el.style.background = m.color ?? 'var(--tm-day-none)';
+		if (m.kind === 'meal') el.classList.add('tm-pin-el--meal');
 		// A day's highlighter takes dark text; white does not read on it.
 		if (/^var\(--tm-day-\d/.test(m.color ?? '')) el.style.color = 'var(--tm-day-ink)';
 		if (m.selected) el.classList.add('tm-pin-el--on');
@@ -325,6 +329,19 @@
 		box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
 		font: 700 11px/1 var(--tm-font);
 		color: #fff;
+	}
+
+	/* The hotel: dark slate with a white letter in either theme -- it took the
+	   text colour before, which the dark theme makes white, under a white H. */
+	:global(.tm-pin-el--hotel) {
+		background: #2b3038;
+		color: #fff;
+	}
+
+	/* A meal: a stop like any other, ringed. */
+	:global(.tm-pin-el--meal) {
+		outline: 1.5px solid #1d1f24;
+		outline-offset: 0;
 	}
 
 	:global(.tm-pin-el--on) {

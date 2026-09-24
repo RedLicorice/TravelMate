@@ -2043,15 +2043,27 @@
 	const shownDays = $derived((result?.days ?? []).filter((d) => visible.has(d.index)));
 
 	const markers = $derived([
-		...shownDays.flatMap((day) =>
-			day.stops.map((s, i) => ({
-				id: `${day.index}:${s.poiId ?? `anchor-${i}`}`,
-				lat: s.at.lat,
-				lng: s.at.lng,
-				color: s.anchor ? 'var(--tm-text)' : dayColor(day.index),
-				glyph: s.anchor ? 'H' : String(day.stops.slice(0, i).filter((x) => !x.anchor).length + 1)
-			}))
-		),
+		// A meal at a chosen place is a stop like any other: the day's colour
+		// and its number in the day, with a thin ring to say it is a meal. A
+		// meal with nothing chosen has no place of its own and no pin. The
+		// hotel and the journey's stations are the dark "H".
+		...shownDays.flatMap((day) => {
+			const isVisit = (s: PlannedStop) => !s.anchor || (s.anchorKind === 'meal' && !!s.poiId);
+			return day.stops.flatMap((s, i) => {
+				if (s.anchorKind === 'meal' && !s.poiId) return [];
+				const visit = isVisit(s);
+				return [
+					{
+						id: `${day.index}:${s.poiId ?? `anchor-${i}`}`,
+						lat: s.at.lat,
+						lng: s.at.lng,
+						color: visit ? dayColor(day.index) : undefined,
+						kind: visit ? (s.anchorKind === 'meal' ? ('meal' as const) : undefined) : ('hotel' as const),
+						glyph: visit ? String(day.stops.slice(0, i).filter(isVisit).length + 1) : 'H'
+					}
+				];
+			});
+		}),
 		...(showUnassigned
 			? pois
 					.filter((p) => !dayOf.has(p.id))

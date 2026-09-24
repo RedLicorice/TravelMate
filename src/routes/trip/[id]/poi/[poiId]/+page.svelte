@@ -352,7 +352,7 @@
 									lat: trip.hotel_lat,
 									lng: trip.hotel_lng,
 									glyph: 'H',
-									color: 'var(--tm-sky)'
+									kind: 'hotel' as const
 								}
 							]
 						: [])

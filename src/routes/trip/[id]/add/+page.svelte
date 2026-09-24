@@ -338,7 +338,7 @@
 
 	const markers = $derived([
 		...(trip && (trip.hotel_lat !== 0 || trip.hotel_lng !== 0)
-			? [{ id: 'hotel', lat: trip.hotel_lat, lng: trip.hotel_lng, color: 'var(--tm-text)', glyph: 'H' }]
+			? [{ id: 'hotel', lat: trip.hotel_lat, lng: trip.hotel_lng, kind: 'hotel' as const, glyph: 'H' }]
 			: []),
 		...saved.map((s) => ({
 			id: `saved:${s.id}`,
