@@ -4,6 +4,7 @@
 	import { legUrl } from '$lib/maps';
 	import { legRoute, type LegRoute } from '$lib/plan/route';
 	import { track } from '$lib/telemetry';
+	import { swipeToClose } from '$lib/swipe';
 	import type { LatLng } from '$lib/trip/days';
 	import type { Mode } from '$lib/plan/modes';
 
@@ -108,6 +109,7 @@
 <div
 	class="tm-sheet"
 	style="position:fixed;z-index:61;max-height:86vh;overflow-y:auto;padding:0"
+	{@attach swipeToClose(onclose)}
 	role="dialog"
 	aria-label="{fromName} to {toName}"
 >

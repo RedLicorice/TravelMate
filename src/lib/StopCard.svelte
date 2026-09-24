@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { swipeToClose } from '$lib/swipe';
 	import { base } from '$app/paths';
 	import { PUBLIC_GOOGLE_MAPS_BROWSER_KEY } from '$env/static/public';
 	import Stars from '$lib/Stars.svelte';
@@ -96,7 +97,7 @@
 	onclick={onclose}
 ></div>
 
-<div class="tm-sheet" style="position:fixed;z-index:61;max-height:86vh;overflow-y:auto;padding:0">
+<div class="tm-sheet" style="position:fixed;z-index:61;max-height:86vh;overflow-y:auto;padding:0" {@attach swipeToClose(onclose)}>
 	<!-- Map on top: where a place is answers most of what gets asked about it,
 	     and answers it before any reading. A picture of the map, not a map:
 	     it does not scroll or zoom, it costs nothing to open the card, and

@@ -95,6 +95,7 @@
 	import { haversineKm } from '$lib/plan/geo';
 	import { longPress } from '$lib/longpress.svelte';
 	import StopCard from '$lib/StopCard.svelte';
+	import { swipeToClose } from '$lib/swipe';
 	import DayLine from '$lib/DayLine.svelte';
 	import TimeGap from '$lib/TimeGap.svelte';
 	import TripAvatar from '$lib/TripAvatar.svelte';
@@ -550,6 +551,7 @@
 	function showDay(i: number) {
 		slot = null;
 		mealed = null;
+		allowanced = null;
 		cardedId = null;
 		cardedVisit = null;
 		legShown = null;
@@ -2708,7 +2710,7 @@
 				style="position:fixed;inset:0;z-index:60;background:rgba(0,0,0,0.35)"
 				onclick={() => (mealed = null)}
 			></div>
-			<div class="tm-sheet" style="position:fixed;z-index:61">
+			<div class="tm-sheet" style="position:fixed;z-index:61" {@attach swipeToClose(() => (mealed = null))}>
 				<div class="tm-sheet__grip"></div>
 				<p class="tm-card__title">{m.name}</p>
 				<p class="tm-card__meta">
@@ -2758,7 +2760,7 @@
 				style="position:fixed;inset:0;z-index:60;background:rgba(0,0,0,0.35)"
 				onclick={() => (allowanced = null)}
 			></div>
-			<div class="tm-sheet" style="position:fixed;z-index:61">
+			<div class="tm-sheet" style="position:fixed;z-index:61" {@attach swipeToClose(() => (allowanced = null))}>
 				<div class="tm-sheet__grip"></div>
 				<p class="tm-card__title">{a.name}</p>
 				<p class="tm-card__meta">{ALLOWANCE_HINT[a.kind]}</p>
@@ -2840,7 +2842,11 @@
 				style="position:fixed;inset:0;z-index:60;background:rgba(0,0,0,0.35)"
 				onclick={() => (slot = null)}
 			></div>
-			<div class="tm-sheet" style="position:fixed;z-index:61;max-height:76vh;overflow-y:auto">
+			<div
+				class="tm-sheet"
+				style="position:fixed;z-index:61;max-height:76vh;overflow-y:auto"
+				{@attach swipeToClose(() => (slot = null))}
+			>
 				<div class="tm-sheet__grip"></div>
 				<p class="tm-label mb-2">
 					{target.meal

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { swipeToClose } from '$lib/swipe';
 	import type { Explained } from '$lib/conflict';
 
 	type Props = {
@@ -21,7 +22,7 @@
 	onclick={onclose}
 ></div>
 
-<div class="tm-sheet" style="position:fixed;z-index:61;max-height:86vh;overflow-y:auto" role="dialog" aria-label="A change of yours was put aside">
+<div class="tm-sheet" style="position:fixed;z-index:61;max-height:86vh;overflow-y:auto" role="dialog" aria-label="A change of yours was put aside" {@attach swipeToClose(onclose)}>
 	<div class="tm-sheet__grip"></div>
 	<p class="tm-card__title mt-2">
 		<span class="tm-conflict-mark" aria-hidden="true">!</span>“{name}” was not applied

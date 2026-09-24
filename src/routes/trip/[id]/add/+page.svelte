@@ -13,6 +13,7 @@
 	import { isShortMapLink, parseLatLng } from '$lib/poi/manual';
 	import { branchesOf, sameBrand } from '$lib/poi/branches';
 	import Autocomplete from '$lib/Autocomplete.svelte';
+	import { swipeToClose } from '$lib/swipe';
 	import { haversineKm } from '$lib/plan/geo';
 	import TripMap from '$lib/GoogleMap.svelte';
 
@@ -434,7 +435,7 @@
 				}}
 			/>
 			{#if selected}
-				<div class="tm-sheet">
+				<div class="tm-sheet" {@attach swipeToClose(() => (selectedId = null))}>
 					<div class="tm-sheet__grip"></div>
 					<p style="font: 700 var(--tm-text-lg)/1.2 var(--tm-font)">{selected.name}</p>
 					{#if selected.label}<p class="tm-result__meta">{selected.label}</p>{/if}
@@ -547,7 +548,7 @@
 			style="position:fixed;inset:0;z-index:60;background:rgba(0,0,0,0.35)"
 			onclick={() => (chain = null)}
 		></div>
-		<div class="tm-sheet" style="position:fixed;z-index:61">
+		<div class="tm-sheet" style="position:fixed;z-index:61" {@attach swipeToClose(() => (chain = null))}>
 			<div class="tm-sheet__grip"></div>
 			<p class="tm-card__title">{chain.pick.name}</p>
 			<p class="tm-card__meta">
