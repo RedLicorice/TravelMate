@@ -22,6 +22,7 @@
  * did not make an edit is told it happened, and redraws from the device.
  */
 import { supabase } from '$lib/supabase';
+import { track } from '$lib/telemetry';
 import { forget, req, tx } from './idb';
 import {
 	CHANNEL,
@@ -510,6 +511,7 @@ export function send(fromRetry = false): void {
 				stopped =
 					(await drain(supabase, (o: Outcome) => {
 						if (o.kind === 'refused' && o.mutation.trip) touched.add(o.mutation.trip);
+						if (o.kind === 'aside') recordConflict(o.mutation);
 					})) === 'stopped';
 			} catch {
 				// No locks API, or the database went away mid-send. What is queued
@@ -533,6 +535,37 @@ export function send(fromRetry = false): void {
 		retry = setTimeout(retried, wait);
 		wait = Math.min(wait * 2, LONGEST_WAIT_MS);
 	})();
+}
+
+/**
+ * An edit put aside goes into the trail, so a conflict can be read out of the
+ * database instead of guessed at: which edit, which rows, the version it was
+ * made on and the one the server had, and which fields differ between the
+ * row as this device last saw it and the row upstream -- the other writer's
+ * change. Tailnet and local copies only, like the rest of the trail.
+ */
+function recordConflict(m: Mutation) {
+	const rows = (m.conflicts ?? []).slice(0, 10).map((c) => {
+		const op = m.ops[c.index];
+		if (!op || op.op === 'plan') return { index: c.index, op: 'plan' };
+		const before = ('before' in op ? op.before : null) as Row | null;
+		const up = c.upstream;
+		const changed =
+			before && up
+				? Object.keys(up).filter((k) => k !== 'version' && JSON.stringify(up[k]) !== JSON.stringify(before[k]))
+				: null;
+		return {
+			table: op.table,
+			key: op.key,
+			op: op.op,
+			base: op.base,
+			upstreamVersion: (up?.version as number | undefined) ?? null,
+			upstreamGone: !up,
+			ours: 'values' in op && op.values ? Object.keys(op.values) : [],
+			theirs: changed
+		};
+	});
+	track('sync.conflict', { edit: m.name, made: m.at, ops: m.ops.length, rows });
 }
 
 // --- Receiving -------------------------------------------------------------

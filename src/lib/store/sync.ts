@@ -210,7 +210,7 @@ export async function drain(
 				void plan;
 			} else {
 				await putAside(next, answer.conflicts);
-				told({ kind: 'aside', mutation: next });
+				told({ kind: 'aside', mutation: { ...next, conflicts: answer.conflicts } });
 			}
 		}
 	});
