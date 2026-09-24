@@ -1069,10 +1069,19 @@
 		const length = (pl: PlacementRow) => (visitOf(pl, null)?.durationMin ?? 0) * 60_000;
 		const card = placements.find((pl) => pl.id === id);
 		if (!card) return;
-		let end = Date.parse(card.at) + length(card);
+		const start = Date.parse(card.at);
+		let end = start + length(card);
+		// Below it is what starts later, or starts at the same minute and ends
+		// later: a card that starts then and is already over -- the hotel the
+		// day wakes up in -- comes before it, and is not in its way.
 		const below = placements
-			.filter((pl) => pl.day_index === card.day_index && pl.id !== id && pl.at >= card.at)
-			.sort((a, b) => a.at.localeCompare(b.at))
+			.filter(
+				(pl) =>
+					pl.day_index === card.day_index &&
+					pl.id !== id &&
+					(Date.parse(pl.at) > start || (Date.parse(pl.at) === start && Date.parse(pl.at) + length(pl) > end))
+			)
+			.sort((a, b) => a.at.localeCompare(b.at) || length(a) - length(b))
 			.map((pl) => ({ id: pl.id, at: Date.parse(pl.at), length: length(pl), pinned: pl.pinned }));
 		for (const pl of below) {
 			if (pl.pinned) break;

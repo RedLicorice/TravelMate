@@ -211,7 +211,13 @@ export type PlanInput = {
 const at = (p: { lat: number; lng: number }): LatLng => ({ lat: p.lat, lng: p.lng });
 
 /** Ascending by each card's own clock: the only order a day has. */
-const byClock = (a: PlanPoi, b: PlanPoi) => Date.parse(a.at) - Date.parse(b.at);
+/**
+ * A card runs from its start to its end. Two that start at the same minute
+ * are in the order they end: the hotel a day wakes up in (08:00-08:00) is
+ * over when a visit starting at 08:00 begins, so it comes first.
+ */
+const byClock = (a: PlanPoi, b: PlanPoi) =>
+	Date.parse(a.at) - Date.parse(b.at) || a.durationMin - b.durationMin;
 
 const OFF_HOURS: Warning = { kind: 'off-hours', message: 'Not really a mealtime' };
 
