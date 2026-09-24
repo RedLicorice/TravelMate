@@ -46,7 +46,8 @@ Deno.serve(async (req) => {
 			Deno.env.get('SUPABASE_URL')!,
 			Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 		);
-		const answer = await routeLeg(db, traveller, { from, to, mode, departAt, prefer });
+		// The journey sheet draws the path, so it is always asked for.
+		const answer = await routeLeg(db, traveller, { from, to, mode, departAt, prefer, withPath: true });
 		return json(answer, answer.error === 'budget' ? 429 : 200);
 	} catch (error) {
 		console.error('route function failed', error);

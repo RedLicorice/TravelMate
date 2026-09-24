@@ -1,7 +1,6 @@
 import type { LatLng } from '$lib/trip/days';
 import { supabase } from '$lib/supabase';
-import { DETOUR, haversineKm } from './geo';
-import type { Leg, LegSource, Mode } from './modes';
+import type { LegSource, Mode } from './modes';
 
 /**
  * Real travel times, resolved before planning.
@@ -9,22 +8,17 @@ import type { Leg, LegSource, Mode } from './modes';
  * The planner is synchronous -- it re-runs on every drag and hundreds of times
  * inside 2-opt -- so nothing here may be awaited from inside it. Every pair of
  * stops on a day is resolved up front into a plain table, in one matrix
- * request per costing, and the planner reads that table.
+ * request per mode, and the planner reads that table.
  *
- * Three sources, in order. Google Routes answers real timetabled transit and
- * traffic-aware roads, through an Edge Function that holds the key. Valhalla's
- * OSM instance routes roads and footpaths but NOT public transport -- its
- * multimodal costing needs GTFS the public instance does not load -- so a
- * Valhalla transit figure is modelled from the road route by transitFrom.
- * Beneath both, the straight-line model always answers.
+ * Google answers, through the travel Edge Function that holds the key: roads
+ * and footpaths, and transit on real timetables at the day's departure hour.
+ * What it cannot answer -- offline, over budget, a transit day too long for
+ * one matrix -- the phone's straight-line estimate covers (modes.ts), marked
+ * as an estimate. Only the time a journey takes is kept; the way it goes is
+ * Google Maps' to show.
  */
-const MATRIX = 'https://valhalla1.openstreetmap.de/sources_to_targets';
-
 /** Rounded coordinates, so the same place keys identically every time. */
 export const pointKey = (p: LatLng) => `${p.lat.toFixed(5)},${p.lng.toFixed(5)}`;
-
-const cellKey = (from: LatLng, to: LatLng, costing: string) =>
-	`${pointKey(from)}>${pointKey(to)}|${costing}`;
 
 export type TravelTable = {
 	/**
@@ -59,30 +53,8 @@ export type TravelCell = {
 	to: string;
 	minutes: number;
 	km: number;
-	source: 'google' | 'valhalla';
+	source: 'google';
 };
-
-/**
- * Build a lookup from answered cells.
- *
- * A Google transit figure is used exactly as given: it already includes the
- * walk to the platform, the wait and the transfers, so putting transitFrom on
- * top would charge for those twice. The band applies only to road-derived
- * estimates.
- */
-export function tableFrom(cells: TravelCell[]): TravelTable {
-	const byKey = new Map(cells.map((c) => [`${c.from}>${c.to}`, c]));
-	return {
-		get(from, to, mode) {
-			const cell = byKey.get(`${pointKey(from)}>${pointKey(to)}`);
-			if (!cell) return null;
-			if (mode === 'transit' && cell.source !== 'google') {
-				return { minutes: transitFrom(cell.minutes, cell.km), km: cell.km };
-			}
-			return { minutes: cell.minutes, km: cell.km };
-		}
-	};
-}
 
 /** Two tables consulted in order; the first with an answer wins. */
 export const firstOf = (tables: TravelTable[]): TravelTable => ({
@@ -95,169 +67,39 @@ export const firstOf = (tables: TravelTable[]): TravelTable => ({
 	}
 });
 
-/** Which Valhalla costing stands in for each of our modes. */
-const COSTING: Record<Mode, 'pedestrian' | 'bicycle' | 'auto'> = {
-	walk: 'pedestrian',
-	bike: 'bicycle',
-	car: 'auto',
-	carshare: 'auto',
-	transit: 'auto' // modelled from the road route; see transitFrom
-};
-
 /**
- * Transit, estimated from the road route because it cannot be routed.
+ * Every pair among `points`, for each mode in use, as Google has it.
  *
- * Two bands, because one number cannot describe both a bus across town and an
- * airport express. Below 20km, urban transit is slower than driving: stops,
- * transfers, walking to the platform. Above it, the journey is almost always
- * an express service on its own right of way, which beats city traffic.
- *
- * A worked example: Stansted to central London is 57km of road and 76 driving
- * minutes. This yields about 65, which is what the timetable says. The old
- * flat 18km/h model said 222.
- */
-export function transitFrom(roadMinutes: number, km: number): number {
-	if (km < 20) return Math.round(roadMinutes * 1.25 + 8);
-	const expressMinutes = (km / 60) * 60; // 60km/h door to door including stops
-	return Math.round(Math.min(roadMinutes, expressMinutes) + 15);
-}
-
-/** The estimate used when nothing better is available. Unchanged behaviour. */
-export function haversineLeg(
-	from: LatLng,
-	to: LatLng,
-	mode: Mode
-): { minutes: number; km: number } {
-	const km = haversineKm(from, to) * DETOUR;
-	const SPEED: Record<Mode, number> = { walk: 4.5, bike: 13, transit: 18, car: 25, carshare: 25 };
-	const minutes = (km / SPEED[mode]) * 60 + (mode === 'transit' ? 12 : 0);
-	return { minutes: Math.round(minutes), km: Math.round(km * 10) / 10 };
-}
-
-type Cell = { time?: number | null; distance?: number | null };
-
-async function matrix(points: LatLng[], costing: string, signal?: AbortSignal) {
-	const body = {
-		sources: points.map((p) => ({ lat: p.lat, lon: p.lng })),
-		targets: points.map((p) => ({ lat: p.lat, lon: p.lng })),
-		costing,
-		units: 'kilometers'
-	};
-	const res = await fetch(MATRIX, {
-		method: 'POST',
-		signal,
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify(body)
-	});
-	if (!res.ok) throw new Error(String(res.status));
-	const parsed = await res.json();
-	return (parsed?.sources_to_targets ?? []) as Cell[][];
-}
-
-/**
- * Resolve every pair among `points` for the modes in use.
- *
- * One request per costing, not one per leg: a day of ten stops is a hundred
+ * One request per mode, not one per leg: a day of ten stops is a hundred
  * pairs, and the 2-opt search needs all of them because it reorders freely.
+ * A pair Google did not answer is missing from the table, and the planner's
+ * estimate stands in for it.
  */
 export async function resolveTravel(
 	points: LatLng[],
 	modes: Mode[],
-	departAt?: string | null,
-	signal?: AbortSignal
+	departAt?: string | null
 ): Promise<TravelTable> {
 	if (points.length < 2) return noTravel;
-
-	// Google is out of the picture for now: Valhalla answers, and the speed
-	// model on the phone covers whatever it cannot. The Google path is kept
-	// for when it comes back.
-	// const google = await resolveFromFunction(points, modes, departAt ?? null);
-	void departAt;
-	return resolveFromValhalla(points, [...new Set(modes)], signal);
-}
-
-async function resolveFromFunction(
-	points: LatLng[],
-	modes: Mode[],
-	departAt: string | null
-): Promise<TravelTable> {
-	const cells: TravelCell[] = [];
+	const cells = new Map<string, TravelCell>();
 	for (const mode of new Set(modes)) {
 		try {
 			const { data, error } = await supabase.functions.invoke('travel', {
-				body: { points, mode, departAt }
+				body: { points, mode, departAt: departAt ?? null }
 			});
 			if (error) continue;
-			const answered = (data?.cells ?? []) as TravelCell[];
-			// Cells are per mode, so tag them before merging: the same pair has a
-			// different answer on foot than on a train.
-			for (const cell of answered) {
-				cells.push({ ...cell, from: `${mode}|${cell.from}`, to: `${mode}|${cell.to}` });
-			}
+			// Per mode: the same pair takes a different time on foot and on a train.
+			for (const cell of (data?.cells ?? []) as TravelCell[]) cells.set(`${mode}|${cell.from}>${cell.to}`, cell);
 		} catch {
-			// Offline, or the function is down. The chain continues.
+			// Offline, or the function is down: the estimate stands in.
 		}
 	}
-	const byKey = new Map(cells.map((c) => [`${c.from}>${c.to}`, c]));
 	return {
 		get(from, to, mode) {
-			const cell = byKey.get(`${mode}|${pointKey(from)}>${mode}|${pointKey(to)}`);
-			if (!cell) return null;
-			if (mode === 'transit' && cell.source !== 'google') {
-				return { minutes: transitFrom(cell.minutes, cell.km), km: cell.km };
-			}
-			return { minutes: cell.minutes, km: cell.km };
+			const cell = cells.get(`${mode}|${pointKey(from)}>${pointKey(to)}`);
+			return cell ? { minutes: cell.minutes, km: cell.km, source: 'routed' } : null;
 		}
 	};
 }
 
-async function resolveFromValhalla(
-	points: LatLng[],
-	modes: Mode[],
-	signal?: AbortSignal
-): Promise<TravelTable> {
-	const table = new Map<string, { minutes: number; km: number }>();
-
-	// Valhalla's matrix is quadratic; a very long day is not a reasonable ask
-	// of a shared courtesy service.
-	const usable = points.length >= 2 && points.length <= 20;
-	const costings = [...new Set(modes.map((m) => COSTING[m]))];
-
-	if (usable) {
-		for (const costing of costings) {
-			try {
-				const rows = await matrix(points, costing, signal);
-				rows.forEach((row, i) =>
-					row.forEach((cell, j) => {
-						if (i === j) return;
-						const minutes = (cell.time ?? 0) / 60;
-						const km = cell.distance ?? 0;
-						// Zero is how the matrix reports "no route", not a journey
-						// that takes no time. Leaving it out lets the fallback answer.
-						if (minutes <= 0 || km <= 0) return;
-						table.set(cellKey(points[i], points[j], costing), {
-							minutes: Math.round(minutes),
-							km: Math.round(km * 10) / 10
-						});
-					})
-				);
-			} catch {
-				// Router down, or the day is unroutable. The fallback still plans.
-			}
-		}
-	}
-
-	return {
-		get(from, to, mode) {
-			// Routed: a real journey over the real streets, so it is kept with the
-			// plan and a later re-time reuses it instead of guessing again.
-			const road = table.get(cellKey(from, to, COSTING[mode]));
-			if (!road) return null;
-			if (mode !== 'transit') return { ...road, source: 'routed' as const };
-			return { minutes: transitFrom(road.minutes, road.km), km: road.km, source: 'routed' as const };
-		}
-	};
-}
-
-/** A table that knows nothing, so every leg falls back. The default. */
 export const noTravel: TravelTable = { get: () => null };

@@ -73,7 +73,6 @@
 	} from '$lib/plan/meals';
 	import { categoryCrowd, peakHoursCrowd, resolveCurves, type CrowdCurves } from '$lib/plan/crowd';
 	import { supabase } from '$lib/supabase';
-	import { routeShape } from '$lib/plan/route';
 	import { firstOf, noTravel, resolveTravel, type TravelTable } from '$lib/plan/travel';
 	import { BLOCK_CATEGORY } from '$lib/plan/planner';
 	import { pool } from '$lib/pool';
@@ -2225,40 +2224,11 @@
 	]);
 
 	/**
-	 * Real routed geometry, fetched per visible day. Straight lines are drawn
-	 * until it arrives, and stay if it never does: a day that cannot be routed
-	 * should still show where its stops are.
+	 * No lines between the pins: which way a journey goes is Google Maps' to
+	 * show (Day in Maps, and each leg's Open in Google Maps). The pins, numbered
+	 * in the day's order, say where the day goes.
 	 */
-	let shapes = $state<Record<string, { lat: number; lng: number }[]>>({});
-
-	$effect(() => {
-		const wanted = shownDays;
-		if (view !== 'map' || !row) return;
-		for (const day of wanted) {
-			const points = day.stops.map((st) => st.at);
-			if (points.length < 2) continue;
-			// Keyed by the stops themselves, so dragging re-routes and merely
-			// toggling a day back on reuses what was already fetched.
-			const key = `${day.index}:${points.map((q) => `${q.lat.toFixed(4)},${q.lng.toFixed(4)}`).join('|')}`;
-			if (shapes[key]) continue;
-			const mode = (day.stops.find((st) => st.legIn)?.legIn?.mode ?? 'walk') as Mode;
-			routeShape(points, mode).then((shape) => {
-				if (shape) shapes = { ...shapes, [key]: shape };
-			});
-		}
-	});
-
-	const routes = $derived(
-		shownDays.map((day) => {
-			const points = day.stops.map((st) => st.at);
-			const key = `${day.index}:${points.map((q) => `${q.lat.toFixed(4)},${q.lng.toFixed(4)}`).join('|')}`;
-			return {
-				id: String(day.index),
-				points: shapes[key] ?? points,
-				color: dayColor(day.index)
-			};
-		})
-	);
+	const routes: { id: string; points: { lat: number; lng: number }[]; color: string }[] = [];
 </script>
 
 <main class="flex h-dvh flex-col">

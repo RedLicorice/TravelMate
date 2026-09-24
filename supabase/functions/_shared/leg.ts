@@ -159,6 +159,11 @@ export type LegAsk = {
 	departAt: string | null;
 	/** 'rail' biases away from coaches on long airport runs. */
 	prefer?: 'rail' | null;
+	/**
+	 * The path itself is wanted -- a journey sheet drawing it. Paths are never
+	 * stored, so this asks Google even when the time is already known.
+	 */
+	withPath?: boolean;
 };
 
 export type RoutedLeg = {
@@ -183,7 +188,7 @@ export async function routeLeg(
 	traveller: string,
 	ask: LegAsk
 ): Promise<LegAnswer> {
-	const { from, to, mode, departAt, prefer = null } = ask;
+	const { from, to, mode, departAt, prefer = null, withPath = false } = ask;
 
 	// Two points in the same place are not a journey. Asking costs an element
 	// to be told so.
@@ -191,27 +196,32 @@ export async function routeLeg(
 
 	const bucket = bucketOf(mode, departAt, prefer);
 
-	const { data: cached } = await db
-		.from('route_cache')
-		.select('minutes,moving_minutes,km,polyline,steps')
-		.eq('from_key', key(from))
-		.eq('to_key', key(to))
-		.eq('mode', mode)
-		.eq('depart_bucket', bucket)
-		.eq('schema_version', SCHEMA_VERSION)
-		.gt('expires_at', new Date().toISOString())
-		.maybeSingle();
-	if (cached) {
-		return {
-			route: {
-				minutes: cached.minutes,
-				movingMinutes: cached.moving_minutes,
-				km: Number(cached.km),
-				polyline: cached.polyline,
-				steps: cached.steps,
-				source: 'cache'
-			}
-		};
+	// Only the time a journey takes is kept; the way it goes is Google Maps'
+	// to show. So a cached answer serves a caller that wants the time, and a
+	// caller that wants the path asks Google.
+	if (!withPath) {
+		const { data: cached } = await db
+			.from('route_cache')
+			.select('minutes,moving_minutes,km')
+			.eq('from_key', key(from))
+			.eq('to_key', key(to))
+			.eq('mode', mode)
+			.eq('depart_bucket', bucket)
+			.eq('schema_version', SCHEMA_VERSION)
+			.gt('expires_at', new Date().toISOString())
+			.maybeSingle();
+		if (cached) {
+			return {
+				route: {
+					minutes: cached.minutes,
+					movingMinutes: cached.moving_minutes,
+					km: Number(cached.km),
+					polyline: null,
+					steps: [],
+					source: 'cache'
+				}
+			};
+		}
 	}
 
 	const travelMode = TRAVEL_MODE[mode];
@@ -273,8 +283,6 @@ export async function routeLeg(
 		minutes: Math.round(Math.max(doorToDoor, moving) / 60),
 		moving_minutes: Math.round(moving / 60),
 		km: Math.round((route.distanceMeters ?? 0) / 100) / 10,
-		polyline: route.polyline?.encodedPolyline ?? null,
-		steps,
 		schema_version: SCHEMA_VERSION,
 		expires_at: new Date(Date.now() + ttlDays(mode) * 86_400_000).toISOString()
 	};
@@ -285,8 +293,8 @@ export async function routeLeg(
 			minutes: row.minutes,
 			movingMinutes: row.moving_minutes,
 			km: row.km,
-			polyline: row.polyline,
-			steps: row.steps,
+			polyline: route.polyline?.encodedPolyline ?? null,
+			steps,
 			source: 'google'
 		}
 	};

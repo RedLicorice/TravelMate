@@ -47,14 +47,10 @@
 			<strong>Supabase</strong> hosts the database and sign-in, in {DATA_REGION}, as our processor.
 		</li>
 		<li>
-			<strong>Google Maps Platform</strong> answers place searches, draws map pictures and works out
-			journeys. It receives what you search for and the coordinates involved, and may process them outside
+			<strong>Google Maps Platform</strong> answers place searches, draws map pictures, and works out
+			how long journeys take. It receives what you search for and the coordinates involved, and may process them outside
 			the EU under the safeguards Google offers (EU standard contractual clauses and the EU–US Data Privacy
 			Framework).
-		</li>
-		<li>
-			<strong>The public Valhalla routing service</strong> at openstreetmap.de receives the coordinates of
-			your stops to estimate travel times.
 		</li>
 		<li>
 			<strong>GitHub Pages</strong> serves the app itself; like any web host it sees your IP address when
