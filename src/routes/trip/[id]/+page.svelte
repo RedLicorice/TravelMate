@@ -542,6 +542,19 @@
 		await edit('Took the trip’s picture off', (w) => setTripImage(w, tripId, null));
 	}
 	let dayIndex = $state(0);
+	/**
+	 * Go to another day. Whatever sheet was open belonged to the day being
+	 * left -- a slot, a meal, a card, a journey -- and picking in it after the
+	 * switch put things on a day that was no longer on screen, so it closes.
+	 */
+	function showDay(i: number) {
+		slot = null;
+		mealed = null;
+		cardedId = null;
+		cardedVisit = null;
+		legShown = null;
+		dayIndex = i;
+	}
 	let view = $state<'plan' | 'map' | 'wishlist'>('plan');
 	let showDetails = $state(false);
 	/** The day with its own line drawn behind the cards. */
@@ -2254,7 +2267,7 @@
 								: drag.state.id
 									? 'opacity:1;outline:2px dashed var(--tm-border-strong);outline-offset:2px'
 									: 'opacity:0.55'}
-							onclick={() => (view === 'map' ? toggleDay(i) : (dayIndex = i))}
+							onclick={() => (view === 'map' ? toggleDay(i) : showDay(i))}
 						>
 							{dayLabel(day.date, row.timezone)}
 						</button>
