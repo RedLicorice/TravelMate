@@ -1,6 +1,7 @@
 import { supabase } from '$lib/supabase';
 import { biasPoint, durationFor, safePhone, safeUrl, type TerminalKind } from './photon';
 import type { BBox, City, LatLng, Place, Poi, PoiProvider, Terminal } from './types';
+import type { OpeningPeriod } from '$lib/plan/hours';
 
 /**
  * Place search answered by Google, through the `places` server function --
@@ -22,6 +23,7 @@ type Found = {
 	website: string | null;
 	phone: string | null;
 	hours: string | null;
+	periods: OpeningPeriod[] | null;
 };
 
 type Ask =
@@ -99,6 +101,7 @@ function toPoi(f: Found): Poi {
 		category,
 		durationMin: durationFor(category),
 		openingHours: f.hours,
+		openingPeriods: f.periods,
 		website: safeUrl(f.website),
 		phone: safePhone(f.phone),
 		// Which place this is, so the same one is not put on a trip twice.

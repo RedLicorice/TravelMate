@@ -840,6 +840,7 @@
 	 * Each place is asked about once per visit to the page, found or not.
 	 */
 	const askedPeakHours = new Set<string>();
+	const askedHours = new Set<string>();
 	$effect(() => {
 		void pois.length;
 		untrack(() => {
@@ -854,6 +855,20 @@
 				for (const id of batch) askedPeakHours.add(id);
 				void supabase.functions.invoke('busyness', { body: { poiIds: batch } }).then(({ error }) => {
 					if (error) track('busyness.failed', { places: batch.length, error: String(error.message).slice(0, 200) });
+				});
+			}
+			// Opening hours the same way: places saved before they were kept,
+			// or whose are a month old.
+			const unknownHours = pois.filter(
+				(p) =>
+					!askedHours.has(p.id) &&
+					(!p.opening_checked_at || Date.now() - Date.parse(p.opening_checked_at) > 30 * 86_400_000)
+			);
+			for (let i = 0; i < unknownHours.length; i += 20) {
+				const batch = unknownHours.slice(i, i + 20).map((p) => p.id);
+				for (const id of batch) askedHours.add(id);
+				void supabase.functions.invoke('hours', { body: { poiIds: batch } }).then(({ error }) => {
+					if (error) track('hours.failed', { places: batch.length, error: String(error.message).slice(0, 200) });
 				});
 			}
 		});
@@ -1953,6 +1968,7 @@
 				category: source.category,
 				durationMin: source.duration_min,
 				openingHours: source.opening_hours,
+				openingPeriods: source.opening_periods,
 				website: source.website,
 				phone: source.phone,
 				// A second helping of a chain still answers with whichever
@@ -2960,8 +2976,8 @@
 										     what gives. -->
 										<span
 											class="tm-chip"
-											class:tm-chip--error={w.kind === 'blocked'}
-											class:tm-chip--warn={w.kind !== 'blocked'}
+											class:tm-chip--error={w.kind === 'blocked' || w.kind === 'closed'}
+											class:tm-chip--warn={w.kind !== 'blocked' && w.kind !== 'closed'}
 										>
 											{w.message}
 										</span>

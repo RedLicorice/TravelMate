@@ -1,3 +1,5 @@
+import type { OpeningPeriod } from '$lib/plan/hours';
+
 export type BBox = { south: number; north: number; west: number; east: number };
 
 export type Place = {
@@ -16,8 +18,10 @@ export type Poi = Place & {
 	category: string | null;
 	/** Minutes a visit typically takes. A default, always editable. */
 	durationMin: number;
-	/** Raw OSM opening_hours string when the source has one. */
+	/** Opening hours as text to show, when the source has them. */
 	openingHours: string | null;
+	/** Opening hours as data the planner reads (Google's periods); absent from sources without them. */
+	openingPeriods?: OpeningPeriod[] | null;
 	/** Worth knowing before turning up, when OSM happens to know it. */
 	website: string | null;
 	phone: string | null;

@@ -4,6 +4,7 @@ import { nearestBranch } from '$lib/poi/branches';
 import { leg, type Leg, type Mode } from './modes';
 import { noTravel, type TravelTable } from './travel';
 import { categoryCurves, type CrowdCurves } from './crowd';
+import { nextOpenStart, openThrough, type OpeningPeriod } from './hours';
 import {
 	DEFAULT_WINDOWS,
 	isMeal,
@@ -73,6 +74,8 @@ export type PlanPoi = {
 	lng: number;
 	category: string | null;
 	durationMin: number;
+	/** When the place is open, as Google gives it; absent or empty when not known. */
+	openingPeriods?: OpeningPeriod[] | null;
 	/** 1-5, how much the traveller wants this. 3 when unsaid. */
 	priority: number;
 	dayIndex: number | null;
@@ -114,7 +117,7 @@ export type PlanPoi = {
  * else has to move -- and what moves is not the re-time's to decide. It says
  * which card can no longer be reached and leaves it to them, or to Replan.
  */
-export type Warning = { kind: 'crowded' | 'overflow' | 'off-hours' | 'blocked'; message: string };
+export type Warning = { kind: 'crowded' | 'overflow' | 'off-hours' | 'blocked' | 'closed'; message: string };
 
 /** Why a stop is not on the plan. Surfaced when the traveller taps it. */
 export type UnplacedReason =
@@ -1109,7 +1112,7 @@ function walkClock(
 		// Its clock: every card has one on a re-time, and a pin or the
 		// traveller's own furniture has one while the plan is arranging the day.
 		// Anything else happens when the walk gets there.
-		const held = !arrange || holdsClock(p) ? Date.parse(p.at) : null;
+		let held = !arrange || holdsClock(p) ? Date.parse(p.at) : null;
 		// Whether that clock is the card's to keep. On a re-time only a pin
 		// keeps it, whatever the walk says. Every other card -- the day's own
 		// furniture too -- takes its clock as a floor: it never happens earlier,
@@ -1155,7 +1158,7 @@ function walkClock(
 				offerMeals(ends(), i, false, held ?? Infinity);
 			}
 		}
-		const finish = ends();
+		let finish = ends();
 
 		// The way home starts from wherever the stop lets the traveller out --
 		// measuring it from the entrance would price a cable car's whole span
@@ -1167,7 +1170,24 @@ function walkClock(
 		// in which the traveller does not go back to the hotel. And on a
 		// re-time nothing at all is dropped: the traveller arranged the day,
 		// and a day that is too full should look too full.
-		const runsLate = finish + tailCost(leaves, i + 1) * 60_000 > dayEndMs;
+		let runsLate = finish + tailCost(leaves, i + 1) * 60_000 > dayEndMs;
+		if (arrange && !stays(p) && p.openingPeriods?.length) {
+			// Replan does not send anyone to a closed door: a place reached
+			// before it opens is waited for, when the visit still fits in the day
+			// once it does; one closed for the rest of the day is spilled, and
+			// Replan finds it another.
+			const starts = finish - p.durationMin * 60_000;
+			if (!openThrough(p.openingPeriods, starts, p.durationMin, timezone)) {
+				const opens = nextOpenStart(p.openingPeriods, starts, p.durationMin, dayEndMs - p.durationMin * 60_000, timezone);
+				if (opens === null) {
+					overflowed.push(p);
+					continue;
+				}
+				held = opens;
+				finish = ends();
+				runsLate = finish + tailCost(leaves, i + 1) * 60_000 > dayEndMs;
+			}
+		}
 		if (arrange && !stays(p)) {
 			// A free stop must also be done, and the traveller on their way,
 			// before the next card whose clock is decided: the hotel at six is
@@ -1210,6 +1230,16 @@ function walkClock(
 			held,
 			holds
 		);
+		// A card placed when the place is shut says so. It is not moved: where a
+		// card goes is the traveller's; Replan is what keeps to the hours.
+		const drawnStop = stops.at(-1);
+		if (
+			drawnStop &&
+			p.openingPeriods?.length &&
+			!openThrough(p.openingPeriods, drawnStop.arrive.getTime(), p.durationMin, timezone)
+		) {
+			drawnStop.warnings.push({ kind: 'closed', message: 'Closed at this time' });
+		}
 
 		// The traveller cannot be at their own hotel at six if what they put
 		// before it runs past six. The furniture keeps its clock and says

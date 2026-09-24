@@ -44,6 +44,8 @@ type Found = {
 	website: string | null;
 	phone: string | null;
 	hours: string | null;
+	/** Opening periods as data (see 0066); null when Google has none. */
+	periods: unknown[] | null;
 };
 
 const json = (body: unknown, status = 200) =>
@@ -84,7 +86,7 @@ type GooglePlace = {
 	addressComponents?: { shortText?: string; types?: string[] }[];
 	websiteUri?: string;
 	internationalPhoneNumber?: string;
-	regularOpeningHours?: { weekdayDescriptions?: string[] };
+	regularOpeningHours?: { weekdayDescriptions?: string[]; periods?: unknown[] };
 };
 
 const FIELDS = [
@@ -98,7 +100,8 @@ const FIELDS = [
 	'places.addressComponents',
 	'places.websiteUri',
 	'places.internationalPhoneNumber',
-	'places.regularOpeningHours.weekdayDescriptions'
+	'places.regularOpeningHours.weekdayDescriptions',
+	'places.regularOpeningHours.periods'
 ].join(',');
 
 async function text(ask: Extract<Ask, { kind: 'text' }>): Promise<Found[]> {
@@ -150,7 +153,8 @@ async function text(ask: Extract<Ask, { kind: 'text' }>): Promise<Found[]> {
 			: null,
 		website: p.websiteUri ?? null,
 		phone: p.internationalPhoneNumber ?? null,
-		hours: p.regularOpeningHours?.weekdayDescriptions?.join('; ') ?? null
+		hours: p.regularOpeningHours?.weekdayDescriptions?.join('; ') ?? null,
+		periods: p.regularOpeningHours?.periods?.length ? p.regularOpeningHours.periods : null
 	}));
 }
 
@@ -193,7 +197,8 @@ async function reverse(at: LatLng): Promise<Found[]> {
 			viewport: null,
 			website: null,
 			phone: null,
-			hours: null
+			hours: null,
+			periods: null
 		}
 	];
 }

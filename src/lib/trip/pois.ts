@@ -1,6 +1,7 @@
 import { ofTrip, perList, row, type Writer } from '$lib/store/store.svelte';
 import type { Poi } from '$lib/poi';
 import type { PlanPoi } from '$lib/plan/planner';
+import type { OpeningPeriod } from '$lib/plan/hours';
 import type { PlacementRow } from '$lib/trip/placements';
 import { session } from '$lib/session.svelte';
 
@@ -24,6 +25,10 @@ export type PoiRow = {
 	popularity: number | null;
 	/** When Foursquare was last asked, found or not. */
 	busy_checked_at: string | null;
+	/** Opening hours as data (0066): Google's periods; null when not known. */
+	opening_periods: OpeningPeriod[] | null;
+	/** When Google was last asked for them, found or not. */
+	opening_checked_at: string | null;
 	website: string | null;
 	phone: string | null;
 	notes: string | null;
@@ -72,6 +77,7 @@ export const toPlanPoi = (
 	lng: row.lng,
 	category: row.category,
 	durationMin: row.duration_min,
+	openingPeriods: row.opening_periods,
 	priority: row.priority ?? 3,
 	dayIndex: placement.day_index,
 	at: placement.at,
@@ -118,6 +124,9 @@ export function addPoi(w: Writer, tripId: string, poi: Poi): PoiRow {
 		busy_windows: null,
 		popularity: null,
 		busy_checked_at: null,
+		// A place found on Google came with its hours, or with none to have.
+		opening_periods: poi.openingPeriods ?? null,
+		opening_checked_at: poi.openingPeriods !== undefined ? now : null,
 		website: poi.website,
 		phone: poi.phone,
 		notes: null,
