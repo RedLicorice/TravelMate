@@ -15,6 +15,7 @@
 	import Autocomplete from '$lib/Autocomplete.svelte';
 	import { swipeToClose } from '$lib/swipe';
 	import { SEARCH_DEBOUNCE_MS } from '$lib/search';
+	import { dayCentre } from '$lib/trip/centre';
 	import SearchTrail from '$lib/SearchTrail.svelte';
 	import { haversineKm } from '$lib/plan/geo';
 	import TripMap from '$lib/GoogleMap.svelte';
@@ -41,6 +42,12 @@
 	const trip = $derived(getTrip(tripId));
 	const saved = $derived(listPois(tripId));
 	const placements = $derived(listPlacements(tripId));
+	/** The centre of the day being added to (see dayCentre), measured before anything is added. */
+	const dayMiddle = $derived.by(() => {
+		if (!slot) return null;
+		const byId = new Map(saved.map((p) => [p.id, p]));
+		return dayCentre(placements, (id) => byId.get(id), slot.day);
+	});
 	let results = $state<Poi[]>([]);
 	/** Starts as whatever was typed in the slot sheet, when it sent the traveller here. */
 	let query = $state(page.url.searchParams.get('q') ?? '');
@@ -424,7 +431,7 @@
 						</p>
 						{#if r.label}<p class="tm-result__meta tm-one-line">{r.label}</p>{/if}
 						<p class="tm-result__meta tm-one-line">
-							{#if onWishlist(r)}on the wishlist · {/if}{r.category ?? 'place'} · {kmFromHotel(r)} km · {r.durationMin} min
+							{#if onWishlist(r)}on the wishlist · {/if}{r.category ?? 'place'} · {r.durationMin} min{#if dayMiddle}{` · ${haversineKm(dayMiddle, r).toFixed(1)} km from the day's centre`}{/if} · {kmFromHotel(r)} km from the hotel
 						</p>
 					</div>
 					{#if !canAdd(r)}

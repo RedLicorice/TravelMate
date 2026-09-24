@@ -99,6 +99,7 @@
 	import StopCard from '$lib/StopCard.svelte';
 	import { swipeToClose } from '$lib/swipe';
 	import { matchesAll } from '$lib/search';
+	import { dayCentre } from '$lib/trip/centre';
 	import { download, exportTrip } from '$lib/trip/transfer';
 	import DayLine from '$lib/DayLine.svelte';
 	import TimeGap from '$lib/TimeGap.svelte';
@@ -776,6 +777,14 @@
 				})
 			: []
 	);
+
+	/** Each day's centre: the middle of its places, as the day now stands (see dayCentre). */
+	const centres = $derived(days.map((_, i) => dayCentre(placements, (id) => poiById.get(id), i)));
+	/** Kilometres from a point to a day's centre, to one decimal; null for a day without one. */
+	const fromCentre = (day: number, at: { lat: number; lng: number }) => {
+		const c = centres[day];
+		return c ? haversineKm(c, at).toFixed(1) : null;
+	};
 
 	/**
 	 * Busyness is resolved here, before the planner runs, and handed in as a
@@ -2616,6 +2625,12 @@
 		{:else}
 			<div class="flex-1 overflow-y-auto p-4" style="--tm-stop-day: {dayColor(dayIndex)}">
 				{#if current && pois.length}
+					{#if centres[dayIndex] && row}
+						<p class="tm-hint mb-2">
+							Day centre · {haversineKm(centres[dayIndex]!, { lat: row.hotel_lat, lng: row.hotel_lng }).toFixed(1)} km from
+							the hotel
+						</p>
+					{/if}
 					<div class="mb-3 flex justify-end gap-2">
 						{#if canEdit}
 							<!-- The day walked again as it stands: overlaps pushed down with
@@ -2839,11 +2854,11 @@
 										{#if stop.anchorKind === 'meal'}
 											{MEAL_LABEL[mealFor(stop) ?? 'lunch']} · {stop.durationMin} min{stop.poiId
 												? ''
-												: ' · nothing chosen yet'}
+												: ' · nothing chosen yet'}{#if stop.poiId && fromCentre(dayIndex, stop.at)}{` · ${fromCentre(dayIndex, stop.at)} km from the day's centre`}{/if}
 										{:else if stop.anchorKind === 'service'}
 											your journey
 										{:else if stop.durationMin}
-											{stop.durationMin} min
+											{stop.durationMin} min{#if !stop.anchorKind && stop.poiId && fromCentre(dayIndex, stop.at)}{` · ${fromCentre(dayIndex, stop.at)} km from the day's centre`}{/if}
 										{:else if stop.anchorKind === 'terminal'}
 											terminal
 										{:else if stop.anchorKind === 'hotel'}
@@ -3201,6 +3216,9 @@
 											also {dayLabel(days[dayOfPoi.get(p.id)!].date, row.timezone)} ·
 										{/if}
 										{p.category ?? 'place'} · {p.duration_min} min
+										{#if fromCentre(target.day, p)}
+											· {fromCentre(target.day, p)} km from centre
+										{/if}
 										{#if detour(p)}
 											· {detour(p)} km from {slotPlace?.name}
 										{/if}
