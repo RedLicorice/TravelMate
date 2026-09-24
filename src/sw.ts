@@ -24,15 +24,23 @@ cleanupOutdatedCaches();
 // page on the dev server, which serves every route itself.
 if (import.meta.env.PROD) registerRoute(new NavigationRoute(createHandlerBoundToURL('404.html')));
 
-// The worker never takes the page on its own. The app tells it to, on
-// opening, and at no other moment.
+// A new version takes over as soon as it is installed, and takes the open
+// pages with it. It used to wait to be told, which only happened within ten
+// seconds of the app opening: on an iPhone, where an installed app is
+// resumed far more often than started and a waiting worker stays waiting,
+// that meant a phone could run an old version indefinitely. The page
+// reloads onto the new version itself, at a moment that does not interrupt
+// (+layout.svelte).
+self.addEventListener('install', () => void self.skipWaiting());
 self.addEventListener('message', (e) => {
 	if (e.data?.type === 'SKIP_WAITING') void self.skipWaiting();
 });
 
 // Trip reads used to be cached here by URL. The device database holds the
 // trip now, and an old copy of somebody's rows has no business lingering.
-self.addEventListener('activate', (e) => e.waitUntil(caches.delete('trip-data')));
+self.addEventListener('activate', (e) =>
+	e.waitUntil(Promise.all([caches.delete('trip-data'), self.clients.claim()]))
+);
 
 self.addEventListener('sync', (e) => {
 	const event = e as ExtendableEvent & { tag: string };

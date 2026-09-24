@@ -35,29 +35,48 @@
 	});
 
 	onMount(() => {
-		// Opening the app online gets the current version of it.
+		// The current version, whenever the app is opened or comes back.
 		//
-		// The check takes a moment, so "opening" is a short window rather than
-		// an instant -- long enough for the worker to answer on a slow
-		// connection, short enough that the traveller is still looking at the
-		// screen they opened rather than working in it. A new version found
-		// inside that window is taken at once; one that turns up later is not
-		// imposed on a page in use, and is taken the next time the app opens.
-		// Registered here because the static fallback page gets no build-time
-		// injection.
+		// A new version takes over as soon as it is installed (sw.ts). This
+		// page then moves onto it at a moment that interrupts nothing: at once
+		// while the app is still opening or out of sight, otherwise the next
+		// time it goes out of sight or comes back -- never under a finger
+		// halfway through something. What was done offline is in the device
+		// database, and survives the reload.
 		const opened = Date.now();
 		const OPENING_MS = 10_000;
-		const update = registerSW({
+		let registration: ServiceWorkerRegistration | undefined;
+		registerSW({
 			immediate: true,
-			onNeedRefresh() {
-				if (Date.now() - opened < OPENING_MS) void update(true);
-			}
+			onRegisteredSW: (_url, r) => (registration = r)
 		});
+		const sw = 'serviceWorker' in navigator ? navigator.serviceWorker : null;
+		// The first install takes the page too, but that is not a new version.
+		const hadVersion = !!sw?.controller;
+		let reloadWhenQuiet = false;
+		const onNewVersion = () => {
+			if (!hadVersion) return;
+			if (document.visibilityState === 'hidden' || Date.now() - opened < OPENING_MS) location.reload();
+			else reloadWhenQuiet = true;
+		};
+		const onVisibility = () => {
+			if (reloadWhenQuiet) location.reload();
+			else if (document.visibilityState === 'visible') void registration?.update().catch(() => {});
+		};
+		// A page still on the old version asking for a piece of code the new
+		// deploy no longer has: reload onto the version that has it.
+		const onStale = () => location.reload();
+		sw?.addEventListener('controllerchange', onNewVersion);
+		document.addEventListener('visibilitychange', onVisibility);
+		window.addEventListener('vite:preloadError', onStale);
 		const stopWatching = watchSession();
 		const stopListening = watchForFaults();
 		return () => {
 			stopWatching();
 			stopListening();
+			sw?.removeEventListener('controllerchange', onNewVersion);
+			document.removeEventListener('visibilitychange', onVisibility);
+			window.removeEventListener('vite:preloadError', onStale);
 		};
 	});
 

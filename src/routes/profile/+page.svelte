@@ -9,6 +9,12 @@
 	import { choose } from '$lib/consent.svelte';
 	import { forgetPending } from '$lib/telemetry';
 	import { DIAGNOSTICS_DAYS } from '$lib/legal';
+	import { version } from '$app/environment';
+
+	/** Which build this is: when it was made, so two phones can be compared. */
+	const built = Number.isFinite(Number(version))
+		? new Date(Number(version)).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+		: version;
 
 	/**
 	 * Send diagnostics, or stop. Stopping takes back what was sent: the trail
@@ -248,5 +254,6 @@
 		</p>
 
 		<button class="tm-btn tm-btn--secondary tm-btn--block mt-8" onclick={signOut}>Sign out</button>
+		<p class="tm-attrib mt-3" style="text-align:center">Version {built}</p>
 	{/if}
 </main>
