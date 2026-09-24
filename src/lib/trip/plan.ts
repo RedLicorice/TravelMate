@@ -326,7 +326,12 @@ export function tableFromPlan(rows: PlanStopRow[]): TravelTable {
 		byDay.set(row.day_index, day);
 	}
 	for (const day of byDay.values()) {
-		const ordered = orderedRows(day);
+		// In the order the day was walked: each row's leg was measured from
+		// the row walked before it. Sorting by start time instead paired a leg
+		// with whichever card happened to start earlier -- two cards at the
+		// same minute, or times that had moved -- and a journey measured from
+		// Kinkaku-ji was reused as one from Kiyomizu-dera.
+		const ordered = [...day].sort((a, b) => a.order_index - b.order_index);
 		ordered.forEach((row, i) => {
 			const previous = ordered[i - 1];
 			if (!previous || row.leg_source !== 'routed' || !row.leg_mode) return;
