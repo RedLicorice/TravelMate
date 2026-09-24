@@ -418,14 +418,13 @@
 			{#each results as r (r.name + r.lat + r.lng)}
 				{@const times = timesPlanned(r)}
 				<div class="tm-result">
-					<div>
+					<div style="min-width: 0">
 						<p class="tm-result__name">
 							{r.name}{#if times > 1}<span class="tm-count">&times;{times}</span>{/if}
 						</p>
-						{#if r.label}<p class="tm-result__meta">{r.label}</p>{/if}
-						<p class="tm-result__meta">
-							{r.category ?? 'place'} · {kmFromHotel(r)} km · {r.durationMin} min
-							{#if onWishlist(r)} · on the wishlist{/if}
+						{#if r.label}<p class="tm-result__meta tm-one-line">{r.label}</p>{/if}
+						<p class="tm-result__meta tm-one-line">
+							{#if onWishlist(r)}on the wishlist · {/if}{r.category ?? 'place'} · {kmFromHotel(r)} km · {r.durationMin} min
 						</p>
 					</div>
 					{#if !canAdd(r)}

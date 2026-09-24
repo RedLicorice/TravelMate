@@ -391,6 +391,27 @@ button.tm-result:focus-visible {
   border-radius: var(--tm-r-lg) var(--tm-r-lg) 0 0;
   padding: var(--tm-space-3) var(--tm-space-4) var(--tm-space-4);
 }
+/* A sheet whose list takes the room that is left: at most three quarters
+   of the visible screen (dvh follows iPhone Safari's moving toolbar), its
+   title, search and buttons at their own height, the list filling the rest
+   and scrolling in itself. A taller phone shows more of the list. Should
+   the rest ever be too tall for the screen, the sheet scrolls as a whole. */
+.tm-sheet--fill {
+  display: flex;
+  flex-direction: column;
+  max-height: 76vh;
+  max-height: 76dvh;
+  overflow-y: auto;
+  padding-bottom: calc(var(--tm-space-4) + env(safe-area-inset-bottom));
+}
+.tm-sheet--fill > * {
+  flex: none;
+}
+.tm-sheet--fill > .tm-sheet__fill {
+  flex: 1 1 auto;
+  min-height: min(12rem, 30dvh);
+  overflow-y: auto;
+}
 .tm-sheet__grip {
   width: 34px;
   height: 4px;

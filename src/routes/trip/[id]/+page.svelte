@@ -2483,25 +2483,27 @@
 							style="align-items: center; color: inherit"
 							onclick={() => (waiting ? (conflict = waiting) : (cardedId = p.id))}
 						>
-							<span style="display: flex; gap: 10px; align-items: flex-start">
+							<span style="display: flex; gap: 10px; align-items: flex-start; min-width: 0">
 								<span
 									style="width:12px;height:12px;border-radius:50%;margin-top:4px;flex:none;background:{colorOf(p.id)}"
 								></span>
-								<span>
+								<span style="min-width: 0">
 									<span style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
 										{#if waiting}<span class="tm-conflict-mark" aria-label="A change of yours is waiting">!</span>{/if}
 										<span class="tm-result__name">{p.name}</span>
 										<Stars value={p.priority} size={9} label="Wanted" />
 									</span>
-									{#if p.address}<span class="tm-result__meta" style="display:block">{p.address}</span>{/if}
-									<span class="tm-result__meta" style="display:block">
+									{#if p.address}<span class="tm-result__meta tm-one-line">{p.address}</span>{/if}
+									<!-- Where it stands first -- its day, or why it has none -- so a
+									     cut line loses the category, not that. -->
+									<span class="tm-result__meta tm-one-line">
+										{#if assigned}
+											{dayLabel(days[dayOf.get(p.id)!].date, row.timezone)} ·
+										{:else}
+											{REASON_TEXT[reasonOf.get(p.id) ?? 'not-planned-yet']} ·
+										{/if}
 										{p.category ?? 'place'} · {p.duration_min} min
 										{#if isMeal(p.category)} · meal{/if}
-										{#if assigned}
-											· {dayLabel(days[dayOf.get(p.id)!].date, row.timezone)}
-										{:else}
-											· {REASON_TEXT[reasonOf.get(p.id) ?? 'not-planned-yet']}
-										{/if}
 									</span>
 								</span>
 							</span>
@@ -2969,8 +2971,8 @@
 				onclick={() => (slot = null)}
 			></div>
 			<div
-				class="tm-sheet"
-				style="position:fixed;z-index:61;max-height:76vh;overflow-y:auto"
+				class="tm-sheet tm-sheet--fill"
+				style="position:fixed;z-index:61"
 				{@attach swipeToClose(() => (slot = null))}
 			>
 				<div class="tm-sheet__grip"></div>
@@ -3086,11 +3088,11 @@
 					<p class="tm-hint mb-2">
 						{target.meal ? 'From your wishlist, places to eat first' : 'From your wishlist'}
 					</p>
-					<!-- About four at a time, and the rest a scroll away: the sheet
-					     stays a sheet, not a list that pushes everything off it. -->
+					<!-- As many as the sheet has room for, and the rest a scroll away:
+					     the list takes what the title, search and buttons leave. -->
 					<div
-						class="flex flex-col gap-1"
-						style="margin: 0 calc(-1 * var(--tm-space-2)); max-height: 16rem; overflow-y: auto; border: 1px solid var(--tm-border); border-radius: var(--tm-r-md)"
+						class="tm-sheet__fill flex flex-col gap-1"
+						style="margin: 0 calc(-1 * var(--tm-space-2)); border: 1px solid var(--tm-border); border-radius: var(--tm-r-md)"
 					>
 						{#each unassigned as p (p.id)}
 							{@const same = unassigned.filter((o) => o.name === p.name).length}
@@ -3100,16 +3102,15 @@
 										{p.name}{#if same > 1}<span class="tm-count">&times;{same}</span>{/if}
 									</span>
 									{#if p.address}<span class="tm-result__meta tm-one-line">{p.address}</span>{/if}
+									<!-- The other day first: if the line is cut, it is the distance
+									     that goes, never the warning that this place is taken. -->
 									<span class="tm-result__meta tm-one-line">
+										{#if dayOfPoi.has(p.id)}
+											also {dayLabel(days[dayOfPoi.get(p.id)!].date, row.timezone)} ·
+										{/if}
 										{p.category ?? 'place'} · {p.duration_min} min
 										{#if detour(p)}
 											· {detour(p)} km from {slotPlace?.name}
-										{/if}
-										{#if dayOfPoi.has(p.id)}
-											· another, as well as {dayLabel(
-												days[dayOfPoi.get(p.id)!].date,
-												row.timezone
-											)}
 										{/if}
 									</span>
 								</span>
