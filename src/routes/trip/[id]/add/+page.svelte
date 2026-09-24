@@ -14,6 +14,8 @@
 	import { branchesOf, sameBrand } from '$lib/poi/branches';
 	import Autocomplete from '$lib/Autocomplete.svelte';
 	import { swipeToClose } from '$lib/swipe';
+	import { SEARCH_DEBOUNCE_MS } from '$lib/search';
+	import SearchTrail from '$lib/SearchTrail.svelte';
 	import { haversineKm } from '$lib/plan/geo';
 	import TripMap from '$lib/GoogleMap.svelte';
 
@@ -146,18 +148,31 @@
 			return;
 		}
 		status = 'searching';
-		timer = setTimeout(async () => {
-			const controller = new AbortController();
-			inflight = controller;
-			try {
-				results = await provider.searchPlaces(query.trim(), city, controller.signal);
-				status = 'done';
-			} catch (e) {
-				if ((e as Error).name === 'AbortError') return;
-				error = (e as Error).message;
-				status = 'done';
-			}
-		}, 250);
+		timer = setTimeout(run, SEARCH_DEBOUNCE_MS);
+	}
+
+	/** Search now, without waiting for the pause: the lens, or Enter. */
+	function searchNow() {
+		clearTimeout(timer);
+		inflight?.abort();
+		if (query.trim().length < 2 || !city) return;
+		error = null;
+		status = 'searching';
+		void run();
+	}
+
+	async function run() {
+		if (!city) return;
+		const controller = new AbortController();
+		inflight = controller;
+		try {
+			results = await provider.searchPlaces(query.trim(), city, controller.signal);
+			status = 'done';
+		} catch (e) {
+			if ((e as Error).name === 'AbortError') return;
+			error = (e as Error).message;
+			status = 'done';
+		}
 	}
 
 	// ---- adding a place the provider has never heard of ----
@@ -365,19 +380,24 @@
 		</div>
 
 		<div class="tm-search">
-			<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
-				<circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" />
-			</svg>
-			<input bind:value={query} oninput={onInput} placeholder="Museums, parks, a name…" aria-label="Search places" />
-			{#if query}
-				<button
-					onclick={clearSearch}
-					aria-label="Clear search"
-					style="background:none;border:none;cursor:pointer;color:var(--tm-text-faint);font-size:18px;line-height:1;padding:0 2px"
-				>
-					×
-				</button>
-			{/if}
+			<input
+				bind:value={query}
+				oninput={onInput}
+				onkeydown={(e) => {
+					if (e.key === 'Enter') {
+						e.preventDefault();
+						searchNow();
+					}
+				}}
+				placeholder="Museums, parks, a name…"
+				aria-label="Search places"
+			/>
+			<SearchTrail
+				searching={status === 'searching'}
+				filled={query.trim().length > 0}
+				onclear={clearSearch}
+				onsearch={searchNow}
+			/>
 		</div>
 
 		{#if error}

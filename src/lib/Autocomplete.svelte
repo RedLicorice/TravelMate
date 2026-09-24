@@ -1,5 +1,7 @@
 <script lang="ts" generics="T extends { name: string; label: string }">
 	import { track } from '$lib/telemetry';
+	import { SEARCH_DEBOUNCE_MS } from '$lib/search';
+	import SearchTrail from '$lib/SearchTrail.svelte';
 	type Props = {
 		label: string;
 		placeholder?: string;
@@ -42,36 +44,58 @@
 		}
 
 		status = 'searching';
-		// Photon is a type-ahead geocoder: it answers partial words, so results
-		// should land while the traveller is still typing. 250ms plus
-		// abort-on-keystroke means a fast typist issues one request, not ten.
-		timer = setTimeout(async () => {
-			const controller = new AbortController();
-			inflight = controller;
-			const asked = query.trim();
-			const started = performance.now();
-			try {
-				results = await search(asked, controller.signal);
-				status = 'done';
-				track('search', {
-					label,
-					query: asked,
-					found: results.length,
-					ms: Math.round(performance.now() - started),
-					first: results[0]?.name ?? null
-				});
-			} catch (e) {
-				if ((e as Error).name === 'AbortError') return;
-				error = (e as Error).message;
-				status = 'done';
-				track('search.failed', {
-					label,
-					query: asked,
-					ms: Math.round(performance.now() - started),
-					error: String((e as Error).message).slice(0, 200)
-				});
-			}
-		}, 250);
+		// Asked after a pause in the typing, not at every letter (see
+		// SEARCH_DEBOUNCE_MS); a keystroke also cancels a search still out.
+		timer = setTimeout(run, SEARCH_DEBOUNCE_MS);
+	}
+
+	/** Search now, without waiting for the pause: the lens, or Enter. */
+	function searchNow() {
+		clearTimeout(timer);
+		inflight?.abort();
+		if (query.trim().length < 2) return;
+		error = null;
+		status = 'searching';
+		void run();
+	}
+
+	/** Empty the box: the text, what it found, and any search still out. */
+	function clear() {
+		clearTimeout(timer);
+		inflight?.abort();
+		query = '';
+		results = [];
+		error = null;
+		picked = false;
+		status = 'idle';
+	}
+
+	async function run() {
+		const controller = new AbortController();
+		inflight = controller;
+		const asked = query.trim();
+		const started = performance.now();
+		try {
+			results = await search(asked, controller.signal);
+			status = 'done';
+			track('search', {
+				label,
+				query: asked,
+				found: results.length,
+				ms: Math.round(performance.now() - started),
+				first: results[0]?.name ?? null
+			});
+		} catch (e) {
+			if ((e as Error).name === 'AbortError') return;
+			error = (e as Error).message;
+			status = 'done';
+			track('search.failed', {
+				label,
+				query: asked,
+				ms: Math.round(performance.now() - started),
+				error: String((e as Error).message).slice(0, 200)
+			});
+		}
 	}
 
 	function choose(item: T) {
@@ -86,21 +110,32 @@
 
 <div class="tm-field">
 	<label class="tm-label" for={id}>{label}</label>
-	<input
-		class="tm-input"
-		{id}
-		{placeholder}
-		{disabled}
-		bind:value={query}
-		oninput={onInput}
-		autocomplete="off"
-		spellcheck="false"
-	/>
+	<div class="tm-search">
+		<input
+			{id}
+			{placeholder}
+			{disabled}
+			bind:value={query}
+			oninput={onInput}
+			onkeydown={(e) => {
+				if (e.key === 'Enter') {
+					e.preventDefault();
+					searchNow();
+				}
+			}}
+			autocomplete="off"
+			spellcheck="false"
+		/>
+		<SearchTrail
+			searching={status === 'searching'}
+			filled={query.trim().length > 0}
+			onclear={clear}
+			onsearch={searchNow}
+		/>
+	</div>
 
 	{#if error}
 		<span class="tm-hint tm-hint--error">{error}</span>
-	{:else if status === 'searching'}
-		<span class="tm-hint">Searching…</span>
 	{:else if status === 'done' && results.length === 0}
 		<span class="tm-hint">Nothing found. Try a different spelling.</span>
 	{:else if picked}
