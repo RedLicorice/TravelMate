@@ -244,6 +244,30 @@
   min-height: 40px;
   color: var(--tm-text-faint);
 }
+/* A control drawn as an icon: round, the size of a fingertip. Pressed
+   (a toggle that is on) it takes the highlighted look chips have. */
+.tm-icon-btn {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  flex: none;
+  border-radius: 50%;
+  border: 1px solid var(--tm-border);
+  background: var(--tm-surface);
+  color: var(--tm-text-muted);
+  cursor: pointer;
+  padding: 0;
+}
+.tm-icon-btn[aria-pressed='true'] {
+  background: var(--tm-sky-soft);
+  color: var(--tm-sky-ink);
+  border-color: transparent;
+}
+.tm-icon-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
 .tm-search__btn {
   display: grid;
   place-items: center;

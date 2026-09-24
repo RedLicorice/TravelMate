@@ -1260,6 +1260,13 @@
 	/** Retime Day: while it runs, what it found, and the cards it moved. */
 	let retiming = $state(false);
 	let retimeSaid = $state<string | null>(null);
+	/** A control's name, shown for a moment under the row when it is long-pressed. */
+	function sayBriefly(text: string) {
+		retimeSaid = text;
+		setTimeout(() => {
+			if (retimeSaid === text) retimeSaid = null;
+		}, 1500);
+	}
 	let flashed = $state(new Set<string>());
 
 	/**
@@ -2597,45 +2604,65 @@
 		{:else}
 			<div class="flex-1 overflow-y-auto p-4" style="--tm-stop-day: {dayColor(dayIndex)}">
 				{#if current && pois.length}
-					{#if centres[dayIndex] && row}
-						<p class="tm-hint mb-2">
-							Day centre · {haversineKm(centres[dayIndex]!, { lat: row.hotel_lat, lng: row.hotel_lng }).toFixed(1)} km from
-							the hotel
-						</p>
-					{/if}
-					<div class="mb-3 flex justify-end gap-2">
+					<!-- One row: where the day is, then its two controls as drawn icons.
+					     Each says what it is to a screen reader and on a long press. -->
+					<!-- More room under it when the rails show: their day labels sit
+					     above them, where the icons would otherwise be. -->
+					<div
+						class="flex items-center gap-2"
+						class:mb-3={!(expanded || drag.state.id)}
+						class:mb-7={expanded || !!drag.state.id}
+					>
+						<span class="tm-hint tm-one-line" style="flex:1;min-width:0">
+							{#if centres[dayIndex] && row}
+								Day centre · {haversineKm(centres[dayIndex]!, { lat: row.hotel_lat, lng: row.hotel_lng }).toFixed(1)} km
+								from the hotel
+							{/if}
+						</span>
 						{#if canEdit}
-							<!-- The day walked again as it stands: overlaps pushed down with
-							     the journeys between them, pins where they are, journey times
-							     asked for afresh. Not Replan: nothing is reordered or removed. -->
+							<!-- The day walked again and closed up: overlaps pushed down, holes
+							     closed, pins where they are, journey times asked for afresh. -->
 							<button
-								class="tm-chip"
-								style="opacity: 0.6"
+								class="tm-icon-btn"
+								aria-label="Retime Day"
+								title="Retime Day"
 								disabled={busy || retiming}
 								aria-busy={retiming}
 								onclick={retimeDay}
+								{@attach longPress(() => sayBriefly('Retime Day'))}
 							>
 								{#if retiming}
-									<span class="tm-spin" aria-hidden="true"></span> Retiming…
+									<span class="tm-spin" aria-hidden="true"></span>
 								{:else}
-									Retime Day
+									<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+										<circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" />
+									</svg>
 								{/if}
 							</button>
 						{/if}
-						{#if retimeSaid}
-							<span class="tm-hint" role="status" style="align-self:center;margin-right:auto">{retimeSaid}</span>
-						{/if}
 						<button
-							class="tm-chip"
+							class="tm-icon-btn"
 							aria-pressed={expanded}
-							style={expanded
-								? 'background: var(--tm-sky-soft); color: var(--tm-sky-ink)'
-								: 'opacity: 0.6'}
+							aria-label={expanded ? 'Hide the day' : 'Show the day'}
+							title={expanded ? 'Hide the day' : 'Show the day'}
 							onclick={() => (expanded = !expanded)}
+							{@attach longPress(() => sayBriefly(expanded ? 'Hide the day' : 'Show the day'))}
 						>
-							{expanded ? 'Hide the day' : 'Show the day'}
+							<!-- Arrows apart: stretch the day to its real time scale. Together:
+							     fold it back. -->
+							<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+								<path d="M5 12h14" />
+								{#if expanded}
+									<path d="M12 3v5M9 5l3 3 3-3M12 21v-5M9 19l3-3 3 3" />
+								{:else}
+									<path d="M12 9V3M9 6l3-3 3 3M12 15v6M9 18l3 3 3-3" />
+								{/if}
+							</svg>
 						</button>
 					</div>
+					{#if retimeSaid}
+						<p class="tm-hint mb-2" role="status">{retimeSaid}</p>
+					{/if}
 				{/if}
 
 				<div
