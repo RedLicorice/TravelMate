@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { swipeToClose } from '$lib/swipe';
+	import { mapSize } from '$lib/mapsize';
 	import { base } from '$app/paths';
 	import { PUBLIC_GOOGLE_MAPS_BROWSER_KEY } from '$env/static/public';
 	import Stars from '$lib/Stars.svelte';
@@ -66,13 +67,16 @@
 
 	const addedBy = $derived(people.find((p) => p.userId === poi.added_by) ?? null);
 
+	/** The map box's width on this screen; the picture is asked for at its shape. */
+	let boxWidth = $state(0);
 	/** The place, and the hotel when there is one, as a still picture. */
 	const staticMap = $derived.by(() => {
-		if (!PUBLIC_GOOGLE_MAPS_BROWSER_KEY) return null;
+		const size = mapSize(boxWidth, 180);
+		if (!PUBLIC_GOOGLE_MAPS_BROWSER_KEY || !size) return null;
 		const q = new URLSearchParams({
 			center: `${poi.lat},${poi.lng}`,
 			zoom: '15',
-			size: '640x180',
+			size,
 			scale: '2',
 			key: PUBLIC_GOOGLE_MAPS_BROWSER_KEY
 		});
@@ -108,6 +112,7 @@
 		rel="noopener noreferrer"
 		aria-label="Open {poi.name} in Google Maps"
 		style="display:grid;place-items:center;height:180px;background:var(--tm-surface-2);color:var(--tm-text-muted);text-decoration:none;font:600 var(--tm-text-sm)/1 var(--tm-font)"
+		bind:clientWidth={boxWidth}
 	>
 		{#if staticMap && !mapFailed}
 			<img

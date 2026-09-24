@@ -5,6 +5,7 @@
 	import { legRoute, type LegRoute } from '$lib/plan/route';
 	import { track } from '$lib/telemetry';
 	import { swipeToClose } from '$lib/swipe';
+	import { mapSize } from '$lib/mapsize';
 	import type { LatLng } from '$lib/trip/days';
 	import type { Mode } from '$lib/plan/modes';
 
@@ -84,9 +85,12 @@
 	 * or the metro for transit, the streets otherwise -- and the two ends
 	 * either way. With markers and a path the picture frames itself.
 	 */
+	/** The map box's width on this screen; the picture is asked for at its shape. */
+	let boxWidth = $state(0);
 	const staticMap = $derived.by(() => {
-		if (!PUBLIC_GOOGLE_MAPS_BROWSER_KEY || route === undefined) return null;
-		const q = new URLSearchParams({ size: '640x220', scale: '2', key: PUBLIC_GOOGLE_MAPS_BROWSER_KEY });
+		const size = mapSize(boxWidth, 220);
+		if (!PUBLIC_GOOGLE_MAPS_BROWSER_KEY || route === undefined || !size) return null;
+		const q = new URLSearchParams({ size, scale: '2', key: PUBLIC_GOOGLE_MAPS_BROWSER_KEY });
 		q.append('markers', `color:0xe98a5f|label:A|${from.lat},${from.lng}`);
 		q.append('markers', `color:0xe98a5f|label:B|${to.lat},${to.lng}`);
 		if (route?.polyline) q.append('path', `color:0xe98a5fff|weight:5|enc:${route.polyline}`);
@@ -114,7 +118,7 @@
 	aria-label="{fromName} to {toName}"
 >
 	<!-- The map on top, with where from and where to written across it. -->
-	<div style="position:relative;height:220px;background:var(--tm-surface-2)">
+	<div style="position:relative;height:220px;background:var(--tm-surface-2)" bind:clientWidth={boxWidth}>
 		{#if failed}
 			<div
 				style="height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:var(--tm-text-muted);font:600 var(--tm-text-sm)/1.2 var(--tm-font)"
