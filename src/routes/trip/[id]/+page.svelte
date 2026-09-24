@@ -96,6 +96,7 @@
 	import { longPress } from '$lib/longpress.svelte';
 	import StopCard from '$lib/StopCard.svelte';
 	import { swipeToClose } from '$lib/swipe';
+	import { download, exportTrip } from '$lib/trip/transfer';
 	import DayLine from '$lib/DayLine.svelte';
 	import TimeGap from '$lib/TimeGap.svelte';
 	import TripAvatar from '$lib/TripAvatar.svelte';
@@ -1385,7 +1386,9 @@
 	 */
 	let afterTripEdit = page.url.searchParams.get('retime');
 	$effect(() => {
-		if (!afterTripEdit || busy || !row || !days.length || !stored.length || !canEdit) return;
+		// No saved plan is no obstacle: a trip just read in from a file has
+		// none yet, and this is what makes it.
+		if (!afterTripEdit || busy || !row || !days.length || !canEdit) return;
 		const asked = afterTripEdit.split(',');
 		afterTripEdit = null;
 		const which = asked.includes('all')
@@ -2260,6 +2263,16 @@
 					{#if shareUrl}
 						<p class="tm-attrib mt-2" style="word-break: break-all">{shareUrl}</p>
 					{/if}
+					<button
+						class="tm-btn tm-btn--ghost tm-btn--block mt-2"
+						style="min-height:38px"
+						onclick={() => {
+							const file = exportTrip(tripId);
+							if (file) download(file);
+						}}
+					>
+						Save the trip as a file
+					</button>
 				</div>
 			{/if}
 

@@ -10,6 +10,31 @@
 	import Notices from '$lib/Notices.svelte';
 	import ProfileButton from '$lib/ProfileButton.svelte';
 	import TripAvatar from '$lib/TripAvatar.svelte';
+	import { goto } from '$app/navigation';
+	import { session } from '$lib/session.svelte';
+	import { importTrip, readTripFile } from '$lib/trip/transfer';
+
+	let importing = $state(false);
+	let importError = $state<string | null>(null);
+
+	/** A trip file read in becomes a trip of its own, owned by whoever opened it. */
+	async function openFile(e: Event) {
+		const input = e.currentTarget as HTMLInputElement;
+		const picked = input.files?.[0];
+		input.value = '';
+		if (!picked || !session.user) return;
+		importing = true;
+		importError = null;
+		try {
+			const id = await importTrip(readTripFile(await picked.text()), session.user.id);
+			// The plan is worked out on arrival: every day, from the cards.
+			await goto(`${base}/trip/${id}?retime=all`);
+		} catch (err) {
+			importError = (err as Error).message;
+		} finally {
+			importing = false;
+		}
+	}
 
 	const trips = $derived(listTrips());
 
@@ -90,5 +115,10 @@
 			class="tm-btn tm-btn--primary tm-btn--block mx-auto max-w-lg"
 			style="text-decoration: none">Plan a new trip</a
 		>
+		<label class="tm-btn tm-btn--ghost tm-btn--block mx-auto mt-2 max-w-lg" style="cursor:pointer">
+			{importing ? 'Reading the trip…' : 'Open a trip from a file'}
+			<input type="file" accept=".json,application/json" hidden disabled={importing} onchange={openFile} />
+		</label>
+		{#if importError}<p class="tm-hint tm-hint--error mx-auto mt-1 max-w-lg">{importError}</p>{/if}
 	</div>
 </main>
