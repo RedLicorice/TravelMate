@@ -25,7 +25,6 @@ const json = (body: unknown, status = 200) =>
 type Place = { id: string; name: string; lat: number; lng: number; busy_checked_at: string | null };
 type Venue = {
 	fsq_place_id?: string;
-	fsq_id?: string;
 	name: string;
 	distance?: number;
 	popularity?: number;
@@ -47,34 +46,20 @@ const sameName = (a: string, b: string) => {
 	return !!x && !!y && (x === y || x.includes(y) || y.includes(x));
 };
 
-/**
- * One search near the place, asking for the busy data in the same call.
- * Foursquare issues two kinds of key: a service key for the current Places
- * API (Bearer, versioned) and an API key for the older v3 one. Which this
- * project holds is not something the code can know ahead, so the current API
- * is asked first and the older one if the key is refused there.
- */
+/** One search near the place, asking for the busy data in the same call. */
 async function search(place: Place, key: string): Promise<Venue[]> {
 	const q = new URLSearchParams({
 		query: place.name,
 		ll: `${place.lat},${place.lng}`,
 		radius: String(WITHIN_M),
-		limit: '5'
+		limit: '5',
+		fields: 'fsq_place_id,name,distance,popularity,hours_popular'
 	});
-	const current = await fetch(
-		`https://places-api.foursquare.com/places/search?${q}&fields=fsq_place_id,name,distance,popularity,hours_popular`,
-		{ headers: { Authorization: `Bearer ${key}`, 'X-Places-Api-Version': '2025-06-17', Accept: 'application/json' } }
-	);
-	if (current.ok) return ((await current.json()).results ?? []) as Venue[];
-	if (current.status !== 401 && current.status !== 403) {
-		throw new Error(`foursquare ${current.status}: ${(await current.text()).slice(0, 200)}`);
-	}
-	const older = await fetch(
-		`https://api.foursquare.com/v3/places/search?${q}&fields=fsq_id,name,distance,popularity,hours_popular`,
-		{ headers: { Authorization: key, Accept: 'application/json' } }
-	);
-	if (!older.ok) throw new Error(`foursquare v3 ${older.status}: ${(await older.text()).slice(0, 200)}`);
-	return ((await older.json()).results ?? []) as Venue[];
+	const res = await fetch(`https://places-api.foursquare.com/places/search?${q}`, {
+		headers: { Authorization: `Bearer ${key}`, 'X-Places-Api-Version': '2025-06-17', Accept: 'application/json' }
+	});
+	if (!res.ok) throw new Error(`foursquare ${res.status}: ${(await res.text()).slice(0, 200)}`);
+	return ((await res.json()).results ?? []) as Venue[];
 }
 
 Deno.serve(async (req) => {
@@ -120,7 +105,7 @@ Deno.serve(async (req) => {
 			const { error: failed } = await db
 				.from('pois')
 				.update({
-					fsq_place_id: venue ? (venue.fsq_place_id ?? venue.fsq_id ?? null) : null,
+					fsq_place_id: venue?.fsq_place_id ?? null,
 					busy_windows: venue?.hours_popular?.length ? venue.hours_popular : null,
 					popularity: typeof venue?.popularity === 'number' ? venue.popularity : null,
 					busy_checked_at: new Date().toISOString()
