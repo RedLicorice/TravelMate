@@ -49,3 +49,94 @@ export function swipeToClose(onclose: () => void) {
 		};
 	};
 }
+
+/**
+ * Swipe sideways to move to the neighbouring day: left for the next, right
+ * for the previous.
+ *
+ * Only a clearly sideways move counts -- 60 px across and at least one and a
+ * half times more across than down -- so scrolling the day is never taken for
+ * a swipe. Not from the screen's outer 24 px, where the iPhone's own back
+ * gesture lives. While it is a swipe the list follows the finger a little;
+ * let go, it moves to the day and slides in from the side it came from, or
+ * springs back when there is no day that way. Without motion (reduce motion)
+ * it simply changes.
+ */
+const EDGE_PX = 24;
+const SWIPE_PX = 60;
+
+export function swipeSideways(opts: {
+	/** Whether a swipe may start now: not while a card is held or a sheet is open. */
+	enabled: () => boolean;
+	/** Move one day; answers whether there was a day to move to. */
+	go: (step: 1 | -1) => boolean;
+}) {
+	return (node: HTMLElement) => {
+		let from: { x: number; y: number } | null = null;
+		let sideways: boolean | null = null;
+		let dx = 0;
+		const still = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+		const start = (e: TouchEvent) => {
+			const t = e.touches[0];
+			if (e.touches.length !== 1 || !opts.enabled() || t.clientX < EDGE_PX || t.clientX > innerWidth - EDGE_PX) {
+				from = null;
+				return;
+			}
+			from = { x: t.clientX, y: t.clientY };
+			sideways = null;
+			dx = 0;
+		};
+		const move = (e: TouchEvent) => {
+			if (!from) return;
+			const t = e.touches[0];
+			dx = t.clientX - from.x;
+			const dy = t.clientY - from.y;
+			if (sideways === null && Math.max(Math.abs(dx), Math.abs(dy)) > 10) sideways = Math.abs(dx) > 1.5 * Math.abs(dy);
+			if (!sideways) return;
+			if (e.cancelable) e.preventDefault();
+			if (!still()) {
+				node.style.transition = 'none';
+				node.style.transform = `translateX(${dx * 0.35}px)`;
+			}
+		};
+		const end = () => {
+			if (!from || !sideways) {
+				from = null;
+				return;
+			}
+			from = null;
+			const step: 1 | -1 = dx < 0 ? 1 : -1;
+			const moved = Math.abs(dx) >= SWIPE_PX && opts.go(step);
+			if (still()) {
+				node.style.transform = '';
+				return;
+			}
+			if (moved) {
+				// In from the side the new day came from.
+				node.style.transition = 'none';
+				node.style.transform = `translateX(${step * 48}px)`;
+				node.style.opacity = '0.4';
+				requestAnimationFrame(() => {
+					node.style.transition = 'transform 180ms ease-out, opacity 180ms ease-out';
+					node.style.transform = '';
+					node.style.opacity = '';
+				});
+			} else {
+				node.style.transition = 'transform 180ms ease-out';
+				node.style.transform = '';
+			}
+		};
+
+		node.addEventListener('touchstart', start, { passive: true });
+		node.addEventListener('touchmove', move, { passive: false });
+		node.addEventListener('touchend', end);
+		node.addEventListener('touchcancel', end);
+		return () => {
+			node.removeEventListener('touchstart', start);
+			node.removeEventListener('touchmove', move);
+			node.removeEventListener('touchend', end);
+			node.removeEventListener('touchcancel', end);
+		};
+	};
+}

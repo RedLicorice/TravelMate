@@ -97,7 +97,7 @@
 	import { haversineKm } from '$lib/plan/geo';
 	import { longPress } from '$lib/longpress.svelte';
 	import StopCard from '$lib/StopCard.svelte';
-	import { swipeToClose } from '$lib/swipe';
+	import { swipeSideways, swipeToClose } from '$lib/swipe';
 	import { matchesAll } from '$lib/search';
 	import { dayCentre } from '$lib/trip/centre';
 	import { download, exportTrip } from '$lib/trip/transfer';
@@ -2696,7 +2696,19 @@
 				{/if}
 			</div>
 		{:else}
-			<div class="flex-1 overflow-y-auto p-4" style="--tm-stop-day: {dayColor(dayIndex)}">
+			<div
+				class="flex-1 overflow-y-auto p-4"
+				style="--tm-stop-day: {dayColor(dayIndex)}"
+				{@attach swipeSideways({
+					enabled: () => !drag.state.id && !slot && !mealed && !cardedId && !legShown && !allowanced,
+					go: (step) => {
+						const to = dayIndex + step;
+						if (to < 0 || to >= days.length) return false;
+						showDay(to);
+						return true;
+					}
+				})}
+			>
 				{#if current && pois.length}
 					<!-- One row: where the day is, then its two controls as drawn icons.
 					     Each says what it is to a screen reader and on a long press. -->
