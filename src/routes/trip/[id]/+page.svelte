@@ -1222,13 +1222,15 @@
 	/**
 	 * Everything known about how long journeys take, best first.
 	 *
-	 * The stored plan comes first: a leg it has already had routed is a real
-	 * answer for a real journey, and survives the cards being moved about --
-	 * the scheduler asks by where it is going, not by which stop it is timing.
-	 * The matrix behind it is an estimate, and the speed model behind that.
+	 * What Google has just answered comes first, then what the stored plan
+	 * kept from before, then the speed model (modes.ts). The stored plan used
+	 * to come first, which meant a leg once saved wrong -- a zero between two
+	 * places, a journey filed under the wrong pair -- was reused for ever and
+	 * never replaced by a real answer. It still covers the journeys this visit
+	 * has not asked Google about.
 	 */
 	const known = () => {
-		const tables = [tableFromPlan(stored), ...(travel ? [travel] : [])];
+		const tables = [...(travel ? [travel] : []), tableFromPlan(stored)];
 		return firstOf(tables);
 	};
 
