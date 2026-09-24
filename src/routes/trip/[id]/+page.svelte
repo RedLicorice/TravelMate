@@ -2455,7 +2455,23 @@
 		{:else}
 			<div class="flex-1 overflow-y-auto p-4" style="--tm-stop-day: {dayColor(dayIndex)}">
 				{#if current && pois.length}
-					<div class="mb-3 flex justify-end">
+					<div class="mb-3 flex justify-end gap-2">
+						{#if canEdit}
+							<!-- The day walked again as it stands: overlaps pushed down with
+							     the journeys between them, pins where they are, journey times
+							     asked for afresh. Not Replan: nothing is reordered or removed. -->
+							<button
+								class="tm-chip"
+								style="opacity: 0.6"
+								disabled={busy}
+								onclick={() => {
+									const d = dayIndex;
+									void edit('Re-timed the day', (w) => retime(w, [d]));
+								}}
+							>
+								Retime Day
+							</button>
+						{/if}
 						<button
 							class="tm-chip"
 							aria-pressed={expanded}
