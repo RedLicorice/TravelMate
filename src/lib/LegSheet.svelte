@@ -2,7 +2,7 @@
 	import { PUBLIC_GOOGLE_MAPS_BROWSER_KEY } from '$env/static/public';
 	import { formatter } from '$lib/clock';
 	import { legUrl } from '$lib/maps';
-	import { legRoute, type LegRoute } from '$lib/plan/route';
+	import { legRoutes, type LegRoute } from '$lib/plan/route';
 	import { track } from '$lib/telemetry';
 	import { swipeToClose } from '$lib/swipe';
 	import { mapSize } from '$lib/mapsize';
@@ -20,13 +20,25 @@
 		timezone: string;
 		/** The leg as the day has it. */
 		planned: { minutes: number; km: number; source?: 'estimate' | 'routed' };
+		/** The route already chosen for this journey, by its summary; none when Google's own stands. */
+		chosen?: string | null;
+		/** Choose one of Google's routes: its time becomes the leg's. Absent for someone who cannot edit. */
+		onchoose?: (route: LegRoute) => void;
 		onclose: () => void;
 	};
 
-	let { from, to, fromName, toName, mode, departAt, timezone, planned, onclose }: Props = $props();
+	let { from, to, fromName, toName, mode, departAt, timezone, planned, chosen = null, onchoose, onclose }: Props =
+		$props();
 
-	/** Google's journey: undefined while it is asked for, null when it has none. */
-	let route = $state<LegRoute | null | undefined>(undefined);
+	/** Google's routes, the one it recommends first: undefined while asked for, null when it could not answer. */
+	let routes = $state<LegRoute[] | null | undefined>(undefined);
+	/** The one on the map: the traveller's choice if they made one, else Google's first. */
+	let picked = $state<string | null>(null);
+	const route = $derived.by(() => {
+		if (!routes?.length) return routes === undefined ? undefined : null;
+		const want = picked ?? chosen;
+		return routes.find((r) => r.summary === want) ?? routes[0];
+	});
 	/**
 	 * Why there is no map, when there is none: the phone is offline, or it is
 	 * online and the picture was refused. Either way the map says so and offers
@@ -38,14 +50,14 @@
 
 	async function load() {
 		failed = null;
-		route = undefined;
+		routes = undefined;
 		if (!navigator.onLine) {
 			failed = 'offline';
-			route = null;
+			routes = null;
 			return;
 		}
-		route = await legRoute(from, to, mode, departAt);
-		if (!route && !navigator.onLine) failed = 'offline';
+		routes = await legRoutes(from, to, mode, departAt);
+		if (!routes && !navigator.onLine) failed = 'offline';
 	}
 
 	/**
@@ -159,12 +171,36 @@
 			</dd>
 			<dt class="tm-label">Google</dt>
 			<dd style="margin:0">
-				{#if route === undefined}
+				{#if routes === undefined}
 					<span class="tm-skel" style="display:inline-block;height:1em;width:8em" aria-busy="true"></span>
-				{:else if route}
-					{route.minutes} min · {route.km} km
-				{:else}
+				{:else if !routes?.length}
 					<span class="tm-hint">not available</span>
+				{:else if routes.length === 1 || !onchoose}
+					{route?.minutes} min · {route?.km} km · {route?.summary}
+				{:else}
+					<!-- Google's alternatives, to choose from: the one chosen sets the
+					     journey's time, and is the one on the map. -->
+					<span class="tm-hint" style="display:block;margin-bottom:6px">Pick the route to plan with</span>
+					<ul style="list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px">
+						{#each routes as r (r.summary + r.minutes)}
+							{@const on = r === route}
+							<li>
+								<button
+									type="button"
+									class="tm-route"
+									aria-pressed={on}
+									onclick={() => {
+										picked = r.summary;
+										onchoose(r);
+									}}
+								>
+									<span class="tm-route__time">{r.minutes} min</span>
+									<span class="tm-one-line" style="min-width:0">{r.summary} · {r.km} km</span>
+									{#if on}<span aria-hidden="true">✓</span>{/if}
+								</button>
+							</li>
+						{/each}
+					</ul>
 				{/if}
 			</dd>
 		</dl>
@@ -180,3 +216,30 @@
 		</a>
 	</div>
 </div>
+
+<style>
+	.tm-route {
+		display: grid;
+		grid-template-columns: auto 1fr auto;
+		align-items: center;
+		gap: 10px;
+		width: 100%;
+		min-height: 44px;
+		padding: 8px 12px;
+		border-radius: var(--tm-r-md);
+		border: 1px solid var(--tm-border);
+		background: var(--tm-surface);
+		color: inherit;
+		font: 400 var(--tm-text-sm)/1.3 var(--tm-font);
+		text-align: left;
+		cursor: pointer;
+	}
+	.tm-route[aria-pressed='true'] {
+		border-color: var(--tm-primary);
+		box-shadow: 0 0 0 1px var(--tm-primary);
+	}
+	.tm-route__time {
+		font-weight: 700;
+		font-variant-numeric: tabular-nums;
+	}
+</style>

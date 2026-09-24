@@ -20,6 +20,8 @@ import { ofTrip, perList, type Writer } from '$lib/store/store.svelte';
  */
 export type PlacementKind = 'stop' | 'hotel' | 'chore' | 'meal';
 
+export type LegChoice = { from: string; mode: string; minutes: number; km: number; summary: string };
+
 export type PlacementRow = {
 	id: string;
 	trip_id: string;
@@ -44,6 +46,12 @@ export type PlacementRow = {
 	pinned: boolean;
 	/** A meal the traveller is not having that day. Only a meal card is skipped; see meals.ts. */
 	skipped: boolean;
+	/**
+	 * The route the traveller chose, among Google's, for the journey to this
+	 * card from the card `from` (0065): its time and a line naming it. Holds
+	 * only while `from` is the card before this one.
+	 */
+	leg_choice: LegChoice | null;
 	created_at: string;
 	/** Which edit of this row the server last confirmed. */
 	version: number;
@@ -87,6 +95,7 @@ function visit(
 		at: v.at,
 		pinned: v.pinned ?? false,
 		skipped: v.skipped ?? false,
+		leg_choice: null,
 		created_at: new Date().toISOString(),
 		version: 1
 	};

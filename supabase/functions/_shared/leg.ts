@@ -40,7 +40,10 @@ const FIELDS = [
 	'routes.legs.steps.staticDuration',
 	'routes.legs.steps.distanceMeters',
 	'routes.legs.steps.navigationInstruction.instructions',
-	'routes.legs.steps.transitDetails'
+	'routes.legs.steps.transitDetails',
+	// A road route's own name for itself ("via Kawaramachi-dori"), for telling
+	// alternatives apart.
+	'routes.description'
 ].join(',');
 
 const key = (p: LatLng) => `${p.lat.toFixed(5)},${p.lng.toFixed(5)}`;
@@ -161,7 +164,8 @@ export type LegAsk = {
 	prefer?: 'rail' | null;
 	/**
 	 * The path itself is wanted -- a journey sheet drawing it. Paths are never
-	 * stored, so this asks Google even when the time is already known.
+	 * stored, so this asks Google even when the time is already known. It also
+	 * asks for Google's alternatives, for the traveller to choose between.
 	 */
 	withPath?: boolean;
 };
@@ -173,9 +177,24 @@ export type RoutedLeg = {
 	polyline: string | null;
 	steps: Step[];
 	source: 'cache' | 'google';
+	/** One line telling this route from the others: its lines, or its road. */
+	summary: string;
 };
 
-export type LegAnswer = { route: RoutedLeg | null; error?: string };
+/** `routes` is Google's alternatives, first the one it recommends; `route` is that one. */
+export type LegAnswer = { route: RoutedLeg | null; routes?: RoutedLeg[]; error?: string };
+
+/**
+ * What a route is called, to choose between: for transit, the services it
+ * takes in order ("Keihan · 207"); otherwise Google's description of the road
+ * ("via Kawaramachi-dori"), or plainly the mode.
+ */
+function summaryOf(steps: Step[], description: string | undefined, mode: Mode): string {
+	const lines = steps.filter((s) => s.kind === 'transit').map((s) => s.line ?? 'Service');
+	if (lines.length) return lines.filter((l, i) => l !== lines[i - 1]).join(' · ');
+	if (description) return description;
+	return mode === 'walk' ? 'On foot' : mode === 'bike' ? 'By bike' : 'By road';
+}
 
 /**
  * The cache first, then Google, then the cache again.
@@ -218,7 +237,8 @@ export async function routeLeg(
 					km: Number(cached.km),
 					polyline: null,
 					steps: [],
-					source: 'cache'
+					source: 'cache',
+					summary: ''
 				}
 			};
 		}
@@ -231,6 +251,7 @@ export async function routeLeg(
 		travelMode,
 		polylineQuality: 'OVERVIEW'
 	};
+	if (withPath) body.computeAlternativeRoutes = true;
 	// Transit needs a departure, and one in the past returns no routes at all
 	// -- silently, with no error.
 	if (travelMode === 'TRANSIT') {
@@ -262,40 +283,42 @@ export async function routeLeg(
 	}
 
 	const parsed = await res.json();
-	const route = (parsed.routes ?? [])[0];
-	if (!route) return { route: null, error: 'no_route' };
-
-	const steps = toSteps(route.legs ?? [], (body.departureTime as string) ?? null);
+	const found = (parsed.routes ?? []) as Record<string, unknown>[];
+	if (!found.length) return { route: null, error: 'no_route' };
 
 	// Google's duration measures the journey once it has begun: it does not
 	// include standing on the platform waiting for the first service. A
 	// traveller who has to leave at a given time pays that wait too, so the
-	// cost of this leg is every step, waits included. Using the bare duration
+	// cost of a route is every step, waits included. Using the bare duration
 	// is how a plan claims free time that does not exist.
-	const doorToDoor = steps.reduce((sum, step) => sum + step.seconds, 0);
-	const moving = secondsOf(route.duration);
+	const routes: RoutedLeg[] = found.map((r) => {
+		const steps = toSteps((r.legs ?? []) as Record<string, unknown>[], (body.departureTime as string) ?? null);
+		const moving = secondsOf(r.duration as string);
+		const doorToDoor = steps.reduce((sum, step) => sum + step.seconds, 0);
+		return {
+			minutes: Math.round(Math.max(doorToDoor, moving) / 60),
+			movingMinutes: Math.round(moving / 60),
+			km: Math.round(((r.distanceMeters as number) ?? 0) / 100) / 10,
+			polyline: ((r.polyline as { encodedPolyline?: string } | undefined)?.encodedPolyline) ?? null,
+			steps,
+			source: 'google',
+			summary: summaryOf(steps, r.description as string | undefined, mode)
+		};
+	});
+	const best = routes[0];
 
-	const row = {
+	// The time Google recommends is the one kept; the path never is.
+	await db.from('route_cache').upsert({
 		from_key: key(from),
 		to_key: key(to),
 		mode,
 		depart_bucket: bucket,
-		minutes: Math.round(Math.max(doorToDoor, moving) / 60),
-		moving_minutes: Math.round(moving / 60),
-		km: Math.round((route.distanceMeters ?? 0) / 100) / 10,
+		minutes: best.minutes,
+		moving_minutes: best.movingMinutes,
+		km: best.km,
 		schema_version: SCHEMA_VERSION,
 		expires_at: new Date(Date.now() + ttlDays(mode) * 86_400_000).toISOString()
-	};
-	await db.from('route_cache').upsert(row);
+	});
 
-	return {
-		route: {
-			minutes: row.minutes,
-			movingMinutes: row.moving_minutes,
-			km: row.km,
-			polyline: route.polyline?.encodedPolyline ?? null,
-			steps,
-			source: 'google'
-		}
-	};
+	return { route: best, routes };
 }

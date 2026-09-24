@@ -73,7 +73,8 @@
 	} from '$lib/plan/meals';
 	import { categoryCrowd, peakHoursCrowd, resolveCurves, type CrowdCurves } from '$lib/plan/crowd';
 	import { supabase } from '$lib/supabase';
-	import { firstOf, noTravel, resolveTravel, type TravelTable } from '$lib/plan/travel';
+	import { firstOf, noTravel, pointKey, resolveTravel, type TravelTable } from '$lib/plan/travel';
+	import type { LegRoute } from '$lib/plan/route';
 	import { BLOCK_CATEGORY } from '$lib/plan/planner';
 	import { pool } from '$lib/pool';
 	import { avatarDataUri } from '$lib/avatar';
@@ -260,7 +261,34 @@
 		mode: Mode;
 		departAt: string;
 		planned: { minutes: number; km: number; source?: 'estimate' | 'routed' };
+		/** The cards at either end, so a route chosen in the sheet can be kept on the second. */
+		fromCard: string | null;
+		toCard: string | null;
+		day: number;
+		chosen: string | null;
 	} | null>(null);
+
+	/**
+	 * The route chosen for the journey into a card, when it is still that
+	 * journey: the card before it is the one it was chosen from, travelled
+	 * the same way. Moved either end and it is a different journey.
+	 */
+	const choiceInto = (card: string | null | undefined, from: string | null | undefined, mode: string) => {
+		const choice = card ? placementById.get(card)?.leg_choice : null;
+		return choice && from && choice.from === from && choice.mode === mode ? choice : null;
+	};
+
+	/** Keep the route the traveller picked: its time becomes the journey's, and the day is re-timed on it. */
+	async function chooseRoute(shown: NonNullable<typeof legShown>, route: LegRoute) {
+		const { fromCard, toCard, day, mode } = shown;
+		if (!fromCard || !toCard) return;
+		await edit(`Chose ${route.summary} to ${shown.toName}`, (w) => {
+			w.update('placements', { id: toCard }, {
+				leg_choice: { from: fromCard, mode, minutes: route.minutes, km: route.km, summary: route.summary }
+			});
+			retime(w, [day]);
+		});
+	}
 
 	// A sheet opened for one slot should not still be filtered by what was
 	// typed into the last one.
@@ -1230,9 +1258,36 @@
 	 * has not asked Google about.
 	 */
 	const known = () => {
-		const tables = [...(travel ? [travel] : []), tableFromPlan(stored)];
+		const tables = [chosenLegs(), ...(travel ? [travel] : []), tableFromPlan(stored)];
 		return firstOf(tables);
 	};
+
+	/**
+	 * The routes travellers chose (leg_choice), first of all: a journey someone
+	 * picked the way of is timed as they picked it. Keyed by where the two
+	 * cards are, so it answers only while the card before is the one it was
+	 * chosen from -- a day reordered asks about a different pair.
+	 */
+	function chosenLegs(): TravelTable {
+		const byPair = new Map<string, { minutes: number; km: number }>();
+		for (const d of drawn) {
+			for (const st of d.stops) {
+				const choice = st.placementId ? placementById.get(st.placementId)?.leg_choice : null;
+				const before = choice && d.stops.find((x) => x.placementId === choice.from);
+				if (!choice || !before) continue;
+				byPair.set(`${pointKey(before.exitAt ?? before.at)}>${pointKey(st.at)}|${choice.mode}`, {
+					minutes: choice.minutes,
+					km: choice.km
+				});
+			}
+		}
+		return {
+			get(from, to, mode) {
+				const chosen = byPair.get(`${pointKey(from)}>${pointKey(to)}|${mode}`);
+				return chosen ? { ...chosen, source: 'routed' } : null;
+			}
+		};
+	}
 
 	/**
 	 * When each stop currently happens, from the card on the plan.
@@ -2742,10 +2797,12 @@
 						{#if stop.legIn && stop.legIn.minutes > 0 && i > 0}
 							{@const previous = current.stops[i - 1]}
 							{@const legIn = stop.legIn}
+							{@const choice = choiceInto(stop.placementId, previous.placementId, legIn.mode)}
 							<LegDetail
 								mode={legIn.mode}
 								estimate={{ minutes: legIn.minutes, km: legIn.km }}
 								source={legIn.source}
+								summary={choice?.summary ?? null}
 								onopen={() =>
 									(legShown = {
 										from: previous.exitAt ?? previous.at,
@@ -2754,7 +2811,11 @@
 										toName: stop.name,
 										mode: legIn.mode,
 										departAt: previous.depart.toISOString(),
-										planned: { minutes: legIn.minutes, km: legIn.km, source: legIn.source }
+										planned: { minutes: legIn.minutes, km: legIn.km, source: legIn.source },
+										fromCard: previous.placementId ?? null,
+										toCard: stop.placementId ?? null,
+										day: dayIndex,
+										chosen: choice?.summary ?? null
 									})}
 							/>
 						{/if}
@@ -3061,7 +3122,13 @@
 		{/if}
 
 		{#if legShown && row}
-			<LegSheet {...legShown} timezone={row.timezone} onclose={() => (legShown = null)} />
+			{@const shown = legShown}
+			<LegSheet
+				{...shown}
+				timezone={row.timezone}
+				onchoose={canEdit && shown.fromCard && shown.toCard ? (r) => void chooseRoute(shown, r) : undefined}
+				onclose={() => (legShown = null)}
+			/>
 		{/if}
 
 		{#if conflict}
