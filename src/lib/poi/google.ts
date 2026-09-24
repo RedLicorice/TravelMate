@@ -30,6 +30,10 @@ type Ask =
 
 async function ask(body: Ask, signal?: AbortSignal): Promise<Found[]> {
 	const { data, error } = await supabase.functions.invoke('places', { body, signal });
+	// Cancelled because the traveller typed on: a cancelled search, which the
+	// search box ignores, not a failed one -- the client library reports both
+	// as a failure to reach the function.
+	if (signal?.aborted) throw new DOMException('Search cancelled', 'AbortError');
 	if (error) {
 		// The function's own word for it -- budget, bad_request, internal --
 		// when it gave one, so the screen and the trail can say which.
