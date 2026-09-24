@@ -431,8 +431,13 @@
 						</p>
 						{#if r.label}<p class="tm-result__meta tm-one-line">{r.label}</p>{/if}
 						<p class="tm-result__meta tm-one-line">
-							{#if onWishlist(r)}on the wishlist · {/if}{r.category ?? 'place'} · {r.durationMin} min{#if dayMiddle}{` · ${haversineKm(dayMiddle, r).toFixed(1)} km from the day's centre`}{/if} · {kmFromHotel(r)} km from the hotel
+							{#if onWishlist(r)}on the wishlist · {/if}{r.category ?? 'place'} · {r.durationMin} min
 						</p>
+						<!-- Each distance on its own line, whole. -->
+						{#if dayMiddle}
+							<p class="tm-result__meta">{haversineKm(dayMiddle, r).toFixed(1)} km from the day's centre</p>
+						{/if}
+						<p class="tm-result__meta">{kmFromHotel(r)} km from the hotel</p>
 					</div>
 					{#if !canAdd(r)}
 						<!-- Shown rather than hidden: a place vanishing from results reads

@@ -3216,13 +3216,15 @@
 											also {dayLabel(days[dayOfPoi.get(p.id)!].date, row.timezone)} ·
 										{/if}
 										{p.category ?? 'place'} · {p.duration_min} min
-										{#if fromCentre(target.day, p)}
-											· {fromCentre(target.day, p)} km from centre
-										{/if}
-										{#if detour(p)}
-											· {detour(p)} km from {slotPlace?.name}
-										{/if}
 									</span>
+									<!-- Each distance on its own line, whole: they are what a choice
+									     is made on, and a cut line lost them. -->
+									{#if fromCentre(target.day, p)}
+										<span class="tm-result__meta" style="display:block">{fromCentre(target.day, p)} km from the day's centre</span>
+									{/if}
+									{#if detour(p)}
+										<span class="tm-result__meta" style="display:block">{detour(p)} km from {slotPlace?.name}</span>
+									{/if}
 								</span>
 								<span class="tm-add" aria-hidden="true">+</span>
 							</button>
