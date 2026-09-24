@@ -1859,8 +1859,23 @@
 		return null;
 	});
 
-	const detour = (p: PoiRow) =>
-		slotPlace ? haversineKm(slotPlace.at, { lat: p.lat, lng: p.lng }).toFixed(1) : null;
+	/**
+	 * Where a place would be had, for the slot being filled: itself, or -- for
+	 * a chain saved as "any branch will do" -- the branch nearest to where the
+	 * day is at that point (the place before the slot, else the day's centre),
+	 * which is the branch the planner will seat it at.
+	 */
+	const branchFor = (p: PoiRow): { lat: number; lng: number; nearest: boolean } => {
+		const branches = p.any_branch ? (p.branches ?? []) : [];
+		const from = slotPlace?.at ?? (slot ? centres[slot.day] : null);
+		if (!branches.length || !from) return { lat: p.lat, lng: p.lng, nearest: false };
+		const best = [{ lat: p.lat, lng: p.lng }, ...branches].reduce((a, b) =>
+			haversineKm(from, b) < haversineKm(from, a) ? b : a
+		);
+		return { ...best, nearest: true };
+	};
+
+	const detour = (p: PoiRow) => (slotPlace ? haversineKm(slotPlace.at, branchFor(p)).toFixed(1) : null);
 
 	const unassigned = $derived.by(() => {
 		const waiting = (p: PoiRow) => (dayOfPoi.has(p.id) ? 1 : 0);
@@ -3310,8 +3325,11 @@
 									</span>
 									<!-- Each distance on its own line, whole: they are what a choice
 									     is made on, and a cut line lost them. -->
-									{#if fromCentre(target.day, p)}
-										<span class="tm-result__meta" style="display:block">{fromCentre(target.day, p)} km from the day's centre</span>
+									{#if branchFor(p).nearest}
+										<span class="tm-result__meta" style="display:block">Nearest branch</span>
+									{/if}
+									{#if fromCentre(target.day, branchFor(p))}
+										<span class="tm-result__meta" style="display:block">{fromCentre(target.day, branchFor(p))} km from the day's centre</span>
 									{/if}
 									{#if detour(p)}
 										<span class="tm-result__meta" style="display:block">{detour(p)} km from {slotPlace?.name}</span>
