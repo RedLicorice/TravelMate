@@ -87,9 +87,40 @@
 		modes = modes.includes(m) ? modes.filter((x) => x !== m) : [...modes, m];
 	}
 
+	/**
+	 * Which days this edit changes, for the trip page to re-time when it
+	 * opens: the journey in shapes the first day, the journey out the last,
+	 * and the city, hotel, dates, hours and ways of getting about every day.
+	 * Nothing, when nothing changed.
+	 */
+	function touched(): string | null {
+		if (!row) return null;
+		const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+		const was = terminalsOf(row);
+		const whole =
+			cityName !== row.city ||
+			timezone !== row.timezone ||
+			hotelName !== row.hotel_name ||
+			hotelLat !== row.hotel_lat ||
+			hotelLng !== row.hotel_lng ||
+			Date.parse(fromLocalInput(arrival, timezone)) !== Date.parse(row.arrival_at) ||
+			Date.parse(fromLocalInput(departure, timezone)) !== Date.parse(row.departure_at) ||
+			!same(modes, row.allowed_modes ?? []) ||
+			dayStart !== row.day_start.slice(0, 5) ||
+			dayEnd !== row.day_end.slice(0, 5);
+		if (whole) return 'all';
+		const side = (prefix: 'arrival' | 'departure') =>
+			(Object.keys(was) as (keyof Terminals)[])
+				.filter((k) => k.startsWith(prefix))
+				.some((k) => !same(was[k], terminals[k]));
+		const days = [side('arrival') ? 'first' : null, side('departure') ? 'last' : null].filter(Boolean);
+		return days.length ? days.join(',') : null;
+	}
+
 	async function save() {
 		saving = true;
 		error = null;
+		const changed = touched();
 		try {
 			await mutate('Edited the trip', tripId, (w) => {
 				updateTrip(w, tripId, {
@@ -109,7 +140,7 @@
 				});
 				if (bbox) updateCityBBox(w, tripId, bbox);
 			});
-			await goto(`${base}/trip/${tripId}`, { replaceState: true });
+			await goto(`${base}/trip/${tripId}${changed ? `?retime=${changed}` : ''}`, { replaceState: true });
 		} catch (e) {
 			error = (e as Error).message;
 			saving = false;

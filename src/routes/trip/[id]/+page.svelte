@@ -1349,6 +1349,27 @@
 	 * on the last screen. Re-time once so it appears where it was put, without
 	 * making the traveller tap Replan for a stop they have already placed.
 	 */
+	/**
+	 * Back from editing the trip: the days that edit changed are re-timed,
+	 * once, so the plan shows the new journey or hotel at once. The edit
+	 * screen names them -- the first day, the last, or all -- and this phone
+	 * does the re-time, which reaches everyone sharing the trip like any
+	 * other edit.
+	 */
+	let afterTripEdit = page.url.searchParams.get('retime');
+	$effect(() => {
+		if (!afterTripEdit || busy || !row || !days.length || !stored.length || !canEdit) return;
+		const asked = afterTripEdit.split(',');
+		afterTripEdit = null;
+		const which = asked.includes('all')
+			? undefined
+			: [...new Set(asked.map((d) => (d === 'first' ? 0 : days.length - 1)))];
+		untrack(() => {
+			void edit('Re-timed the days the trip edit changed', (w) => retime(w, which));
+			void goto(`${base}/trip/${tripId}`, { replaceState: true, noScroll: true, keepFocus: true });
+		});
+	});
+
 	let retimed = false;
 	$effect(() => {
 		if (retimed || busy || !row || !days.length || !stored.length || !canEdit) return;
