@@ -70,3 +70,27 @@ export function nextOpenStart(
 	}
 	return best;
 }
+
+const clock = (h: number, m = 0) => `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+
+/**
+ * A day's hours as a person reads them: "09:00–17:00", two openings as
+ * "12:00–15:00, 18:00–23:00", "Closed", or "Open 24 hours". `day` is 0 for
+ * Sunday. An opening that runs past midnight is shown on the day it opens.
+ */
+export function hoursOn(periods: OpeningPeriod[], day: number): string {
+	if (periods.some((p) => !p.close)) return 'Open 24 hours';
+	const today = periods
+		.filter((p) => p.open.day === day)
+		.sort((a, b) => a.open.hour * 60 + (a.open.minute ?? 0) - (b.open.hour * 60 + (b.open.minute ?? 0)));
+	if (!today.length) return 'Closed';
+	return today
+		.map((p) => {
+			const whole = p.close!.day !== p.open.day && p.close!.hour === p.open.hour && (p.close!.minute ?? 0) === (p.open.minute ?? 0);
+			return whole ? 'Open 24 hours' : `${clock(p.open.hour, p.open.minute)}–${clock(p.close!.hour, p.close!.minute)}`;
+		})
+		.join(', ');
+}
+
+/** The weekday (0 = Sunday) of a date written YYYY-MM-DD. */
+export const weekdayOf = (date: string) => new Date(`${date}T12:00:00Z`).getUTCDay();

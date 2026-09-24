@@ -1,4 +1,5 @@
 <script lang="ts">
+	import OpeningHours from '$lib/OpeningHours.svelte';
 	import { formatter } from '$lib/clock';
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
@@ -252,6 +253,13 @@
 			{poi.name}
 		</h1>
 		{#if poi.address}<p class="tm-card__meta">{poi.address}</p>{/if}
+		{@const firstDay = placements.length ? days[Math.min(...placements.map((pl) => pl.day_index))] : undefined}
+		<OpeningHours
+			periods={poi.opening_periods}
+			text={poi.opening_hours}
+			date={firstDay?.date ?? new Date().toLocaleDateString('en-CA')}
+			dayName={firstDay && trip ? dayLabel(firstDay.date, trip.timezone) : 'today'}
+		/>
 		<p class="tm-card__meta">
 			{poi.category ?? 'place'}{#if kmFromHotel} · {kmFromHotel} km from {trip.hotel_name}{/if}
 		</p>
@@ -413,9 +421,6 @@
 				<p class="tm-card__meta">Rarely crowded enough to need booking ahead.</p>
 			{/if}
 
-			{#if poi.opening_hours}
-				<p class="tm-card__meta mt-2">Opening hours: <code>{poi.opening_hours}</code></p>
-			{/if}
 			<div class="mt-3 flex flex-wrap gap-2">
 				{#if website}
 					<a

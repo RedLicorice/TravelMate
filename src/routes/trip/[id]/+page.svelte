@@ -278,6 +278,14 @@
 		return choice && from && choice.from === from && choice.mode === mode ? choice : null;
 	};
 
+	/** The day a place card's hours line is about: the trip day of the visit, or today. */
+	function hoursDayOf(visit: string | null): { date: string; name: string } {
+		const day = visit ? days[placementById.get(visit)?.day_index ?? -1] : undefined;
+		return day && row
+			? { date: day.date, name: dayLabel(day.date, row.timezone) }
+			: { date: new Date().toLocaleDateString('en-CA'), name: 'today' };
+	}
+
 	/** Keep the route the traveller picked: its time becomes the journey's, and the day is re-timed on it. */
 	async function chooseRoute(shown: NonNullable<typeof legShown>, route: LegRoute) {
 		const { fromCard, toCard, day, mode } = shown;
@@ -3130,6 +3138,7 @@
 				{busy}
 				onedit={(patch) => editCarded(patch)}
 				placementId={cardedVisit}
+				hoursDay={hoursDayOf(cardedVisit)}
 				pinned={!!cardedVisit && pinnedIds.has(cardedVisit)}
 				onunplace={(id) => unplace(id)}
 				onrelease={(id) => togglePin(id)}

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import OpeningHours from '$lib/OpeningHours.svelte';
 	import { swipeToClose } from '$lib/swipe';
 	import { mapSize } from '$lib/mapsize';
 	import { base } from '$app/paths';
@@ -19,6 +20,8 @@
 		 * can be on the plan more than once, and "take it off" has to say which.
 		 */
 		placementId: string | null;
+		/** The day the hours line is about: the trip day of this visit, or today. */
+		hoursDay: { date: string; name: string };
 		/** Whether that visit is held where the traveller put it. The place itself has no say. */
 		pinned?: boolean;
 		tripId: string;
@@ -37,6 +40,7 @@
 	let {
 		poi,
 		placementId,
+		hoursDay,
 		pinned = false,
 		tripId,
 		hotel,
@@ -131,6 +135,7 @@
 	<div style="padding: var(--tm-space-3) var(--tm-space-4) var(--tm-space-4)">
 		<p class="tm-card__title">{poi.name}</p>
 		{#if poi.address}<p class="tm-card__meta">{poi.address}</p>{/if}
+		<OpeningHours periods={poi.opening_periods} text={poi.opening_hours} date={hoursDay.date} dayName={hoursDay.name} />
 		<p class="tm-card__meta">
 			{poi.category ?? 'place'}
 			{#if km} · {km} km from {hotel?.name}{/if}
