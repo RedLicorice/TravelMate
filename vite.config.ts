@@ -72,7 +72,12 @@ export default defineConfig({
 			srcDir: 'src',
 			filename: 'sw.ts',
 			injectManifest: {
-				globPatterns: ['**/*.{js,css,html,woff2,png,svg}']
+				globPatterns: ['**/*.{js,css,html,woff2,png,svg}'],
+				// The country flags are one file each, fetched only for a trip
+				// in that country; precaching all of them would put every
+				// country's flag on every phone. Their names are the country's
+				// code in capitals -- nothing else the app ships is named so.
+				globIgnores: ['**/_app/immutable/assets/[A-Z][A-Z]*.svg']
 			}
 		})
 	],

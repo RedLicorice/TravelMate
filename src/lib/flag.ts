@@ -1,20 +1,22 @@
 /**
- * The flag for an ISO 3166-1 alpha-2 country code, as regional indicator
- * symbols.
+ * A country's flag, as a picture: country-flag-icons' SVG for an ISO 3166-1
+ * alpha-2 code. Drawn, not an emoji -- the app uses none.
  *
- * No network and no asset: 'GB' is two letters offset into the regional
- * indicator block, which every platform with flag glyphs renders as a flag.
- * Windows has no flag font and shows the two letters instead, which is why
- * `flagLabel` exists -- a readable fallback rather than a broken image.
+ * Each flag is its own file, fetched only for a trip that needs it; the other
+ * two hundred and sixty stay on the server.
  */
-export function flagEmoji(code: string | null | undefined): string | null {
-	if (!code) return null;
-	const cc = code.trim().toUpperCase();
-	if (!/^[A-Z]{2}$/.test(cc)) return null;
-	return String.fromCodePoint(...[...cc].map((c) => 0x1f1e6 + c.charCodeAt(0) - 65));
+const FLAGS = import.meta.glob<string>('../../node_modules/country-flag-icons/3x2/*.svg', {
+	query: '?url',
+	import: 'default'
+});
+
+/** The flag's address, or null when there is no code or no flag for it. */
+export async function flagUrl(code: string | null | undefined): Promise<string | null> {
+	const cc = code?.trim().toUpperCase();
+	if (!cc || !/^[A-Z]{2}$/.test(cc)) return null;
+	const load = FLAGS[`../../node_modules/country-flag-icons/3x2/${cc}.svg`];
+	return load ? load() : null;
 }
 
-/** What to show when there is no picture: a flag, or failing that, initials. */
-export function flagLabel(code: string | null | undefined, city: string): string {
-	return flagEmoji(code) ?? city.trim().slice(0, 2).toUpperCase() ?? '··';
-}
+/** What to show when there is neither a picture nor a flag: the city's first letters. */
+export const initials = (city: string) => city.trim().slice(0, 2).toUpperCase() || '··';

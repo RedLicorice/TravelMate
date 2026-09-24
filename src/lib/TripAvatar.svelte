@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { flagLabel } from '$lib/flag';
+	import { flagUrl, initials } from '$lib/flag';
 
 	type Props = {
 		imageUrl?: string | null;
@@ -11,7 +11,15 @@
 
 	/** An upload that 404s falls back to the flag rather than a broken image. */
 	let broken = $state(false);
-	const label = $derived(flagLabel(countryCode, city));
+	/** The country's flag, once its file is at hand; initials until then, or without one. */
+	let flag = $state<string | null>(null);
+	$effect(() => {
+		const code = countryCode;
+		flag = null;
+		void flagUrl(code).then((url) => {
+			if (code === countryCode) flag = url;
+		});
+	});
 </script>
 
 <span
@@ -21,8 +29,10 @@
 >
 	{#if imageUrl && !broken}
 		<img src={imageUrl} alt="" onerror={() => (broken = true)} />
+	{:else if flag}
+		<img src={flag} alt="" onerror={() => (flag = null)} />
 	{:else}
-		{label}
+		{initials(city)}
 	{/if}
 </span>
 
@@ -35,7 +45,7 @@
 		overflow: hidden;
 		background: var(--tm-surface-2);
 		border: 1px solid var(--tm-border);
-		/* Initials, when there is no flag glyph and no picture. */
+		/* Initials, when there is no flag and no picture. */
 		font-weight: 700;
 		line-height: 1;
 		color: var(--tm-text-faint);
