@@ -728,7 +728,11 @@ async function received(table: Table, event: string, fresh: Row | null, old: Row
 	const had = confirmed.get(h.id)?.row.version as number | undefined;
 	if (had !== undefined && fresh.version !== undefined) {
 		const version = fresh.version as number;
-		if (version < had || (version === had && table !== 'trips')) return;
+		// Same version, different row: trips and places carry columns the
+		// server writes without counting them as a change -- when the plan was
+		// saved, a place's peak hours -- so those arrive at the version the
+		// device already has, and are still news.
+		if (version < had || (version === had && table !== 'trips' && table !== 'pois')) return;
 	}
 	confirmed.set(h.id, h);
 	arrived.push(h);

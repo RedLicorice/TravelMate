@@ -18,6 +18,12 @@ export type PoiRow = {
 	source_id: string | null;
 	/** The address the search gave, when it gave one. */
 	address: string | null;
+	/** Peak hours from Foursquare (0063), written by the busyness function. 1 = Monday. */
+	busy_windows: { day: number; open: string; close: string }[] | null;
+	/** How busy it gets inside those windows, 0-1. */
+	popularity: number | null;
+	/** When Foursquare was last asked, found or not. */
+	busy_checked_at: string | null;
 	website: string | null;
 	phone: string | null;
 	notes: string | null;
@@ -109,6 +115,9 @@ export function addPoi(w: Writer, tripId: string, poi: Poi): PoiRow {
 		opening_hours: poi.openingHours,
 		source_id: poi.sourceId,
 		address: poi.label || null,
+		busy_windows: null,
+		popularity: null,
+		busy_checked_at: null,
 		website: poi.website,
 		phone: poi.phone,
 		notes: null,

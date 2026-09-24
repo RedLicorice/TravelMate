@@ -874,7 +874,12 @@ function walkClock(
 		}
 		if (note) warnings.push(note);
 		if (busyness !== null && busyness >= 0.8) {
-			warnings.push({ kind: 'crowded', message: 'Usually packed at this hour' });
+			// Said as plainly as it is known: a place's own peak hours, or a guess
+			// from what kind of place it is.
+			warnings.push({
+				kind: 'crowded',
+				message: poiId && curves.known?.(poiId) ? 'Usually packed at this hour' : 'Often busy around now (estimate)'
+			});
 		}
 		if (!anchor && isMeal(category)) {
 			// A restaurant from the wishlist fills the slot it lands in, so the
