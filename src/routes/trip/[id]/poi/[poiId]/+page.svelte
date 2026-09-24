@@ -261,7 +261,7 @@
 			dayName={firstDay && trip ? dayLabel(firstDay.date, trip.timezone) : 'today'}
 		/>
 		<p class="tm-card__meta">
-			{poi.category ?? 'place'}{#if kmFromHotel} · {kmFromHotel} km from {trip.hotel_name}{/if}
+			{poi.category ?? 'place'}{#if kmFromHotel}{` · ${kmFromHotel} km from ${trip.hotel_name}`}{/if}
 		</p>
 
 		<!-- Every time it is on the plan. One card per visit, each with its own
