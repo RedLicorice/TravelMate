@@ -96,6 +96,7 @@
 	import { longPress } from '$lib/longpress.svelte';
 	import StopCard from '$lib/StopCard.svelte';
 	import { swipeToClose } from '$lib/swipe';
+	import { matchesAll } from '$lib/search';
 	import { download, exportTrip } from '$lib/trip/transfer';
 	import DayLine from '$lib/DayLine.svelte';
 	import TimeGap from '$lib/TimeGap.svelte';
@@ -599,13 +600,26 @@
 	 * Name, category and the traveller's own notes: a place is as often
 	 * remembered by "the one near the station" as by what it is called.
 	 */
-	const shortlist = $derived.by(() => {
-		const needle = hunt.trim().toLowerCase();
-		if (!needle) return pois;
-		return pois.filter((p) =>
-			[p.name, p.category, p.notes].some((field) => field?.toLowerCase().includes(needle))
-		);
-	});
+	const shortlist = $derived.by(() =>
+		hunt.trim() ? pois.filter((p) => matchesAll(hunt, searchable(p, dayOf.get(p.id)))) : pois
+	);
+
+	/**
+	 * Everything a wishlist place can be found by: what it is called and
+	 * where it is, what kind of place it is, the traveller's notes, its hours,
+	 * and the day it is on.
+	 */
+	function searchable(p: PoiRow, day: number | undefined): (string | null | undefined)[] {
+		return [
+			p.name,
+			p.address,
+			p.category,
+			p.category?.replaceAll('_', ' '),
+			p.notes,
+			p.opening_hours,
+			day !== undefined && days[day] && row ? dayLabel(days[day].date, row.timezone) : null
+		];
+	}
 	/** A share link is a look at the trip. Editing is given by the owner, and
 	    the policies enforce it -- so a control that writes is shown to whoever
 	    may write and to nobody else. */
@@ -1675,14 +1689,8 @@
 	const unassigned = $derived.by(() => {
 		const waiting = (p: PoiRow) => (dayOfPoi.has(p.id) ? 1 : 0);
 		const food = (p: PoiRow) => (slot?.meal && isMeal(p.category) ? 0 : 1);
-		const q = slotQuery.trim().toLowerCase();
 		return [...pois]
-			.filter(
-				(p) =>
-					!q ||
-					p.name.toLowerCase().includes(q) ||
-					(p.category ?? '').toLowerCase().includes(q)
-			)
+			.filter((p) => matchesAll(slotQuery, searchable(p, dayOfPoi.get(p.id))))
 			.sort((a, b) => waiting(a) - waiting(b) || food(a) - food(b));
 	});
 
@@ -2519,9 +2527,9 @@
 							<span style="color: var(--tm-text-faint)">›</span>
 						</button>
 					{/each}
-					<p class="tm-hint mt-3">
+					{#if shortlist.length}<p class="tm-hint mt-3">
 						Tap any place for busyness, booking and how long to stay.
-					</p>
+					</p>{/if}
 				{/if}
 			</div>
 		{:else}
