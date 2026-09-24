@@ -5,7 +5,7 @@
 	import { cityBBox, getTrip, toTrip, updateCityBBox } from '$lib/trip/repo';
 	import { mutate } from '$lib/store/store.svelte';
 	import { tripDays } from '$lib/trip/days';
-	import { addPoi, DuplicatePoiError, listPois, type PoiRow } from '$lib/trip/pois';
+	import { addPoi, DuplicatePoiError, listPois, sourceOf, type PoiRow } from '$lib/trip/pois';
 	import { between, listPlacements, place } from '$lib/trip/placements';
 	import { goto } from '$app/navigation';
 	import { poi as provider, type City, type Poi } from '$lib/poi';
@@ -108,13 +108,15 @@
 	 * the same one when the name is and it stands within a street of it.
 	 * Coordinates are the fallback for hand-added stops.
 	 */
-	const google = (id: string) => id.startsWith('google/');
-	const matches = (p: Poi) => (s: PoiRow) =>
-		s.osm_id && p.osmId
-			? google(s.osm_id) === google(p.osmId)
-				? s.osm_id === p.osmId
+	const origin = (id: string) => id.split('/')[0];
+	const matches = (p: Poi) => (s: PoiRow) => {
+		const saved = sourceOf(s);
+		return saved && p.sourceId
+			? origin(saved) === origin(p.sourceId)
+				? saved === p.sourceId
 				: sameBrand(s.name, p.name) && haversineKm(s, p) < 0.15
 			: Math.abs(s.lat - p.lat) < 1e-6 && Math.abs(s.lng - p.lng) < 1e-6;
+	};
 
 	const onWishlist = (p: Poi) => saved.find(matches(p)) ?? null;
 
@@ -221,9 +223,9 @@
 			openingHours: null,
 			website: null,
 			phone: null,
-			// No osm_id: this is not an OSM place, and the per-trip uniqueness
+			// No source id: this is not a place any source knows, and the per-trip uniqueness
 			// index only covers rows that have one.
-			osmId: null
+			sourceId: null
 		});
 		customName = '';
 		customPoint = null;

@@ -97,9 +97,8 @@ function toPoi(f: Found): Poi {
 		openingHours: f.hours,
 		website: safeUrl(f.website),
 		phone: safePhone(f.phone),
-		// Which place this is, so the same one is not put on a trip twice. Kept
-		// where OSM's id was; the prefix says whose id it is.
-		osmId: `google/${f.id}`
+		// Which place this is, so the same one is not put on a trip twice.
+		sourceId: `google/${f.id}`
 	};
 }
 

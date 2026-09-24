@@ -12,7 +12,7 @@ export type Place = {
 export type LatLng = { lat: number; lng: number };
 
 export type Poi = Place & {
-	/** OSM category, e.g. 'museum'. Drives the duration default and crowd curve. */
+	/** Category, e.g. 'museum'. Drives the duration default and crowd curve. */
 	category: string | null;
 	/** Minutes a visit typically takes. A default, always editable. */
 	durationMin: number;
@@ -21,7 +21,11 @@ export type Poi = Place & {
 	/** Worth knowing before turning up, when OSM happens to know it. */
 	website: string | null;
 	phone: string | null;
-	osmId: string | null;
+	/**
+	 * Which source the place came from and its id there: 'osm/node/123',
+	 * 'google/ChIJ...'. What keeps the same place off a trip twice.
+	 */
+	sourceId: string | null;
 	/**
 	 * Other places of the same name in the same city. Present when the
 	 * traveller said any branch will do; the planner then picks whichever is

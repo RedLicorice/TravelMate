@@ -14,7 +14,12 @@ export type PoiRow = {
 	duration_min: number;
 	priority: number;
 	opening_hours: string | null;
+	/** Superseded by source_id (0060); written alongside it until it is dropped. */
 	osm_id: string | null;
+	/** 'osm/node/123', 'google/ChIJ...': where the place came from, and its id there. */
+	source_id: string | null;
+	/** The address the search gave, when it gave one. */
+	address: string | null;
 	website: string | null;
 	phone: string | null;
 	notes: string | null;
@@ -86,8 +91,16 @@ export const listPois = (tripId: string): PoiRow[] => byAdded(ofTrip<PoiRow>('po
  * two taps in quick succession, or the same place reached from both the list
  * and the map.
  */
+/**
+ * Where a place on a trip came from. A row written by a copy of the app from
+ * before 0060 has only osm_id -- an OSM id bare, a Google one prefixed -- and
+ * is read the way 0060 filled in the rest.
+ */
+export const sourceOf = (p: PoiRow): string | null =>
+	p.source_id ?? (p.osm_id ? (p.osm_id.startsWith('google/') ? p.osm_id : `osm/${p.osm_id}`) : null);
+
 export function addPoi(w: Writer, tripId: string, poi: Poi): PoiRow {
-	if (poi.osmId && listPois(tripId).some((p) => p.osm_id === poi.osmId)) {
+	if (poi.sourceId && listPois(tripId).some((p) => sourceOf(p) === poi.sourceId)) {
 		throw new DuplicatePoiError(poi.name);
 	}
 	const now = new Date().toISOString();
@@ -101,7 +114,11 @@ export function addPoi(w: Writer, tripId: string, poi: Poi): PoiRow {
 		duration_min: poi.durationMin,
 		priority: 3,
 		opening_hours: poi.openingHours,
-		osm_id: poi.osmId,
+		source_id: poi.sourceId,
+		// ponytail: kept for copies of the app from before 0060, which read it;
+		// goes with the migration that drops the column.
+		osm_id: poi.sourceId?.replace(/^osm\//, '') ?? null,
+		address: poi.label || null,
 		website: poi.website,
 		phone: poi.phone,
 		notes: null,

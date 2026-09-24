@@ -251,6 +251,7 @@
 		<h1 style="font: 700 var(--tm-text-2xl)/1.15 var(--tm-font); letter-spacing: -0.02em">
 			{poi.name}
 		</h1>
+		{#if poi.address}<p class="tm-card__meta">{poi.address}</p>{/if}
 		<p class="tm-card__meta">
 			{poi.category ?? 'place'}{#if kmFromHotel} · {kmFromHotel} km from {trip.hotel_name}{/if}
 		</p>

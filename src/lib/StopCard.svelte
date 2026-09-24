@@ -125,6 +125,7 @@
 
 	<div style="padding: var(--tm-space-3) var(--tm-space-4) var(--tm-space-4)">
 		<p class="tm-card__title">{poi.name}</p>
+		{#if poi.address}<p class="tm-card__meta">{poi.address}</p>{/if}
 		<p class="tm-card__meta">
 			{poi.category ?? 'place'}
 			{#if km} · {km} km from {hotel?.name}{/if}

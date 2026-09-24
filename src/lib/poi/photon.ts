@@ -122,7 +122,7 @@ export function toPoi(f: PhotonFeature): Poi {
 		// validated here so nothing unsafe is ever stored, not just never shown.
 		website: safeUrl(p.extra?.website ?? p.extra?.['contact:website']),
 		phone: safePhone(p.extra?.phone ?? p.extra?.['contact:phone']),
-		osmId: p.osm_type && p.osm_id ? `${p.osm_type}/${p.osm_id}` : null
+		sourceId: p.osm_type && p.osm_id ? `osm/${p.osm_type}/${p.osm_id}` : null
 	};
 }
 

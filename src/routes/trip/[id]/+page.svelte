@@ -1634,7 +1634,7 @@
 				openingHours: null,
 				website: null,
 				phone: null,
-				osmId: null
+				sourceId: null
 			});
 			placeInto(w, created.id, target);
 		});
@@ -1708,7 +1708,7 @@
 			}
 			const copy = addPoi(w, tripId, {
 				name: source.name,
-				label: '',
+				label: source.address ?? '',
 				lat: source.lat,
 				lng: source.lng,
 				category: source.category,
@@ -1721,7 +1721,7 @@
 				branches: source.any_branch ? source.branches : undefined,
 				// Not the same OSM row twice: a copy is deliberately its own
 				// place, and the uniqueness index is there for the first one.
-				osmId: null
+				sourceId: null
 			});
 			placeInto(w, copy.id, target);
 		});
@@ -2393,6 +2393,7 @@
 										<span class="tm-result__name">{p.name}</span>
 										<Stars value={p.priority} size={9} label="Wanted" />
 									</span>
+									{#if p.address}<span class="tm-result__meta" style="display:block">{p.address}</span>{/if}
 									<span class="tm-result__meta" style="display:block">
 										{p.category ?? 'place'} · {p.duration_min} min
 										{#if isMeal(p.category)} · meal{/if}
@@ -2976,6 +2977,7 @@
 									<span class="tm-result__name">
 										{p.name}{#if same > 1}<span class="tm-count">&times;{same}</span>{/if}
 									</span>
+									{#if p.address}<span class="tm-result__meta" style="display:block">{p.address}</span>{/if}
 									<span class="tm-result__meta" style="display:block">
 										{p.category ?? 'place'} · {p.duration_min} min
 										{#if detour(p)}
