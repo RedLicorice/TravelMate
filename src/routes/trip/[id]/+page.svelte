@@ -491,7 +491,10 @@
 		}
 		await edit(`Took ${name ?? 'a card'} off the day`, (w) => {
 			const day = card?.day_index;
-			dropPlacement(w, placementId);
+			// A place filling a meal is taken out of the meal, not the meal off
+			// the day: the sitting is still had, somewhere still to decide.
+			if (card?.kind === 'meal' && card.meal && card.poi_id) emptyMeal(w, tripId, card.day_index, card.meal as MealName);
+			else dropPlacement(w, placementId);
 			retime(w, day === undefined ? undefined : [day]);
 		});
 	}
