@@ -3095,12 +3095,12 @@
 						{#each unassigned as p (p.id)}
 							{@const same = unassigned.filter((o) => o.name === p.name).length}
 							<button class="tm-result" onclick={() => placeHere(p.id)}>
-								<span>
+								<span style="min-width:0">
 									<span class="tm-result__name">
 										{p.name}{#if same > 1}<span class="tm-count">&times;{same}</span>{/if}
 									</span>
-									{#if p.address}<span class="tm-result__meta" style="display:block">{p.address}</span>{/if}
-									<span class="tm-result__meta" style="display:block">
+									{#if p.address}<span class="tm-result__meta tm-one-line">{p.address}</span>{/if}
+									<span class="tm-result__meta tm-one-line">
 										{p.category ?? 'place'} · {p.duration_min} min
 										{#if detour(p)}
 											· {detour(p)} km from {slotPlace?.name}

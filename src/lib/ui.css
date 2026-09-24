@@ -352,6 +352,15 @@ button.tm-result:focus-visible {
   color: var(--tm-text-faint);
   margin-top: 2px;
 }
+/* One line, cut with an ellipsis: keeps a list row short enough that a
+   scrolling list shows several at a time. Its box must be allowed to be
+   narrower than its text (min-width: 0) for the cut to happen. */
+.tm-one-line {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .tm-add {
   width: 34px;
   height: 34px;
