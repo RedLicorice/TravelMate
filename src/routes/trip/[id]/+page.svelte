@@ -1197,6 +1197,43 @@
 	 */
 	let justMoved = $state<string | null>(null);
 
+	/** Retime Day: while it runs, what it found, and the cards it moved. */
+	let retiming = $state(false);
+	let retimeSaid = $state<string | null>(null);
+	let flashed = $state(new Set<string>());
+
+	/**
+	 * Walk the day on screen again, and say so: the button turns while the
+	 * day is re-timed and its journeys are worked out, then a line says what
+	 * happened and the cards that moved flash once in the day's colour.
+	 */
+	async function retimeDay() {
+		const d = dayIndex;
+		retiming = true;
+		retimeSaid = null;
+		const before = new Map(
+			(drawn[d]?.stops ?? []).filter((st) => st.placementId).map((st) => [st.placementId!, st.arrive.getTime()])
+		);
+		try {
+			await edit('Re-timed the day', (w) => retime(w, [d]));
+			// And the journeys: worked out behind, a moment later. Not waited on
+			// for ever -- a slow router is not a reason to keep the button busy.
+			const giveUp = Date.now() + 20_000;
+			while ((routing || routingNow) && Date.now() < giveUp) await new Promise((r) => setTimeout(r, 250));
+			const moved = (drawn[d]?.stops ?? [])
+				.filter((st) => st.placementId && before.has(st.placementId) && before.get(st.placementId) !== st.arrive.getTime())
+				.map((st) => st.placementId!);
+			retimeSaid = moved.length
+				? `Day re-timed · ${moved.length} ${moved.length === 1 ? 'card' : 'cards'} moved`
+				: 'Nothing needed to move';
+			flashed = new Set(moved);
+			setTimeout(() => (flashed = new Set()), 1400);
+			setTimeout(() => (retimeSaid = null), 3500);
+		} finally {
+			retiming = false;
+		}
+	}
+
 	/** The trip as the scheduler wants it told. */
 	function planInput() {
 		if (!row || !days.length) return null;
@@ -1253,7 +1290,19 @@
 		routing = setTimeout(routeDays, 800);
 	}
 
+	/** Set while journeys are being worked out, so Retime Day can say when it is done. */
+	let routingNow = false;
+
 	async function routeDays() {
+		routingNow = true;
+		try {
+			await routeDaysNow();
+		} finally {
+			routingNow = false;
+		}
+	}
+
+	async function routeDaysNow() {
 		routing = null;
 		if (!row || !navigator.onLine || !toRoute.size) return;
 		if (drag.state.id || busy) {
@@ -2475,14 +2524,19 @@
 							<button
 								class="tm-chip"
 								style="opacity: 0.6"
-								disabled={busy}
-								onclick={() => {
-									const d = dayIndex;
-									void edit('Re-timed the day', (w) => retime(w, [d]));
-								}}
+								disabled={busy || retiming}
+								aria-busy={retiming}
+								onclick={retimeDay}
 							>
-								Retime Day
+								{#if retiming}
+									<span class="tm-spin" aria-hidden="true"></span> Retiming…
+								{:else}
+									Retime Day
+								{/if}
 							</button>
+						{/if}
+						{#if retimeSaid}
+							<span class="tm-hint" role="status" style="align-self:center;margin-right:auto">{retimeSaid}</span>
 						{/if}
 						<button
 							class="tm-chip"
@@ -2603,6 +2657,7 @@
 							class:tm-stop--meal={stop.anchorKind === 'meal'}
 							class:tm-stop--blocked={stop.warnings.some((w) => w.kind === 'blocked')}
 							class:tm-stop--conflict={!!conflictOf(stop, dayIndex)}
+							class:tm-stop--flash={!!stop.placementId && flashed.has(stop.placementId)}
 							{@attach stop.poiId
 								? longPress(() => openCard(stop.placementId ?? stop.poiId!))
 								: stop.anchorKind === 'meal'
