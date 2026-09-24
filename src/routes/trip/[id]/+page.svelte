@@ -42,7 +42,7 @@
 		unplace as dropPlacement,
 		type PlacementRow
 	} from '$lib/trip/placements';
-	import { tripDays, type Day, type LatLng } from '$lib/trip/days';
+	import { tripDays, zonedInstant, type Day, type LatLng } from '$lib/trip/days';
 	import {
 		mealOwed,
 		replan,
@@ -67,6 +67,7 @@
 		slotAt,
 		slotsFrom,
 		tightest,
+		toHHMM,
 		type MealName,
 		type MealWindows
 	} from '$lib/plan/meals';
@@ -1264,7 +1265,10 @@
 			(drawn[d]?.stops ?? []).filter((st) => st.placementId).map((st) => [st.placementId!, st.arrive.getTime()])
 		);
 		try {
-			await edit('Re-timed the day', (w) => retime(w, [d]));
+			await edit('Re-timed the day', (w) => {
+				compact(w, d);
+				retime(w, [d]);
+			});
 			// And the journeys: worked out behind, a moment later. Not waited on
 			// for ever -- a slow router is not a reason to keep the button busy.
 			const giveUp = Date.now() + 20_000;
@@ -1453,15 +1457,57 @@
 			if (starts < at || (starts === at && st.depart.getTime() <= at)) above = st;
 			else break;
 		}
-		if (!above || !row) return at;
+		if (!above) return at;
+		return Math.max(at, above.depart.getTime() + journeyInto(above, id) * 60_000);
+	}
+
+	/**
+	 * Minutes from one card to the card `id`, on the travel times the walk
+	 * uses. A meal with nothing chosen and time to yourself are had wherever
+	 * the traveller already is: no journey.
+	 */
+	function journeyInto(above: PlannedStop, id: string): number {
+		if (!row) return 0;
 		const pl = placementById.get(id);
 		const me = drawn.flatMap((d) => d.stops).find((st) => st.placementId === id);
 		const category = pl?.poi_id ? poiById.get(pl.poi_id)?.category : null;
-		const inPlace = !me || (pl?.kind === 'meal' && !pl.poi_id) || category === BLOCK_CATEGORY;
-		const journey = inPlace
-			? 0
-			: leg(above.exitAt ?? above.at, me.at, row.allowed_modes as Mode[], false, known()).minutes;
-		return Math.max(at, above.depart.getTime() + journey * 60_000);
+		if (!me || (pl?.kind === 'meal' && !pl.poi_id) || category === BLOCK_CATEGORY) return 0;
+		return leg(above.exitAt ?? above.at, me.at, row.allowed_modes as Mode[], false, known()).minutes;
+	}
+
+	/**
+	 * Close the holes in a day: every card that is not pinned starts as soon
+	 * as the one before it is over and the traveller has got from there --
+	 * never earlier than a meal's window opens. A pin stays where it is, and
+	 * the day carries on from the end of it; the gap before a pin stays,
+	 * because nothing after the pin may move into it. Time to yourself is a
+	 * card, so it is kept, not closed up.
+	 */
+	function compact(w: Writer, d: number) {
+		const day = days[d];
+		if (!row || !day) return;
+		const slots = slotsFrom(agreed.windows);
+		let above: PlannedStop | null = null;
+		let free = 0;
+		for (const st of drawn[d]?.stops ?? []) {
+			const pl = st.placementId ? placementById.get(st.placementId) : undefined;
+			const length = st.depart.getTime() - st.arrive.getTime();
+			if (!pl || pl.pinned || !above) {
+				// The day's fixed points -- the journey, a pin, where it starts --
+				// are where it carries on from.
+				above = st;
+				free = st.depart.getTime();
+				continue;
+			}
+			let start = free + journeyInto(above, pl.id) * 60_000;
+			const slot = pl.kind === 'meal' ? slots.find((m) => m.name === pl.meal) : undefined;
+			if (slot) start = Math.max(start, zonedInstant(day.date, toHHMM(slot.from), row.timezone).getTime());
+			// Moved up to here when it was later; when it was earlier, the walk
+			// pushes it here. Either way this is where it starts.
+			if (start < Date.parse(pl.at)) moveTo(w, pl.id, new Date(start).toISOString());
+			above = st;
+			free = start + length;
+		}
 	}
 
 	/**
@@ -2533,7 +2579,7 @@
 							class="tm-result"
 							class:tm-result--conflict={!!waiting}
 							style="align-items: center; color: inherit"
-							onclick={() => (waiting ? (conflict = waiting) : (cardedId = p.id))}
+							onclick={() => (waiting ? (conflict = waiting) : goto(`${base}/trip/${tripId}/poi/${p.id}`))}
 						>
 							<span style="display: flex; gap: 10px; align-items: flex-start; min-width: 0">
 								<span
