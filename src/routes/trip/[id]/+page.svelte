@@ -44,6 +44,7 @@
 	} from '$lib/trip/placements';
 	import { tripDays, type Day, type LatLng } from '$lib/trip/days';
 	import {
+		mealOwed,
 		replan,
 		schedule,
 		REASON_TEXT,
@@ -362,11 +363,16 @@
 	const mealOf = (name: string) =>
 		(MEAL_NAMES.find((m) => MEAL_LABEL[m] === name) ?? null) as MealName | null;
 
+	const placementById = $derived(new Map(placements.map((pl) => [pl.id, pl])));
+
 	/**
-	 * Which meal a container is. An empty one says so in its name; a filled one
-	 * wears the name of what fills it, so its hour answers instead.
+	 * Which meal a container is: the one its card says. A breakfast pushed
+	 * past ten is still breakfast. Only a sitting Replan has just drawn, with
+	 * no card yet, is read from its name or, filled, from its hour.
 	 */
 	function mealFor(stop: PlannedStop): MealName | null {
+		const card = stop.placementId ? placementById.get(stop.placementId) : undefined;
+		if (card?.kind === 'meal' && card.meal) return card.meal as MealName;
 		return mealOf(stop.name) ?? slotAt(stop.arrive, row!.timezone, slotsFrom(agreed.windows));
 	}
 
@@ -1798,6 +1804,16 @@
 				// would find it gone with no idea why.
 				for (const u of ordered.unplaced.filter((x) => !x.poi.pinned && !x.poi.id.startsWith(NEW))) {
 					dropPlacement(w, u.poi.id);
+				}
+				// A meal the day no longer owes -- had before the journey in left --
+				// goes, when nothing was chosen for it. One the traveller filled
+				// stays: they chose it.
+				const mealSlots = slotsFrom(agreed.windows);
+				for (const pl of placements) {
+					const slotOf = mealSlots.find((m) => m.name === pl.meal);
+					const day = days[pl.day_index];
+					if (pl.kind !== 'meal' || pl.poi_id || pl.skipped || !slotOf || !day) continue;
+					if (!mealOwed(day, slotOf, trip.timezone)) dropPlacement(w, pl.id);
 				}
 
 				// Walked again, now that every stop is a visit with a row of its

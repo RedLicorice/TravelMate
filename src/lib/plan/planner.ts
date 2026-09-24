@@ -22,6 +22,20 @@ import {
 	type MealWindows
 } from './meals';
 
+/**
+ * Whether a day still owes this meal. On the day of the journey in, a meal
+ * whose window is over before the journey departs was had before leaving:
+ * someone who sets off at 17:25 has had breakfast and lunch. Every other
+ * meal, on every other day, is owed.
+ */
+export function mealOwed(day: Day, slot: MealSlot, timezone: string): boolean {
+	const departs = Math.min(
+		...day.fixedStart.map((w) => w.startsAt?.getTime() ?? Infinity)
+	);
+	if (!Number.isFinite(departs)) return true;
+	return zonedInstant(day.date, toHHMM(slot.to), timezone).getTime() > departs;
+}
+
 export type PlanPoi = {
 	/**
 	 * The placement: this visit, on this day, at this time. Two visits to the
@@ -923,6 +937,7 @@ function walkClock(
 	const offerMeals = (until: number, next: number, patient = false, by = Infinity) => {
 		for (const slot of slots) {
 			if (served.has(slot.name)) continue;
+			if (!mealOwed(day, slot, timezone)) continue;
 
 			// The day's own card for this sitting: empty, or holding the place the
 			// traveller chose for it. (A skipped one counted as served above.)
