@@ -323,6 +323,10 @@
    end of it. A button does not stretch or align like the anchor this class was
    written for, so both are stated. */
 button.tm-result {
+  /* Its full height, always: in a scrolling column with a height cap, a row
+     that may shrink is squeezed to its minimum and its lines spill over the
+     next row. The list scrolls instead. */
+  flex: none;
   width: 100%;
   min-height: var(--tm-tap-min);
   text-align: left;
