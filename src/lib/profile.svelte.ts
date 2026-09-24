@@ -11,6 +11,8 @@ export type ProfileRow = {
 	meal_windows: MealWindows;
 	wake_at: string;
 	prep_min: number;
+	/** Agreed to send diagnostics: null until asked (0062). */
+	telemetry: boolean | null;
 	updated_at: string;
 	version: number;
 };
@@ -29,6 +31,7 @@ export type Profile = {
 	/** Local wall-clock 'HH:MM'. */
 	wakeAt: string;
 	prepMin: number;
+	telemetry: boolean | null;
 };
 
 export const toProfile = (row: ProfileRow): Profile => ({
@@ -42,7 +45,8 @@ export const toProfile = (row: ProfileRow): Profile => ({
 	// has its own lunch and dinner, and should keep them.
 	mealWindows: { ...DEFAULT_WINDOWS, ...(row.meal_windows ?? {}) },
 	wakeAt: (row.wake_at ?? '08:00').slice(0, 5),
-	prepMin: row.prep_min ?? 30
+	prepMin: row.prep_min ?? 30,
+	telemetry: row.telemetry ?? null
 });
 
 /** The signed-in traveller's own profile, as this device holds it. */
@@ -84,6 +88,7 @@ export function saveMyProfile(
 		meal_windows?: MealWindows;
 		wake_at?: string;
 		prep_min?: number;
+		telemetry?: boolean;
 	}
 ): void {
 	const id = session.user?.id;

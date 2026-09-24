@@ -1,5 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { base } from '$app/paths';
+	import { consent } from '$lib/consent.svelte';
+	import ConsentPanel from '$lib/ConsentPanel.svelte';
 	import { page } from '$app/state';
 	import { safeNext } from '$lib/guard';
 	import {
@@ -181,4 +184,13 @@
 			You'll come straight back to the trip you were invited to.
 		</p>
 	{/if}
+
+	<p class="tm-attrib" style="text-align: center; line-height: 1.5">
+		{mode === 'signup' ? 'Creating an account means you accept the' : 'Using TravelMate means you accept the'}
+		<a href="{base}/terms">Terms of service</a>. How your data is used: <a href="{base}/privacy">Privacy notice</a>.
+	</p>
 </main>
+
+{#if !consent.choice}
+	<ConsentPanel />
+{/if}

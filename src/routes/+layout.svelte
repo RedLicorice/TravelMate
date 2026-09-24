@@ -8,8 +8,9 @@
 	import { redirectTarget, safeNext } from '$lib/guard';
 	import { registerSW } from 'virtual:pwa-register';
 	import { watchForFaults } from '$lib/telemetry';
-	import { pullProfile, pullTrips, send } from '$lib/store/store.svelte';
-	import { ensureMyProfile } from '$lib/profile.svelte';
+	import { mutate, pullProfile, pullTrips, send } from '$lib/store/store.svelte';
+	import { ensureMyProfile, myProfile, saveMyProfile } from '$lib/profile.svelte';
+	import { choose, consent } from '$lib/consent.svelte';
 
 	let { children } = $props();
 
@@ -71,6 +72,23 @@
 			pullProfile(id)
 				.then(ensureMyProfile)
 				.catch(() => {});
+		});
+	});
+
+	// The diagnostics choice lives on the profile once there is one. A choice
+	// made on this device before signing in is written to it; after that the
+	// device follows the profile, so a choice made on the laptop holds on the
+	// phone too.
+	$effect(() => {
+		const mine = myProfile();
+		if (!session.user || !mine) return;
+		const here = consent.choice?.telemetry;
+		untrack(() => {
+			if (mine.telemetry !== null) {
+				if (here !== mine.telemetry) choose(mine.telemetry);
+			} else if (here !== undefined) {
+				void mutate('Said whether to send diagnostics', null, (w) => saveMyProfile(w, { telemetry: here })).catch(() => {});
+			}
 		});
 	});
 

@@ -1,4 +1,5 @@
 import { sendEvents } from './store/store.svelte';
+import { diagnosticsAllowed } from './consent.svelte';
 
 /**
  * What the app did, written down as it happens.
@@ -11,20 +12,28 @@ import { sendEvents } from './store/store.svelte';
 type Event = { name: string; detail: Record<string, unknown>; trip_id: string | null; at: string };
 
 /**
- * Whether this copy of the app is one whose trail anyone will read.
- *
- * The trail is a development aid, not a product feature: it exists for the
- * owner debugging on the tailnet or a laptop. The public site on GitHub
- * Pages must not spend a traveller's bandwidth or the events table on it, so
- * everything below is inert unless the page was served from one of those.
- * During prerendering there is no location at all, and no trail.
+ * Whether this copy of the app is a developer's: served on the tailnet or a
+ * laptop, where the trail is recorded without asking. During prerendering
+ * there is no location at all, and no trail.
  */
 export function servedForDebugging(): boolean {
 	if (typeof location === 'undefined') return false;
 	const host = location.hostname;
 	return host.endsWith('.ts.net') || host === 'localhost' || host === '127.0.0.1';
 }
-const on = servedForDebugging();
+const debugging = servedForDebugging();
+
+/**
+ * Whether anything is recorded now: on a developer's copy always; on the
+ * published app only for someone who agreed to send diagnostics (consent),
+ * and not a moment after they take it back.
+ */
+const recording = () => debugging || diagnosticsAllowed();
+
+/** Taken back: what is still waiting to be sent is dropped, unsent. */
+export function forgetPending() {
+	queue.length = 0;
+}
 
 const queue: Event[] = [];
 let timer: ReturnType<typeof setTimeout> | null = null;
@@ -46,7 +55,7 @@ async function flush() {
 }
 
 export function track(name: string, detail: Record<string, unknown> = {}) {
-	if (!on) return;
+	if (!recording()) return;
 	queue.push({ name, detail, trip_id: current, at: new Date().toISOString() });
 	// A burst -- a search, a drag, a replan -- goes as one insert.
 	if (!timer) timer = setTimeout(flush, FLUSH_MS);
@@ -81,7 +90,7 @@ export function timed<T>(name: string, run: () => Promise<T>, detail: Record<str
  * that takes longest to find; this is that stack, in the database.
  */
 export function watchForFaults() {
-	if (!on || typeof window === 'undefined') return () => {};
+	if (typeof window === 'undefined') return () => {};
 	const restoreConsole = recordConsole();
 	const onError = (e: ErrorEvent) =>
 		track('error', {

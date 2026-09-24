@@ -13,6 +13,8 @@ export function redirectTarget(pathname: string, hasUser: boolean, base = ''): s
 	// The recovery token in the URL is what creates the session, so this page
 	// must render before one exists.
 	if (route === '/reset') return null;
+	// The notices are read before signing up, so they are open to anybody.
+	if (route === '/terms' || route === '/privacy') return null;
 	if (!hasUser) return route === '/login' ? null : '/login';
 	return route === '/login' ? '/' : null;
 }

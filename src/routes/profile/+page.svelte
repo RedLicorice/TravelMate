@@ -5,6 +5,31 @@
 	import { displayName, myProfile, saveMyProfile } from '$lib/profile.svelte';
 	import { MEAL_NAMES, readyAt, toHours, type MealWindows } from '$lib/plan/meals';
 	import { mutate, upload as store } from '$lib/store/store.svelte';
+	import { supabase } from '$lib/supabase';
+	import { choose } from '$lib/consent.svelte';
+	import { forgetPending } from '$lib/telemetry';
+	import { DIAGNOSTICS_DAYS } from '$lib/legal';
+
+	/**
+	 * Send diagnostics, or stop. Stopping takes back what was sent: the trail
+	 * already on the server is deleted, and what was waiting is dropped.
+	 */
+	async function setDiagnostics(on: boolean) {
+		choose(on);
+		error = null;
+		try {
+			await mutate(on ? 'Sending diagnostics' : 'Stopped sending diagnostics', null, (w) =>
+				saveMyProfile(w, { telemetry: on })
+			);
+			if (!on && session.user) {
+				forgetPending();
+				const { error: gone } = await supabase.from('events').delete().eq('user_id', session.user.id);
+				if (gone) error = 'Diagnostics are off, but what was already sent could not be deleted yet. Try again with a connection.';
+			}
+		} catch (e) {
+			error = (e as Error).message;
+		}
+	}
 
 	const profile = $derived(myProfile());
 	/** Meal hours being typed that do not make a window yet, so are not saved yet. */
@@ -205,6 +230,21 @@
 			{:else}
 				Saved automatically.
 			{/if}
+		</p>
+
+		<h2 class="tm-label mt-8 mb-1">Diagnostics</h2>
+		<label class="flex items-center gap-3" style="cursor:pointer">
+			<input
+				type="checkbox"
+				checked={profile.telemetry === true}
+				onchange={(e) => setDiagnostics(e.currentTarget.checked)}
+			/>
+			<span>Send diagnostics</span>
+		</label>
+		<p class="tm-hint mt-1">
+			What went wrong, and what you did just before, so faults can be fixed. Kept {DIAGNOSTICS_DAYS} days.
+			Turning it off deletes what was sent. <a href="{base}/privacy">Privacy notice</a> ·
+			<a href="{base}/terms">Terms of service</a>
 		</p>
 
 		<button class="tm-btn tm-btn--secondary tm-btn--block mt-8" onclick={signOut}>Sign out</button>
