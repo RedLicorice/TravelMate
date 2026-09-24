@@ -286,6 +286,11 @@
 @media (prefers-reduced-motion: reduce) {
   .tm-spin { animation-duration: 2.4s; }
 }
+/* The browser's own clear control would sit beside ours: one cross only. */
+.tm-search input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+}
 .tm-search input {
   flex: 1;
   border: none;

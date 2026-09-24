@@ -2462,15 +2462,24 @@
 						<p class="tm-card__meta">Add places and they will be arranged into days.</p>
 					</div>
 				{:else}
-					<!-- type=search, so a phone offers the right keyboard and its own
-					     clear button rather than one drawn here. -->
-					<input
-						class="tm-input mb-3"
-						type="search"
-						bind:value={hunt}
-						placeholder="Find a place"
-						aria-label="Filter the wishlist"
-					/>
+					<!-- The same box as every other search: a lens, and a cross to empty
+					     it. It filters on the phone as you type, so there is nothing to
+					     wait for and no search button. -->
+					<div class="tm-search mb-3">
+						<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
+							<circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" />
+						</svg>
+						<input
+							type="search"
+							enterkeyhint="search"
+							bind:value={hunt}
+							placeholder="Find a place"
+							aria-label="Filter the wishlist"
+						/>
+						{#if hunt}
+							<button type="button" class="tm-search__btn" aria-label="Clear" onclick={() => (hunt = '')}>✕</button>
+						{/if}
+					</div>
 					{#if !shortlist.length}
 						<p class="tm-hint">Nothing matches “{hunt.trim()}”.</p>
 					{/if}
@@ -3074,13 +3083,7 @@
 						aria-label="Filter your wishlist"
 					/>
 					{#if slotQuery}
-						<button
-							onclick={() => (slotQuery = '')}
-							aria-label="Clear"
-							style="background:none;border:none;cursor:pointer;color:var(--tm-text-faint);font-size:18px;line-height:1;padding:0 2px"
-						>
-							&times;
-						</button>
+						<button type="button" class="tm-search__btn" aria-label="Clear" onclick={() => (slotQuery = '')}>✕</button>
 					{/if}
 				</div>
 
