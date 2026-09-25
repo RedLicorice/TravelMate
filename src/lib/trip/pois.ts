@@ -130,7 +130,7 @@ export function addPoi(w: Writer, tripId: string, poi: Poi): PoiRow {
 		website: poi.website,
 		phone: poi.phone,
 		notes: null,
-		any_branch: !!poi.branches?.length,
+		any_branch: !!poi.anyBranch && !!poi.branches?.length,
 		branches: poi.branches ?? [],
 		exit_lat: null,
 		exit_lng: null,
@@ -162,6 +162,7 @@ export function updatePoi(
 		priority?: number;
 		exit_lat?: number | null;
 		exit_lng?: number | null;
+		any_branch?: boolean;
 	}
 ): PoiRow {
 	// updated_at is what says the plan is behind the wishlist. The server

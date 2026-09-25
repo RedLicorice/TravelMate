@@ -159,11 +159,10 @@ export const google: PoiProvider = {
 	async searchPlaces(query, city, signal) {
 		const within = city.bbox;
 		const near = within ? null : biasPoint(city);
-		const rows = await ask({ kind: 'text', query, within, near, limit: 12 }, signal);
-		return rows
-			.filter((f) => !(f.type && NOT_A_STOP.has(f.type)))
-			.map(toPoi)
-			.slice(0, 10);
+		// Google's most per page, at the price of one: a chain's branches are
+		// taken from these results, and kept.
+		const rows = await ask({ kind: 'text', query, within, near, limit: 20 }, signal);
+		return rows.filter((f) => !(f.type && NOT_A_STOP.has(f.type))).map(toPoi);
 	},
 
 	async searchAddresses(query, city, signal) {

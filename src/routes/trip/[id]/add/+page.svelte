@@ -288,7 +288,7 @@
 		const chosen = chain;
 		if (!chosen) return;
 		chain = null;
-		void add(everyBranch ? { ...chosen.pick, branches: chosen.branches } : chosen.pick);
+		void add({ ...chosen.pick, branches: chosen.branches, anyBranch: everyBranch });
 	}
 
 	/** When a place put into the slot happens: the space above `before`, or the end of the day. */

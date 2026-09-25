@@ -117,6 +117,9 @@ Deno.serve(async (req) => {
 		return json({ done });
 	} catch (error) {
 		console.error('busyness function failed', error);
-		return json({ done: 0, error: 'internal' }, 500);
+		// Only the status travels back, never Foursquare's text: enough to tell
+		// a refused key (401/403) from a bad request (400) or a quota (429).
+		const status = /^foursquare (\d{3})/.exec(String((error as Error)?.message))?.[1];
+		return json({ done: 0, error: status ? `foursquare_${status}` : 'internal' }, 500);
 	}
 });

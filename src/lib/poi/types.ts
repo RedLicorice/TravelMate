@@ -31,11 +31,13 @@ export type Poi = Place & {
 	 */
 	sourceId: string | null;
 	/**
-	 * Other places of the same name in the same city. Present when the
-	 * traveller said any branch will do; the planner then picks whichever is
-	 * nearest to where the day has them.
+	 * Other places of the same name the search found, as points. Kept
+	 * whichever branch the traveller meant, so they can change their mind
+	 * later without searching again.
 	 */
 	branches?: LatLng[];
+	/** Any branch will do: the planner then picks whichever is nearest to where the day has them. */
+	anyBranch?: boolean;
 };
 
 /** An airport, station, coach station or ferry terminal. */

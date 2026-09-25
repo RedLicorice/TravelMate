@@ -373,6 +373,26 @@ button.tm-result:hover,
 button.tm-result:focus-visible {
   background: var(--tm-surface-2);
 }
+/* A second action for the row above it, on its own line: a row that is one
+   button cannot hold another. Indented under the row's text so it reads as
+   belonging to it. */
+button.tm-result:has(+ .tm-result__more) {
+  border-bottom: none;
+}
+button.tm-result__more {
+  flex: none;
+  width: 100%;
+  min-height: var(--tm-tap-min);
+  margin-top: calc(-1 * var(--tm-space-1));
+  padding: 0 var(--tm-space-2) var(--tm-space-2) calc(2 * var(--tm-space-2));
+  border: none;
+  border-bottom: 1px solid var(--tm-border);
+  background: none;
+  text-align: left;
+  font: 600 var(--tm-text-sm)/1.4 var(--tm-font);
+  color: var(--tm-peach-ink);
+  cursor: pointer;
+}
 .tm-result__name {
   font: 600 var(--tm-text-base)/1.25 var(--tm-font);
 }

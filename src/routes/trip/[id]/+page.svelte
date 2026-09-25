@@ -861,8 +861,12 @@
 			for (let i = 0; i < stale.length; i += 20) {
 				const batch = stale.slice(i, i + 20).map((p) => p.id);
 				for (const id of batch) askedPeakHours.add(id);
-				void supabase.functions.invoke('busyness', { body: { poiIds: batch } }).then(({ error }) => {
-					if (error) track('busyness.failed', { places: batch.length, error: String(error.message).slice(0, 200) });
+				void supabase.functions.invoke('busyness', { body: { poiIds: batch } }).then(async ({ error }) => {
+					if (!error) return;
+					// The function says which step failed in its body; the status is the HTTP answer.
+					const res = (error as { context?: Response }).context;
+					const said = await res?.json().then((b: { error?: string }) => b.error, () => undefined);
+					track('busyness.failed', { places: batch.length, status: res?.status, reason: said, error: String(error.message).slice(0, 200) });
 				});
 			}
 			// Opening hours the same way: places saved before they were kept,
@@ -1875,6 +1879,24 @@
 		return { ...best, nearest: true };
 	};
 
+	/**
+	 * For a chain saved as "just this one" whose other branches were kept: the
+	 * branch nearest the slot, when the one saved is more than a kilometre off
+	 * and another is nearer. Offered, never taken without asking.
+	 */
+	const nearerBranch = (p: PoiRow): { km: string; from: string } | null => {
+		const from = slotPlace?.at ?? (slot ? centres[slot.day] : null);
+		if (p.any_branch || !p.branches?.length || !from || haversineKm(from, p) <= 1) return null;
+		const best = p.branches.reduce((a, b) => (haversineKm(from, b) < haversineKm(from, a) ? b : a), { lat: p.lat, lng: p.lng });
+		if (best.lat === p.lat && best.lng === p.lng) return null;
+		return { km: haversineKm(from, best).toFixed(1), from: slotPlace?.name ?? "the day's centre" };
+	};
+
+	async function useNearestBranch(p: PoiRow) {
+		await edit(`Any ${p.name} will do`, (w) => updatePoi(w, p.id, { any_branch: true }));
+		await placeHere(p.id);
+	}
+
 	const detour = (p: PoiRow) => (slotPlace ? haversineKm(slotPlace.at, branchFor(p)).toFixed(1) : null);
 
 	const unassigned = $derived.by(() => {
@@ -1996,7 +2018,8 @@
 				phone: source.phone,
 				// A second helping of a chain still answers with whichever
 				// branch is nearest on the day it is had.
-				branches: source.any_branch ? source.branches : undefined,
+				branches: source.branches,
+				anyBranch: source.any_branch,
 				// Not the same OSM row twice: a copy is deliberately its own
 				// place, and the uniqueness index is there for the first one.
 				sourceId: null
@@ -3349,6 +3372,12 @@
 								</span>
 								<span class="tm-add" aria-hidden="true">+</span>
 							</button>
+							{#if nearerBranch(p)}
+								{@const near = nearerBranch(p)!}
+								<button class="tm-result__more" onclick={() => useNearestBranch(p)}>
+									Nearest branch instead · {near.km} km from {near.from}
+								</button>
+							{/if}
 						{/each}
 					</div>
 				{:else}

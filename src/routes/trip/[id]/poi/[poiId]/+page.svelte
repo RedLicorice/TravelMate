@@ -372,6 +372,29 @@
 		<p class="tm-hint mt-2">
 			{kmFromHotel} km from {trip?.hotel_name ?? 'the hotel'}.
 		</p>
+		{#if poi.branches?.length}
+			<!-- The other branches were kept when it was found, so this is a
+			     switch and not a search. -->
+			<div class="mt-3 flex flex-wrap gap-2">
+				{#each [true, false] as any}
+					<button
+						class="tm-chip"
+						aria-pressed={poi.any_branch === any}
+						style={poi.any_branch === any
+							? 'background: var(--tm-peach-soft); color: var(--tm-peach-ink)'
+							: 'opacity: 0.6'}
+						onclick={() => persist({ any_branch: any })}
+					>
+						{any ? `Any of ${poi.branches.length} branches` : 'Just this one'}
+					</button>
+				{/each}
+			</div>
+			<p class="tm-hint mt-2">
+				{poi.any_branch
+					? 'The plan uses whichever branch is nearest to where the day has you.'
+					: 'The plan always goes to this one.'}
+			</p>
+		{/if}
 
 		<h2 class="tm-label mt-6 mb-2">Expected busyness</h2>
 		<div class="tm-card">
