@@ -19,12 +19,6 @@ export type PoiRow = {
 	source_id: string | null;
 	/** The address the search gave, when it gave one. */
 	address: string | null;
-	/** Peak hours from Foursquare (0063), written by the busyness function. 1 = Monday. */
-	busy_windows: { day: number; open: string; close: string }[] | null;
-	/** How busy it gets inside those windows, 0-1. */
-	popularity: number | null;
-	/** When Foursquare was last asked, found or not. */
-	busy_checked_at: string | null;
 	/** Opening hours as data (0066): Google's periods; null when not known. */
 	opening_periods: OpeningPeriod[] | null;
 	/** When Google was last asked for them, found or not. */
@@ -121,9 +115,6 @@ export function addPoi(w: Writer, tripId: string, poi: Poi): PoiRow {
 		opening_hours: poi.openingHours,
 		source_id: poi.sourceId,
 		address: poi.label || null,
-		busy_windows: null,
-		popularity: null,
-		busy_checked_at: null,
 		// A place found on Google came with its hours, or with none to have.
 		opening_periods: poi.openingPeriods ?? null,
 		opening_checked_at: poi.openingPeriods !== undefined ? now : null,

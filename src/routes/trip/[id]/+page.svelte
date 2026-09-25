@@ -71,7 +71,7 @@
 		type MealName,
 		type MealWindows
 	} from '$lib/plan/meals';
-	import { categoryCrowd, peakHoursCrowd, resolveCurves, type CrowdCurves } from '$lib/plan/crowd';
+	import { categoryCrowd, resolveCurves, type CrowdCurves } from '$lib/plan/crowd';
 	import { supabase } from '$lib/supabase';
 	import { firstOf, noTravel, pointKey, resolveTravel, type TravelTable } from '$lib/plan/travel';
 	import type { LegRoute } from '$lib/plan/route';
@@ -828,49 +828,26 @@
 	 */
 	async function refreshCurves() {
 		if (!row || !days.length) return;
-		// A place's own peak hours from Foursquare first, where it has them;
-		// the category table for the rest.
-		const known = new Set(pois.filter((p) => p.busy_windows?.length).map((p) => p.id));
-		const resolved = await resolveCurves(
+		curves = await resolveCurves(
 			pois.map((p) => ({ id: p.id, category: p.category })),
 			days,
 			row.timezone,
-			[peakHoursCrowd(pois), categoryCrowd]
+			[categoryCrowd]
 		);
-		curves = { at: resolved.at, known: (id) => known.has(id) };
 	}
 
 	/**
-	 * Peak hours for the places that have none yet, or whose are a month old:
-	 * asked of the busyness function in the background, twenty at a time, and
-	 * never waited on. The answers land on the places, reach this page as any
-	 * change does, and the plan uses them the next time a day is re-timed.
-	 * Each place is asked about once per visit to the page, found or not.
+	 * Opening hours for the places saved before they were kept, or whose are a
+	 * month old: asked of the hours function in the background, twenty at a
+	 * time, and never waited on. The answers land on the places and reach this
+	 * page as any change does. Each place is asked about once per visit to the
+	 * page, found or not.
 	 */
-	const askedPeakHours = new Set<string>();
 	const askedHours = new Set<string>();
 	$effect(() => {
 		void pois.length;
 		untrack(() => {
 			if (!navigator.onLine) return;
-			const stale = pois.filter(
-				(p) =>
-					!askedPeakHours.has(p.id) &&
-					(!p.busy_checked_at || Date.now() - Date.parse(p.busy_checked_at) > 30 * 86_400_000)
-			);
-			for (let i = 0; i < stale.length; i += 20) {
-				const batch = stale.slice(i, i + 20).map((p) => p.id);
-				for (const id of batch) askedPeakHours.add(id);
-				void supabase.functions.invoke('busyness', { body: { poiIds: batch } }).then(async ({ error }) => {
-					if (!error) return;
-					// The function says which step failed in its body; the status is the HTTP answer.
-					const res = (error as { context?: Response }).context;
-					const said = await res?.json().then((b: { error?: string }) => b.error, () => undefined);
-					track('busyness.failed', { places: batch.length, status: res?.status, reason: said, error: String(error.message).slice(0, 200) });
-				});
-			}
-			// Opening hours the same way: places saved before they were kept,
-			// or whose are a month old.
 			const unknownHours = pois.filter(
 				(p) =>
 					!askedHours.has(p.id) &&
@@ -968,8 +945,6 @@
 	$effect(() => {
 		void pois.length;
 		void days.length;
-		// And again when a place's peak hours arrive from Foursquare.
-		void pois.filter((p) => p.busy_checked_at).length;
 		// Untracked: refreshCurves reads the whole wishlist and every day
 		// before it awaits, and tracked that re-ran it on every change to any
 		// of them -- which is every change at all.

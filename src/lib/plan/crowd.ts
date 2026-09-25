@@ -43,13 +43,9 @@ export interface CrowdProvider {
 	lookup(requests: CrowdRequest[], tz: string): Promise<Map<CrowdKey, Busyness>>;
 }
 
-/**
- * What the planner consumes: a plain synchronous lookup, and whether the
- * answer for a place is its own peak hours or a guess from its category.
- */
+/** What the planner consumes: a plain synchronous lookup. */
 export type CrowdCurves = {
 	at(poiId: string, when: Date, tz: string): Busyness;
-	known?(poiId: string): boolean;
 };
 
 /** Busy windows as [startHour, endHour, busyness] in local time. */
@@ -211,49 +207,4 @@ export async function resolveCurves(
 		}
 	}
 	return fromTable(table);
-}
-
-/** A place's own peak hours, as the busyness function stored them. */
-export type PeakHours = {
-	id: string;
-	busy_windows: { day: number; open: string; close: string }[] | null;
-	popularity: number | null;
-};
-
-/** '1100' or '11:00' -> minutes after midnight. */
-const minutesOf = (t: string) => {
-	const d = t.replace(':', '').padStart(4, '0');
-	return Number(d.slice(0, 2)) * 60 + Number(d.slice(2, 4));
-};
-
-const ISO_DAY: Record<string, number> = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 };
-
-/**
- * Foursquare's peak hours, first in the chain: inside one of a place's busy
- * windows, its popularity; outside them, the baseline. Only places that have
- * windows are answered -- the rest fall through to the category table.
- */
-export function peakHoursCrowd(places: PeakHours[]): CrowdProvider {
-	const byId = new Map(places.filter((p) => p.busy_windows?.length).map((p) => [p.id, p]));
-	return {
-		name: 'foursquare',
-		async lookup(requests, tz) {
-			const out = new Map<CrowdKey, Busyness>();
-			for (const r of requests) {
-				const p = byId.get(r.poiId);
-				if (!p) continue;
-				const day = ISO_DAY[weekdayIn(r.at, tz)];
-				const minute = r.hour * 60 + 30;
-				const inside = p.busy_windows!.some((w) => {
-					if (w.day !== day) return false;
-					const open = minutesOf(w.open);
-					const close = minutesOf(w.close);
-					// A window past midnight closes on the next day's clock.
-					return close > open ? minute >= open && minute < close : minute >= open || minute < close;
-				});
-				out.set(crowdKey(r.poiId, r.date, r.hour), inside ? Math.max(BASELINE, p.popularity ?? 0.8) : BASELINE);
-			}
-			return out;
-		}
-	};
 }
