@@ -1844,6 +1844,35 @@
 	});
 
 	/**
+	 * The first real place after the slot: slotPlace the other way round, so
+	 * a choice says how far it is to what comes next as well as from what
+	 * came before. A meal slot with no place after it on the day starts from
+	 * its own card, so the hotel the day ends at still counts.
+	 */
+	const slotNext = $derived.by(() => {
+		const here = slot;
+		if (!here || !row) return null;
+		const day = drawn[here.day];
+		if (!day) return null;
+		const filling = here.meal ? mealOf(here.meal) : null;
+		const found = here.before ? day.stops.findIndex((st) => st.poiId === here.before) : -1;
+		const own = filling ? day.stops.findIndex((st) => st.anchorKind === 'meal' && mealFor(st) === filling) : -1;
+		const after = found >= 0 ? found : own >= 0 ? own + 1 : day.stops.length;
+		const hotel = { name: row.hotel_name, at: { lat: row.hotel_lat, lng: row.hotel_lng } };
+		for (let i = after; i < day.stops.length; i++) {
+			const st = day.stops[i];
+			if (st.anchorKind === 'hotel') return hotel;
+			if (st.anchorKind === 'chore') {
+				if (st.name.endsWith('Check-Out')) return hotel;
+				continue;
+			}
+			if (st.anchorKind === 'meal' && (!st.poiId || mealFor(st) === filling)) continue;
+			return { name: st.name, at: st.at };
+		}
+		return null;
+	});
+
+	/**
 	 * Where a place would be had, for the slot being filled: itself, or -- for
 	 * a chain saved as "any branch will do" -- the branch nearest to where the
 	 * day is at that point (the place before the slot, else the day's centre),
@@ -1864,12 +1893,17 @@
 	 * branch nearest the slot, when the one saved is more than a kilometre off
 	 * and another is nearer. Offered, never taken without asking.
 	 */
-	const nearerBranch = (p: PoiRow): { km: string; from: string } | null => {
+	const nearerBranch = (p: PoiRow): { km: string; from: string; onward: string | null; to: string | null } | null => {
 		const from = slotPlace?.at ?? (slot ? centres[slot.day] : null);
 		if (p.any_branch || !p.branches?.length || !from || haversineKm(from, p) <= 1) return null;
 		const best = p.branches.reduce((a, b) => (haversineKm(from, b) < haversineKm(from, a) ? b : a), { lat: p.lat, lng: p.lng });
 		if (best.lat === p.lat && best.lng === p.lng) return null;
-		return { km: haversineKm(from, best).toFixed(1), from: slotPlace?.name ?? "the day's centre" };
+		return {
+			km: haversineKm(from, best).toFixed(1),
+			from: slotPlace?.name ?? "the day's centre",
+			onward: slotNext ? haversineKm(best, slotNext.at).toFixed(1) : null,
+			to: slotNext?.name ?? null
+		};
 	};
 
 	async function useNearestBranch(p: PoiRow) {
@@ -1878,6 +1912,7 @@
 	}
 
 	const detour = (p: PoiRow) => (slotPlace ? haversineKm(slotPlace.at, branchFor(p)).toFixed(1) : null);
+	const onward = (p: PoiRow) => (slotNext ? haversineKm(branchFor(p), slotNext.at).toFixed(1) : null);
 
 	const unassigned = $derived.by(() => {
 		const waiting = (p: PoiRow) => (dayOfPoi.has(p.id) ? 1 : 0);
@@ -2306,7 +2341,7 @@
 				const visit = isVisit(s);
 				return [
 					{
-						id: `${day.index}:${s.poiId ?? `anchor-${i}`}`,
+						id: `${day.index}:${s.placementId ?? s.poiId ?? `anchor-${i}`}`,
 						lat: s.at.lat,
 						lng: s.at.lng,
 						color: visit ? dayColor(day.index) : undefined,
@@ -2627,7 +2662,12 @@
 		{/if}
 
 		{#if view === 'map'}
-			<div class="flex-1"><TripMap {markers} {routes} center={centre} /></div>
+			<div class="flex-1"><TripMap
+					{markers}
+					{routes}
+					center={centre}
+					onselect={(id) => openCard(id.slice(id.indexOf(':') + 1))}
+				/></div>
 		{:else if view === 'wishlist'}
 			<div class="flex-1 overflow-y-auto p-4">
 				{#if !pois.length}
@@ -3349,13 +3389,16 @@
 									{#if detour(p)}
 										<span class="tm-result__meta" style="display:block">{detour(p)} km from {slotPlace?.name}</span>
 									{/if}
+									{#if onward(p)}
+										<span class="tm-result__meta" style="display:block">{onward(p)} km to {slotNext?.name}</span>
+									{/if}
 								</span>
 								<span class="tm-add" aria-hidden="true">+</span>
 							</button>
 							{#if nearerBranch(p)}
 								{@const near = nearerBranch(p)!}
 								<button class="tm-result__more" onclick={() => useNearestBranch(p)}>
-									Nearest branch instead · {near.km} km from {near.from}
+									Nearest branch instead · {near.km} km from {near.from}{#if near.onward} · {near.onward} km to {near.to}{/if}
 								</button>
 							{/if}
 						{/each}
