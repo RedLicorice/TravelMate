@@ -55,7 +55,7 @@ export default defineConfig({
 				display: 'standalone',
 				orientation: 'portrait',
 				background_color: '#fbf9f7',
-				theme_color: '#56a1a6',
+				theme_color: '#e98a5f',
 				categories: ['travel', 'navigation'],
 				icons: [
 					{ src: `${base}/icon-192.png`, sizes: '192x192', type: 'image/png' },
