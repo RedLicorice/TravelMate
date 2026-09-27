@@ -55,15 +55,15 @@ export default defineConfig({
 				display: 'standalone',
 				orientation: 'portrait',
 				background_color: '#fbf9f7',
-				theme_color: '#e98a5f',
+				theme_color: '#56a1a6',
 				categories: ['travel', 'navigation'],
 				icons: [
 					{ src: `${base}/icon-192.png`, sizes: '192x192', type: 'image/png' },
 					{ src: `${base}/icon-512.png`, sizes: '512x512', type: 'image/png' },
 					// Android crops a maskable icon to whatever shape the launcher
-					// uses, so the same art is declared twice rather than shipping a
-					// square that gets its corners cut off.
-					{ src: `${base}/icon-512.png`, sizes: '512x512', type: 'image/png', purpose: 'maskable' }
+					// uses: this one is the logo shrunk into the safe circle (radius
+					// 40% of the side), so the plane's tail is not cut off.
+					{ src: `${base}/icon-maskable-512.png`, sizes: '512x512', type: 'image/png', purpose: 'maskable' }
 				]
 			},
 			// Written by hand, for Background Sync: see src/sw.ts. It caches the

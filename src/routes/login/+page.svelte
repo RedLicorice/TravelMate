@@ -85,6 +85,7 @@
 </script>
 
 <main class="mx-auto flex min-h-dvh max-w-sm flex-col justify-center gap-4 p-6">
+	<img src="{base}/icon-192.png" alt="" width="96" height="96" />
 	<h1 style="font: 700 var(--tm-text-3xl)/1.1 var(--tm-font); letter-spacing: -0.03em">
 		TravelMate
 	</h1>
