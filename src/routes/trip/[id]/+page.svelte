@@ -1167,13 +1167,17 @@
 		let end = start + length(card);
 		// Below it is what starts later, or starts at the same minute and ends
 		// later: a card that starts then and is already over -- the hotel the
-		// day wakes up in -- comes before it, and is not in its way.
+		// day wakes up in -- comes before it, and is not in its way. And a card
+		// that started earlier and is still going at this minute: the card was
+		// put before it, inside its time, so it goes after.
 		const below = placements
 			.filter(
 				(pl) =>
 					pl.day_index === card.day_index &&
 					pl.id !== id &&
-					(Date.parse(pl.at) > start || (Date.parse(pl.at) === start && Date.parse(pl.at) + length(pl) > end))
+					(Date.parse(pl.at) > start ||
+						(Date.parse(pl.at) === start && Date.parse(pl.at) + length(pl) > end) ||
+						(!pl.pinned && Date.parse(pl.at) < start && Date.parse(pl.at) + length(pl) > start))
 			)
 			.sort((a, b) => a.at.localeCompare(b.at) || length(a) - length(b))
 			.map((pl) => ({ id: pl.id, at: Date.parse(pl.at), length: length(pl), pinned: pl.pinned }));
@@ -1519,18 +1523,19 @@
 
 	/**
 	 * The earliest a dragged card can start at `at` on `day`: when the card
-	 * above it there is over, plus the journey from it -- the walk's own rule,
-	 * on the travel times the walk would use. A meal with nothing chosen and
-	 * time to yourself are had wherever the traveller already is: no journey.
+	 * drawn above it is over, plus the journey from it -- the walk's own rule,
+	 * on the travel times the walk would use. Drawn above, not started
+	 * earlier: the card below the finger can start earlier and is pushed down
+	 * after the held one. A meal with nothing chosen and time to yourself are
+	 * had wherever the traveller already is: no journey.
 	 */
-	function earliestAt(id: string, day: number, at: number): number {
-		const stops = (drawn[day]?.stops ?? []).filter((st) => st.placementId !== id);
-		let above: PlannedStop | undefined;
-		for (const st of stops) {
-			const starts = st.arrive.getTime();
-			if (starts < at || (starts === at && st.depart.getTime() <= at)) above = st;
-			else break;
-		}
+	function earliestAt(id: string, day: number, card: { id: string; start: number } | null, at: number): number {
+		if (!card) return at;
+		// A card with no placement of its own (the day's start, a meal not yet
+		// chosen) is found by when it starts.
+		const above = (drawn[day]?.stops ?? []).findLast((st) =>
+			st.placementId ? st.placementId === card.id : st.arrive.getTime() === card.start
+		);
 		if (!above) return at;
 		return Math.max(at, above.depart.getTime() + journeyInto(above, id) * 60_000);
 	}
@@ -2872,7 +2877,7 @@
 						<div
 							class="tm-stop"
 							data-start={stop.arrive.getTime()}
-							data-card={stop.placementId ?? ''}
+							data-card={grabId ?? stop.placementId ?? ''}
 							data-end={stop.depart.getTime()}
 							class:tm-stop--anchor={stop.anchor}
 							class:tm-stop--terminal={stop.anchorKind === 'terminal'}

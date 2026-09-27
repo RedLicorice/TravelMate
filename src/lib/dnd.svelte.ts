@@ -136,12 +136,18 @@ export function createDrag(
 	/** The day on screen's ruler, as the screen last measured it. */
 	ruler: () => Ruler | null,
 	/**
-	 * The earliest a card can start at `at` on `day`: when the card above it
-	 * is over and the traveller has got from there to here. A drop lands no
-	 * earlier -- the same rule the day is walked by afterwards, so the card
-	 * stays where it lands and the pill says where that is.
+	 * The earliest a card can start at `at` on `day`, after the card `above`
+	 * (the one drawn above the finger: its data-card and its start): when
+	 * that one is over and the traveller has got from there to here. A drop
+	 * lands no earlier -- the same rule the day is walked by afterwards, so
+	 * the card stays where it lands and the pill says where that is.
 	 */
-	earliest: (draggedId: string, day: number, at: number) => number = (_id, _day, at) => at
+	earliest: (
+		draggedId: string,
+		day: number,
+		above: { id: string; start: number } | null,
+		at: number
+	) => number = (_id, _day, _above, at) => at
 ) {
 	const state = $state({
 		id: null as string | null,
@@ -243,9 +249,12 @@ export function createDrag(
 			} else {
 				at = Math.round(timeAt(here, fraction) / SNAP_MS) * SNAP_MS;
 			}
-			const next = here.cards.find((c) => c.id !== state.id && (c.top + c.bottom) / 2 > fraction);
-			if (next && next.start < at) at = next.start;
-			if (state.id) at = Math.max(at, earliest(state.id, day, at));
+			// The card drawn above the finger is the one it goes after: nothing
+			// earlier than when that one is over and the traveller has got from
+			// it. The card below takes any minute the rail gives -- even one
+			// inside its own time: it is pushed down after the held card.
+			const above = here.cards.findLast((c) => c.id !== state.id && (c.top + c.bottom) / 2 <= fraction);
+			if (state.id) at = Math.max(at, earliest(state.id, day, above ?? null, at));
 			return { day, at: new Date(at).toISOString() };
 		}
 		const scale = zone.querySelector<HTMLElement>('[data-rail-from]');
