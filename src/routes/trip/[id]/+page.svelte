@@ -2893,6 +2893,8 @@
 							{@const legIn = stop.legIn}
 							{@const choice = choiceInto(stop.placementId, previous.placementId, legIn.mode)}
 							<LegDetail
+								from={stop.arrive.getTime() - legIn.minutes * 60_000}
+								to={stop.arrive.getTime()}
 								mode={legIn.mode}
 								estimate={{ minutes: legIn.minutes, km: legIn.km }}
 								source={legIn.source}
