@@ -798,16 +798,19 @@
 	});
 
 	/**
-	 * Furniture for days nobody has furnished, once per opening. Only by
-	 * someone who may edit the trip: a viewer's edit would only be refused.
-	 * And only on the trip as the server has it: another device may have set
-	 * the days out already, and furnishing them from a stale copy gave a day
-	 * two mornings. A trip the server has never seen is this device's alone,
-	 * so it need not wait -- which is what keeps a trip made offline usable.
+	 * Furniture for days nobody has furnished, once per opening. This also
+	 * writes the trip's own furnished_days, and the trips table is the
+	 * owner's alone to write -- an editor's phone doing this would have the
+	 * server refuse the whole edit and "Set out the days" would retry on
+	 * every open. Only the owner's device runs it. And only on the trip as
+	 * the server has it: another device may have set the days out already,
+	 * and furnishing them from a stale copy gave a day two mornings. A trip
+	 * the server has never seen is this device's alone, so it need not wait
+	 * -- which is what keeps a trip made offline usable.
 	 */
 	let furnished = false;
 	$effect(() => {
-		if (furnished || !row || !days.length || !canEdit) return;
+		if (furnished || !row || !days.length || !isOwner) return;
 		if (!pulled && upstream('trips', { id: tripId })) return;
 		furnished = true;
 		untrack(furnish);
@@ -816,11 +819,12 @@
 	/**
 	 * Trips saved before the city box -- and before the country code -- was
 	 * captured. One geocode fills in whichever is missing, behind the screen
-	 * rather than in front of it.
+	 * rather than in front of it. This writes the trip row itself, which only
+	 * the owner may write, so only the owner's device does the filling in.
 	 */
 	let located = false;
 	$effect(() => {
-		if (located || !row || !canEdit || (bbox && row.country_code)) return;
+		if (located || !row || !isOwner || (bbox && row.country_code)) return;
 		located = true;
 		const found = row;
 		void provider.searchCities(found.city).then((matches) => {
