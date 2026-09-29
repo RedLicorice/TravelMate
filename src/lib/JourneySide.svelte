@@ -57,13 +57,20 @@
 	// Follow the kind's default only while the traveller has not moved the
 	// slider themselves -- replacing a deliberate 90 minutes with 120 because
 	// they re-picked the airport would be rude.
+	//
+	// Written only when the kind itself changes, and never on the first run:
+	// writing on every run rebuilt `terminals`, which the effect also reads,
+	// so it never settled -- and writing on mount replaced a buffer chosen
+	// last time this side was opened with the kind's default again.
 	let touchedAdvance = $state(false);
+	let lastKind: TerminalKind | undefined | 'unset' = 'unset';
 	$effect(() => {
 		if (direction !== 'departure') return;
 		const kind = leaving?.point.kind as TerminalKind | undefined;
-		if (!touchedAdvance && kind) {
-			terminals = { ...terminals, departureBufferMin: ADVANCE_DEFAULT[kind] };
-		}
+		const was = lastKind;
+		lastKind = kind;
+		if (was === 'unset' || kind === was || !kind || touchedAdvance) return;
+		terminals = { ...terminals, departureBufferMin: ADVANCE_DEFAULT[kind] };
 	});
 
 	const advanceLabel = $derived(
