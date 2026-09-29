@@ -635,18 +635,21 @@ export function pullTrip(id: string): Promise<void> {
 	loaded.add(id);
 	return pull(async (signal) => {
 		if (!store.asked.includes(id)) store.asked.push(id);
-		const [trip, pois, placements, plan, members] = await Promise.all([
+		const [trip, pois, placements, plan, members, own] = await Promise.all([
 			supabase.from('trips').select('*').eq('id', id).abortSignal(signal).maybeSingle(),
 			supabase.from('pois').select('*').eq('trip_id', id).abortSignal(signal),
 			supabase.from('placements').select('*').eq('trip_id', id).abortSignal(signal),
 			supabase.from('plan_stops').select('*').eq('trip_id', id).abortSignal(signal),
-			supabase.from('trip_members').select('*').eq('trip_id', id).abortSignal(signal)
+			supabase.from('trip_members').select('*').eq('trip_id', id).abortSignal(signal),
+			// The owner's alone: anybody else is answered with nothing.
+			supabase.from('trip_private').select('*').eq('trip_id', id).abortSignal(signal).maybeSingle()
 		]);
 		const people = (must(members) as Row[]).map((m) => m.user_id as string);
 		const profiles = people.length
 			? (must(await supabase.from('profiles').select('*').in('user_id', people).abortSignal(signal)) as Row[])
 			: [];
 		const found = must(trip) as Row | null;
+		const mine = must(own) as Row | null;
 		const rows = found
 			? [
 					held('trips', found),
@@ -654,7 +657,8 @@ export function pullTrip(id: string): Promise<void> {
 					...(must(placements) as Row[]).map((r) => held('placements', r)),
 					...(must(plan) as Row[]).map((r) => held('plan_stops', r)),
 					...(must(members) as Row[]).map((r) => held('trip_members', r)),
-					...profiles.map((r) => held('profiles', r))
+					...profiles.map((r) => held('profiles', r)),
+					...(mine ? [held('trip_private', mine)] : [])
 				]
 			: [];
 		await replace((t) => eachOfTrip(t, id, (c) => c.delete()), rows);
@@ -739,7 +743,7 @@ async function received(table: Table, event: string, fresh: Row | null, old: Row
 	redrawSoon();
 }
 
-const LIVE: Table[] = ['trips', 'pois', 'placements', 'plan_stops', 'trip_members', 'profiles'];
+const LIVE: Table[] = ['trips', 'trip_private', 'pois', 'placements', 'plan_stops', 'trip_members', 'profiles'];
 
 /**
  * Keep one trip current while it is open: read it once, then take every
