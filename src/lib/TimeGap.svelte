@@ -75,7 +75,9 @@
 		if (!fillable) return;
 		const box = (event.currentTarget as HTMLElement).getBoundingClientRect();
 		const fraction = Math.min(1, Math.max(0, (event.clientY - box.top) / box.height));
-		onpick(new Date(+start + fraction * (+end - +start)));
+		// A leg longer than the gap puts the end before the start; the pick is
+		// then the start, not a moment before the stop above has been left.
+		onpick(new Date(+start + fraction * Math.max(0, +end - +start)));
 	}
 </script>
 

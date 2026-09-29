@@ -69,6 +69,17 @@
 		notes = poi.notes ?? '';
 	});
 
+	/** Keep the note if it changed. On blur, and on every way of closing: a swipe does not blur. */
+	function saveNotes() {
+		const next = notes.trim() || null;
+		if (next !== (poi.notes ?? null)) onedit({ notes: next });
+	}
+
+	function close() {
+		saveNotes();
+		onclose();
+	}
+
 	const addedBy = $derived(people.find((p) => p.userId === poi.added_by) ?? null);
 
 	/** The map box's width on this screen; the picture is asked for at its shape. */
@@ -102,10 +113,10 @@
 <div
 	role="presentation"
 	style="position:fixed;inset:0;z-index:60;background:rgba(0,0,0,0.35)"
-	onclick={onclose}
+	onclick={close}
 ></div>
 
-<div class="tm-sheet" style="position:fixed;z-index:61;max-height:86vh;overflow-y:auto;padding:0" {@attach swipeToClose(onclose)}>
+<div class="tm-sheet" style="position:fixed;z-index:61;max-height:86vh;overflow-y:auto;padding:0" {@attach swipeToClose(close)}>
 	<!-- Map on top: where a place is answers most of what gets asked about it,
 	     and answers it before any reading. A picture of the map, not a map:
 	     it does not scroll or zoom, it costs nothing to open the card, and
@@ -184,10 +195,7 @@
 				style="padding-top: 10px; padding-bottom: 10px; min-height: auto"
 				bind:value={notes}
 				placeholder="Booking reference, who recommended it, what to order…"
-				onblur={() => {
-					const next = notes.trim() || null;
-					if (next !== (poi.notes ?? null)) onedit({ notes: next });
-				}}
+				onblur={saveNotes}
 			></textarea>
 		</div>
 
@@ -237,6 +245,6 @@
 				Back to the wishlist. Everything about it has the delete.
 			</p>
 		{/if}
-		<button class="tm-btn tm-btn--ghost tm-btn--block mt-2" onclick={onclose}>Close</button>
+		<button class="tm-btn tm-btn--ghost tm-btn--block mt-2" onclick={close}>Close</button>
 	</div>
 </div>
