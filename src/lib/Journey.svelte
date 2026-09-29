@@ -145,13 +145,13 @@
      used to rebuild every box below it. -->
 {#each legs as leg, i (leg.id ?? i)}
 	{@const mode = modeOf(leg)}
-	{#if i > 0}
-		<!-- Getting between two terminals is itself a leg: the transfer from a
-		     station to the airport it connects to, say. -->
-		<button class="tm-slot" style="margin-top:8px" onclick={() => addLeg(i)}>
-			<span aria-hidden="true">+</span> Add a step here
-		</button>
-	{/if}
+	<!-- Getting between two terminals is itself a leg: the transfer from a
+	     station to the airport it connects to, say. And a journey grows at
+	     either end: the train to the airport goes before the flight as
+	     surely as the bus into town goes after it. -->
+	<button class="tm-slot" style="margin-top:8px" onclick={() => addLeg(i)}>
+		<span aria-hidden="true">+</span> {i === 0 ? 'Add a step before' : 'Add a step here'}
+	</button>
 	<div
 		class="tm-card mt-3"
 		id="{direction}-leg-{leg.id ?? i}"
