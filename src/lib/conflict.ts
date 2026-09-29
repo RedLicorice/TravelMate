@@ -30,6 +30,8 @@ const FIELDS: Partial<Record<string, string>> = {
 	departure_at: 'Departure',
 	image_url: 'Picture',
 	share_token: 'Link',
+	arrival_refs: 'Booking references in',
+	departure_refs: 'Booking references out',
 	bag_drop_min: 'Checking in and out',
 	arrival_buffer_min: 'Getting out of the airport',
 	departure_buffer_min: 'At the terminal before leaving',

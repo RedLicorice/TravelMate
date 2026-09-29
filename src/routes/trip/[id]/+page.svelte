@@ -6,6 +6,7 @@
 	import { goto } from '$app/navigation';
 	import {
 		cityBBox,
+		getPrivate,
 		getTrip,
 		hotelMissing,
 		setShareToken,
@@ -630,7 +631,9 @@
 	/** Unassigned stops are their own layer on the map, not a day. */
 	let showUnassigned = $state(true);
 	let seeded = false;
-	const shareUrl = $derived(row?.share_token ? linkFor(row.share_token) : null);
+	/** The owner's alone: on anybody else's device there is none. */
+	const own = $derived(getPrivate(tripId));
+	const shareUrl = $derived(own?.share_token ? linkFor(own.share_token) : null);
 	let copied = $state(false);
 	const bbox = $derived(row ? cityBBox(row) : null);
 	const people = $derived(tripProfiles(tripId));
@@ -2215,12 +2218,12 @@
 					describeJourney(row.arrival_legs ?? [])
 						? ['Arrival journey', describeJourney(row.arrival_legs)]
 						: null,
-					row.arrival_booking_ref ? ['Arrival booking', row.arrival_booking_ref] : null,
+					own?.arrival_refs.at(-1) ? ['Arrival booking', own.arrival_refs.at(-1)] : null,
 					['Departure', stamp(row.departure_at, row.timezone)],
 					describeJourney(row.departure_legs ?? [])
 						? ['Departure journey', describeJourney(row.departure_legs)]
 						: null,
-					row.departure_booking_ref ? ['Departure booking', row.departure_booking_ref] : null,
+					own?.departure_refs[0] ? ['Departure booking', own.departure_refs[0]] : null,
 					['Timezone', row.timezone],
 					['Getting around', (row.allowed_modes ?? []).join(', ')]
 				].filter(Boolean) as [string, string][])

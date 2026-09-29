@@ -36,6 +36,8 @@ export type Table =
 	| 'pois'
 	| 'placements'
 	| 'trip_members'
+	/** The owner's own: booking references and the share link. Nobody else's device holds it. */
+	| 'trip_private'
 	| 'profiles'
 	| 'plan_stops';
 
@@ -92,7 +94,9 @@ export const keyOf = (table: Table, row: Row): Key =>
 		? { trip_id: row.trip_id, user_id: row.user_id }
 		: table === 'profiles'
 			? { user_id: row.user_id }
-			: { id: row.id };
+			: table === 'trip_private'
+				? { trip_id: row.trip_id }
+				: { id: row.id };
 
 export const rowId = (table: Table, key: Key) => `${table}:${Object.values(key).join(':')}`;
 

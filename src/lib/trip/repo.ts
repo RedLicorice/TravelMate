@@ -23,15 +23,13 @@ export type TripRow = {
 	departure_point_lat: number | null;
 	departure_point_lng: number | null;
 	arrival_kind: string | null;
-	/** The way in and the way out, leg by leg. */
+	/** The way in and the way out, leg by leg. Their booking references are in TripPrivateRow. */
 	arrival_legs: JourneyLeg[];
 	departure_legs: JourneyLeg[];
 	departure_kind: string | null;
 	/** Flight, train or sailing number, as printed on the ticket. */
 	arrival_service: string | null;
-	arrival_booking_ref: string | null;
 	departure_service: string | null;
-	departure_booking_ref: string | null;
 	arrival_buffer_min: number;
 	departure_buffer_min: number;
 	bag_drop_min: number;
@@ -48,7 +46,6 @@ export type TripRow = {
 	image_url: string | null;
 	/** ISO 3166-1 alpha-2, from the city that was picked. */
 	country_code: string | null;
-	share_token: string | null;
 	/** When Regenerate last produced a plan. Null before the first one. */
 	plan_generated_at: string | null;
 	/** Which planner produced it. Older than the app means re-time on sight. */
@@ -57,6 +54,52 @@ export type TripRow = {
 	/** Which edit of this row the server last confirmed. */
 	version: number;
 };
+
+/**
+ * What only the trip's owner may see: the booking references and the share
+ * link. Anybody holding the link can join the trip, so what everybody on it
+ * reads is what the link hands out -- these are kept apart, and nobody else's
+ * device ever has them. Everything reading it must manage without.
+ */
+export type TripPrivateRow = {
+	trip_id: string;
+	/** Each leg's booking reference, by the leg's place in arrival_legs. */
+	arrival_refs: (string | null)[];
+	departure_refs: (string | null)[];
+	share_token: string | null;
+	version: number;
+};
+
+/** Null on every device but the owner's. */
+export const getPrivate = (id: string): TripPrivateRow | null =>
+	held<TripPrivateRow>('trip_private', { trip_id: id });
+
+const refsOf = (legs: JourneyLeg[]) => legs.map((l) => l.bookingRef ?? null);
+/** The legs as the trip keeps them: without their references. */
+export const withoutRefs = (legs: JourneyLeg[]) =>
+	legs.map(({ bookingRef: _, ...leg }) => leg) as JourneyLeg[];
+const withRefs = (legs: JourneyLeg[], refs: (string | null)[] | undefined) =>
+	legs.map((leg, i) => ({ ...leg, bookingRef: refs?.[i] ?? null }));
+
+/** A trip's private row as it starts: the references typed with it, no link. */
+export const privateRow = (trip_id: string, arrival: JourneyLeg[] = [], departure: JourneyLeg[] = []): TripPrivateRow => ({
+	trip_id,
+	arrival_refs: refsOf(arrival),
+	departure_refs: refsOf(departure),
+	share_token: null,
+	version: 1
+});
+
+/**
+ * Write the owner's private row, making it if this device has none -- a trip
+ * made before it existed, on a device that has not read the trip since. If
+ * the server has one after all, the edit is put aside like any other that
+ * met a row it did not know, and keeping it writes over.
+ */
+function writePrivate(w: Writer, id: string, values: Partial<TripPrivateRow>) {
+	if (getPrivate(id)) w.update('trip_private', { trip_id: id }, values);
+	else w.insert('trip_private', { ...privateRow(id), ...values });
+}
 
 export type NewTrip = {
 	name: string;
@@ -111,15 +154,14 @@ const terminalColumns = (t: Terminals, timezone: string) => {
 	const startLeg = t.departureLegs[0];
 
 	return {
-		arrival_legs: t.arrivalLegs,
-		departure_legs: t.departureLegs,
+		arrival_legs: withoutRefs(t.arrivalLegs),
+		departure_legs: withoutRefs(t.departureLegs),
 
 		arrival_point_name: arrival.name,
 		arrival_point_lat: arrival.lat,
 		arrival_point_lng: arrival.lng,
 		arrival_kind: arrival.kind,
 		arrival_service: endLeg?.service ?? null,
-		arrival_booking_ref: endLeg?.bookingRef ?? null,
 		arrival_buffer_min: t.arrivalBufferMin,
 
 		departure_point_name: departure.name,
@@ -127,7 +169,6 @@ const terminalColumns = (t: Terminals, timezone: string) => {
 		departure_point_lng: departure.lng,
 		departure_kind: departure.kind,
 		departure_service: startLeg?.service ?? null,
-		departure_booking_ref: startLeg?.bookingRef ?? null,
 		departure_buffer_min: t.departureBufferMin,
 
 		bag_drop_min: t.bagDropMin,
@@ -144,18 +185,19 @@ export const noTerminals = (): Terminals => ({
 	departureLegs: [], departureBufferMin: 120, bagDropMin: 30
 });
 
-export const terminalsOf = (row: TripRow): Terminals => ({
+/** The legs carry their booking references again where this device has them: the owner's. */
+export const terminalsOf = (row: TripRow, own: TripPrivateRow | null = getPrivate(row.id)): Terminals => ({
 	arrivalName: row.arrival_point_name,
 	arrivalLat: row.arrival_point_lat,
 	arrivalLng: row.arrival_point_lng,
 	arrivalKind: row.arrival_kind,
-	arrivalLegs: row.arrival_legs ?? [],
+	arrivalLegs: withRefs(row.arrival_legs ?? [], own?.arrival_refs),
 	arrivalBufferMin: row.arrival_buffer_min,
 	departureName: row.departure_point_name,
 	departureLat: row.departure_point_lat,
 	departureLng: row.departure_point_lng,
 	departureKind: row.departure_kind,
-	departureLegs: row.departure_legs ?? [],
+	departureLegs: withRefs(row.departure_legs ?? [], own?.departure_refs),
 	departureBufferMin: row.departure_buffer_min,
 	bagDropMin: row.bag_drop_min
 });
@@ -235,14 +277,16 @@ export async function createTrip(input: NewTrip): Promise<string> {
 		day_start: '09:00:00',
 		day_end: '19:00:00',
 		image_url: null,
-		share_token: null,
 		plan_generated_at: null,
 		plan_version: 0,
 		created_at: new Date().toISOString(),
 		version: 1,
 		...terminalColumns(input.terminals, input.timezone)
 	} as TripRow;
-	await mutate(`Planned a trip to ${input.city}`, id, (w) => w.insert('trips', made));
+	await mutate(`Planned a trip to ${input.city}`, id, (w) => {
+		w.insert('trips', made);
+		w.insert('trip_private', privateRow(id, input.terminals.arrivalLegs, input.terminals.departureLegs));
+	});
 	return id;
 }
 
@@ -322,7 +366,7 @@ export type TripEdit = {
 };
 
 /** Only the traveller who made the trip may edit it; the server refuses anyone else. */
-export const updateTrip = (w: Writer, id: string, edit: TripEdit) =>
+export function updateTrip(w: Writer, id: string, edit: TripEdit) {
 	w.update('trips', { id }, {
 		name: edit.city,
 		city: edit.city,
@@ -340,10 +384,15 @@ export const updateTrip = (w: Writer, id: string, edit: TripEdit) =>
 		day_end: edit.dayEnd,
 		...terminalColumns(edit.terminals, edit.timezone)
 	});
+	writePrivate(w, id, {
+		arrival_refs: refsOf(edit.terminals.arrivalLegs),
+		departure_refs: refsOf(edit.terminals.departureLegs)
+	});
+}
 
 /** Everything on the trip goes with it: the foreign keys cascade. */
 export const deleteTrip = (w: Writer, id: string) => w.remove('trips', { id });
 
 /** A share token, minted on demand. Null revokes the link. */
 export const setShareToken = (w: Writer, id: string, token: string | null) =>
-	w.update('trips', { id }, { share_token: token });
+	writePrivate(w, id, { share_token: token });

@@ -7,6 +7,7 @@
 	import {
 		cityBBox,
 		deleteTrip,
+		getPrivate,
 		getTrip,
 		noTerminals,
 		terminalsOf,
@@ -15,6 +16,7 @@
 		updateTrip,
 		type Terminals
 	} from '$lib/trip/repo';
+	import { session } from '$lib/session.svelte';
 	import JourneySide from '$lib/JourneySide.svelte';
 	import CheckIn from '$lib/CheckIn.svelte';
 	import { fromLocalInput, toLocalInput, tripDays } from '$lib/trip/days';
@@ -53,8 +55,14 @@
 	// is the traveller's draft, and an edit arriving from someone else does
 	// not overwrite what they are typing.
 	let filled = false;
+	/** The server has been asked for the trip this visit, and answered or not. */
+	let asked = $state(false);
 	$effect(() => {
 		if (filled || !row) return;
+		// The owner's booking references go into the journey. A device that
+		// does not have them yet waits for the server rather than filling the
+		// journey without them -- and then saving it without them.
+		if (row.user_id === session.user?.id && !getPrivate(tripId) && !asked) return;
 		filled = true;
 		cityName = row.city;
 		countryCode = row.country_code;
@@ -84,7 +92,12 @@
 	});
 
 	onMount(() => {
-		if (!row) pullTrip(tripId).catch((e) => (error = (e as Error).message));
+		if (row && getPrivate(tripId)) return;
+		pullTrip(tripId)
+			.catch((e) => {
+				if (!row) error = (e as Error).message;
+			})
+			.finally(() => (asked = true));
 	});
 
 	// The hotel's own spot is the bias when the city has no box: on an old trip

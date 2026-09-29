@@ -1,5 +1,5 @@
 import { mutate } from '$lib/store/store.svelte';
-import { getTrip, type TripRow } from './repo';
+import { getTrip, privateRow, withoutRefs, type TripRow } from './repo';
 import { listPois, type PoiRow } from './pois';
 import { listPlacements, type PlacementRow } from './placements';
 
@@ -72,11 +72,19 @@ export async function importTrip(file: TripFile, userId: string): Promise<string
 	const now = new Date().toISOString();
 	const id = crypto.randomUUID();
 	const poiIds = new Map(file.pois.map((p) => [p.id, crypto.randomUUID()]));
+	// A file written before the booking references moved off the trip still
+	// has them on it: they go where the references live now.
+	const { arrival_booking_ref: _a, departure_booking_ref: _d, share_token: _s, ...kept } =
+		file.trip as TripRow & Record<string, unknown>;
+	const arrival = kept.arrival_legs ?? [];
+	const departure = kept.departure_legs ?? [];
+	const own = privateRow(id, arrival, departure);
 	const trip: TripRow = {
-		...file.trip,
+		...kept,
 		id,
 		user_id: userId,
-		share_token: null,
+		arrival_legs: withoutRefs(arrival),
+		departure_legs: withoutRefs(departure),
 		plan_generated_at: null,
 		plan_version: 0,
 		created_at: now,
@@ -84,6 +92,7 @@ export async function importTrip(file: TripFile, userId: string): Promise<string
 	};
 	await mutate(`Imported ${trip.name || trip.city}`, id, (w) => {
 		w.insert('trips', trip);
+		w.insert('trip_private', own);
 		for (const p of file.pois) {
 			w.insert('pois', { ...p, id: poiIds.get(p.id)!, trip_id: id, added_by: userId, created_at: now, updated_at: now, version: 1 });
 		}
