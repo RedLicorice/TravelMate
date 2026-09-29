@@ -87,15 +87,11 @@ export type PlanPoi = {
 	 * writes new ones onto everything it is allowed to move.
 	 */
 	at: string;
-	/** Not read. Position is no longer a concept; the clock orders the day. */
-	orderIndex?: number | null;
 	/**
 	 * Held where the traveller put it -- its day and its clock. Regenerate
 	 * reshuffles everything around it rather than moving it.
 	 */
 	pinned?: boolean;
-	/** Not read. A pin holds `at`; there is no second moment to hold. */
-	pinnedAt?: string | null;
 	/**
 	 * The hotel that closes the day, whose clock is the walk's to give: the
 	 * traveller gets home after the last stop, whenever that turns out to be.
@@ -865,37 +861,17 @@ function walkClock(
 		const dayIsOver = dayEndMs <= day.start.getTime();
 
 		const warnings: Warning[] = [];
-		// One overflow warning, not two. A card can both be one the traveller
-		// cannot reach in time and run past the end of the day, and saying so
-		// twice told the traveller nothing they did not know -- while the
-		// screen, which draws warnings keyed by kind, refused to render the
-		// trip at all. Not being able to get there is the more particular
-		// fact, so it wins.
 		// Running past the end is not said on the furniture. The hotel at the
 		// end of a day cannot run past the end of the day -- it is where the
 		// day ends, and the traveller is asleep in it. Getting back late is
 		// something the stops did; the cards that say so are the stops.
-		// The journey is not something the traveller can be late for by
-		// planning badly: it is the ticket they hold, and its cards read what
-		// the ticket reads whatever the day around them does.
-		// Nor is furniture ever told that it cannot be reached: the traveller
-		// said when it happens, and a plan that cannot make it says so on the
-		// stop that runs into it. The caller puts the warning there.
-		const ticketed = anchorKind === 'terminal' || anchorKind === 'service';
-		// Never on the day's own furniture. Where the hotel is and when the
-		// traveller checks in is something they stated, not something the plan
-		// worked out, and telling them they cannot reach their own hotel is
-		// noise on every card of every day.
-		// A pin that cannot be reached is not told so itself: it is where the
-		// traveller put it. The card that runs into it is (see below).
-		if (late && !dayIsOver && !ticketed && !anchor && !pinned) {
-			warnings.push({
-				kind: pinned ? 'blocked' : 'overflow',
-				message: pinned
-					? 'You cannot get here by then. Replan, or move something.'
-					: 'You cannot get here by then'
-			});
-		} else if (runsLate && !dayIsOver && !anchor) {
+		// Nor is a pin or the furniture ever told that it cannot be reached:
+		// the traveller said when it happens, and a plan that cannot make it
+		// says so on the stop that runs into it. The caller puts the warning
+		// there, off what this returns. The only cards whose clock holds are
+		// those, so a free stop is never late -- it happens when the walk gets
+		// there, and can only run over.
+		if (runsLate && !dayIsOver && !anchor) {
 			warnings.push({ kind: 'overflow', message: 'Runs past the end of the day' });
 		}
 		if (note) warnings.push(note);
