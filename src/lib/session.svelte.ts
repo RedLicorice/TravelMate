@@ -4,6 +4,7 @@ import { PUBLIC_SUPABASE_PUBLISHABLE_KEY, PUBLIC_SUPABASE_URL } from '$env/stati
 import { supabase } from './supabase';
 import { safeNext } from './guard';
 import { forgetAll, unsent } from './store/store.svelte';
+import { forgetChoice } from './consent.svelte';
 
 export const session = $state<{ user: User | null; ready: boolean }>({
 	user: null,
@@ -18,19 +19,34 @@ const OWNER = 'tm:cached-for';
  * do. On a shared phone the next person to sign in would otherwise be drawn
  * the previous account's trips before the server had said a word -- row-level
  * security stepped around by the device, with nobody doing anything wrong.
+ *
+ * Cleared only when somebody leaves, or somebody else arrives. Auth answers
+ * "no session" for an expired token it could not refresh -- opened offline,
+ * say -- while keeping the session in storage for the next try; that is not
+ * a departure, and a device wiped on it takes the unsent queue with it.
  */
-async function ownedBy(id: string | null): Promise<void> {
+async function ownedBy(id: string): Promise<void> {
 	let owner: string | null = null;
 	try {
 		owner = localStorage.getItem(OWNER);
 	} catch {
 		// No localStorage to remember an owner with: clear rather than guess.
 	}
-	if (owner === id && owner !== null) return;
+	if (owner === id) return;
 	await forgetAll();
 	try {
-		if (id) localStorage.setItem(OWNER, id);
-		else localStorage.removeItem(OWNER);
+		localStorage.setItem(OWNER, id);
+	} catch {
+		// As above.
+	}
+}
+
+/** Signed out: the trips go, and the diagnostics choice, which was theirs. */
+async function ownedByNobody(): Promise<void> {
+	await forgetAll();
+	forgetChoice();
+	try {
+		localStorage.removeItem(OWNER);
 	} catch {
 		// As above.
 	}
@@ -74,15 +90,16 @@ export function watchSession(): () => void {
 	// clearing is drawn the previous account's trips.
 	supabase.auth.getSession().then(async ({ data }) => {
 		const user = data.session?.user ?? null;
-		await ownedBy(user?.id ?? null);
+		if (user) await ownedBy(user.id);
 		session.user = user;
 		session.ready = true;
 	});
-	const { data } = supabase.auth.onAuthStateChange((_event, s) => {
+	const { data } = supabase.auth.onAuthStateChange((event, s) => {
 		const user = s?.user ?? null;
 		// Not awaited here: nothing in the clearing has anything to say back
 		// to auth, so readiness waits on it rather than auth doing.
-		void ownedBy(user?.id ?? null).then(() => {
+		const settled = user ? ownedBy(user.id) : event === 'SIGNED_OUT' ? ownedByNobody() : Promise.resolve();
+		void settled.then(() => {
 			session.user = user;
 			session.ready = true;
 		});
@@ -108,7 +125,7 @@ export async function signOut(): Promise<boolean> {
 		return false;
 	}
 	await supabase.auth.signOut();
-	await ownedBy(null);
+	await ownedByNobody();
 	return true;
 }
 

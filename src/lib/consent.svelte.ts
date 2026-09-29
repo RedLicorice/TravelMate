@@ -34,5 +34,18 @@ export function choose(telemetry: boolean) {
 	}
 }
 
+/**
+ * Signed out: the choice was that person's, not the device's. Left behind
+ * it would be copied onto whoever signs in next.
+ */
+export function forgetChoice() {
+	consent.choice = null;
+	try {
+		localStorage.removeItem(KEY);
+	} catch {
+		// As above.
+	}
+}
+
 /** Off unless yes. */
 export const diagnosticsAllowed = () => consent.choice?.telemetry === true;
