@@ -248,8 +248,12 @@ export type Writer = {
 	/** Change some columns of a row. Unchanged columns are not sent. */
 	update(table: Table, key: Key, values: Row): void;
 	remove(table: Table, key: Key): void;
-	/** The trip's plan, as drawn, replacing the stored one -- for the given days, or whole. */
-	plan(trip: string, rows: Row[], plannerVersion: number, days?: number[]): string;
+	/**
+	 * The trip's plan, as drawn, replacing the stored one -- for the given
+	 * days, or whole. `replanned` says Replan decided it, which is what
+	 * stamps the trip; a re-time leaves the stamp as it was.
+	 */
+	plan(trip: string, rows: Row[], plannerVersion: number, days?: number[], replanned?: boolean): string | null;
 };
 
 /** What serialises edits to a row on the server: its trip, or its person. */
@@ -332,8 +336,15 @@ export async function mutate(
 			const base = (confirmed.get(rowId(table, key))?.row.version as number | undefined) ?? null;
 			push({ op: 'delete', table, key, lock: lockOf(table, was), base, before: was });
 		},
-		plan(trip, rows, plannerVersion, days) {
-			const generated_at = new Date().toISOString();
+		plan(trip, rows, plannerVersion, days, replanned = false) {
+			// The stamp is what "changes since this plan was made" is counted
+			// against, and what says a place has never been planned. A re-time
+			// seats nothing new, so it sends the stamp the trip already has --
+			// none, for a trip Replan has never decided -- rather than a fresh
+			// one that made every edit look like a plan.
+			const generated_at = replanned
+				? new Date().toISOString()
+				: ((current('trips', { id: trip })?.plan_generated_at as string | null | undefined) ?? null);
 			push({ op: 'plan', trip, rows, planner_version: plannerVersion, generated_at, ...(days ? { days } : {}) });
 			return generated_at;
 		}
