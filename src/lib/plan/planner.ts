@@ -322,7 +322,7 @@ export const BLOCK_CATEGORY = 'block';
  * trip. A stored plan older than this re-times itself when the trip is opened,
  * so the traveller never has to tap Replan because the app changed.
  */
-export const PLANNER_VERSION = 5;
+export const PLANNER_VERSION = 6;
 
 /** The default when nobody has rated a stop: wanting it averagely. */
 const NEUTRAL_PRIORITY = 3;
@@ -1066,6 +1066,12 @@ function walkClock(
 	 * then spend ninety minutes getting to Stansted, arriving after the desk
 	 * had closed. The hotel and the bags are placements now, which is why the
 	 * anchors are walked here before the journey is: they are the way home.
+	 *
+	 * Only the legs of the journey out, not its dwell. The day already ends
+	 * where checking in begins -- the terminal card's clock is the flight less
+	 * the check-in allowance -- so counting that allowance here as well
+	 * charged it twice, and a stop done two hours before check-in was told it
+	 * ran past the end of the day.
 	 */
 	const tailCost = (from: LatLng, next: number) => {
 		let point = from;
@@ -1079,7 +1085,7 @@ function walkClock(
 		}
 		for (const w of day.fixedEnd) {
 			const terminal = w.kind === 'terminal' || fromTerminal;
-			total += leg(point, w.at, allowedModes, terminal, travel).minutes + w.dwellMin;
+			total += leg(point, w.at, allowedModes, terminal, travel).minutes;
 			point = w.at;
 			fromTerminal = w.kind === 'terminal';
 		}
@@ -1425,10 +1431,25 @@ export function replan(input: PlanInput): PlanResult {
 	// rebalancing never ran at all, and a full day never shed anything to an
 	// empty one. Every test fixture ends at 19:00, where dinner does not fit,
 	// which is why nothing caught it.
+	//
+	// Only what falls inside the day's window. The journey cards sit at the
+	// times their tickets say, and most of a journey is outside the day: the
+	// flight home lands hours after the day ended at check-in. Measuring the
+	// day as "start to the last card" counted all of that against it, and the
+	// departure day was priced as having no room for anything.
 	const anchorMin = input.days.map((day) => {
 		const stops = walkClock([], day, input.allowedModes, input.timezone, curves, [], travel).stops;
-		const last = stops[stops.length - 1];
-		return last ? Math.max(0, (last.depart.getTime() - day.start.getTime()) / 60_000) : 0;
+		return stops.reduce(
+			(sum, s) =>
+				sum +
+				Math.max(
+					0,
+					Math.min(s.depart.getTime(), day.end.getTime()) -
+						Math.max(s.arrive.getTime(), day.start.getTime())
+				) /
+					60_000,
+			0
+		);
 	});
 
 	const buckets = assignDays(input.pois, input.days, anchorMin);
@@ -1540,9 +1561,16 @@ export function replan(input: PlanInput): PlanResult {
 		const dropped = result.unplaced.filter((u) => u.reason === 'day-full' && !u.poi.pinned);
 		if (!dropped.length) break;
 
+		// How much of the day is spent, up to its last card in the city. The
+		// journey out is not in the city: its cards run to the flight landing,
+		// which is hours past the end of the day, and would count the day as
+		// overdrawn before a stop was put on it.
 		const used = new Map<number, number>();
 		for (const day of result.days) {
-			const end = day.stops[day.stops.length - 1]?.depart.getTime();
+			const end = day.stops
+				.filter((s) => s.anchorKind !== 'terminal' && s.anchorKind !== 'service')
+				.at(-1)
+				?.depart.getTime();
 			used.set(day.index, end ? end - input.days[day.index].start.getTime() : 0);
 		}
 		const roomOn = (i: number) =>
