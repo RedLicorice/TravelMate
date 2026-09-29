@@ -584,6 +584,12 @@ export function orderDay(
 	let cursor = start;
 	let clock = day.start.getTime();
 	/**
+	 * Where a card is reached from here: a chain answers with whichever of
+	 * its shops is nearest, the same one the walk will go to.
+	 */
+	const reach = (p: PlanPoi, from: LatLng | null) =>
+		from ? nearestBranch(p, from, haversineKm) : at(p);
+	/**
 	 * Nearest neighbour from wherever the day stands, for as long as the next
 	 * stop and the way on to `next` would be done before `until`.
 	 */
@@ -592,22 +598,24 @@ export function orderDay(
 			let bestI = 0;
 			let bestD = Infinity;
 			remaining.forEach((p, i) => {
-				const d = cursor ? haversineKm(cursor, at(p)) : 0;
+				const d = cursor ? haversineKm(cursor, reach(p, cursor)) : 0;
 				if (d < bestD) {
 					bestD = d;
 					bestI = i;
 				}
 			});
 			const p = remaining[bestI];
+			const where = reach(p, cursor);
 			const done =
 				clock +
-				((cursor ? leg(cursor, p, allowedModes, false, travel).minutes : 0) + p.durationMin) *
+				((cursor ? leg(cursor, where, allowedModes, false, travel).minutes : 0) + p.durationMin) *
 					60_000;
-			const onward = next ? leg(p.exitAt ?? p, next, allowedModes, false, travel).minutes : 0;
+			const leaves = p.exitAt ?? where;
+			const onward = next ? leg(leaves, reach(next, leaves), allowedModes, false, travel).minutes : 0;
 			if (done + onward * 60_000 > until) break;
 			remaining.splice(bestI, 1);
 			route.push(p);
-			cursor = p.exitAt ?? at(p);
+			cursor = leaves;
 			clock = done;
 		}
 	};
@@ -618,10 +626,11 @@ export function orderDay(
 	for (const h of held) {
 		thread(holdsClock(h) ? Date.parse(h.at) : Infinity, h);
 		route.push(h);
-		const reach =
-			clock + (cursor ? leg(cursor, h, allowedModes, false, travel).minutes : 0) * 60_000;
-		clock = (holdsClock(h) ? Math.max(reach, Date.parse(h.at)) : reach) + h.durationMin * 60_000;
-		cursor = at(h);
+		const where = reach(h, cursor);
+		const got =
+			clock + (cursor ? leg(cursor, where, allowedModes, false, travel).minutes : 0) * 60_000;
+		clock = (holdsClock(h) ? Math.max(got, Date.parse(h.at)) : got) + h.durationMin * 60_000;
+		cursor = h.exitAt ?? where;
 	}
 	thread(Infinity, null);
 
@@ -1213,7 +1222,10 @@ function walkClock(
 			while (next < pois.length && !holdsClock(pois[next])) next++;
 			const missesNext =
 				next < pois.length &&
-				finish + leg(leaves, pois[next], allowedModes, false, travel).minutes * 60_000 >
+				finish +
+					leg(leaves, nearestBranch(pois[next], leaves, haversineKm), allowedModes, false, travel)
+						.minutes *
+						60_000 >
 					Date.parse(pois[next].at);
 			if (runsLate || missesNext) {
 				overflowed.push(p);
