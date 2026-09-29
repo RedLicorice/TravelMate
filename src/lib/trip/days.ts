@@ -339,15 +339,18 @@ export function tripDays(trip: Trip): Day[] {
 		// card. Measuring it any other way -- a buffer added to the arrival
 		// instant, a clamp before the departure -- is a second answer to a
 		// question the tickets have already answered, and the two drifted.
-		const journeyEnds = fixedStart.reduce(
-			(latest, w) =>
-				w.startsAt ? Math.max(latest, w.startsAt.getTime() + w.dwellMin * MIN) : latest,
-			-Infinity
-		);
-		const journeyBegins = fixedEnd.reduce(
-			(earliest, w) => (w.startsAt ? Math.min(earliest, w.startsAt.getTime()) : earliest),
-			Infinity
-		);
+		//
+		// Off the card that touches the city, and only that one: the terminal
+		// the traveller lands at, the terminal they leave from. The other cards
+		// read their tickets in another zone -- a flight home that lands in Los
+		// Angeles at ten in the morning is not over before it left Tokyo, but
+		// the latest of every card's clock said so, and the last day ended at
+		// one in the morning.
+		const landing = fixedStart.at(-1);
+		const journeyEnds = landing?.startsAt
+			? landing.startsAt.getTime() + landing.dwellMin * MIN
+			: -Infinity;
+		const journeyBegins = fixedEnd[0]?.startsAt?.getTime() ?? Infinity;
 
 		// Whoever gets in at six is in the city at six: the first day begins
 		// when they are out of the terminal, not when their usual day starts.
