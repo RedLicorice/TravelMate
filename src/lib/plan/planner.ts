@@ -1,4 +1,4 @@
-import { zonedInstant, type Day, type LatLng } from '$lib/trip/days';
+import type { Day, LatLng } from '$lib/trip/days';
 import { haversineKm } from './geo';
 import { nearestBranch } from '$lib/poi/branches';
 import { leg, type Leg, type Mode } from './modes';
@@ -15,8 +15,8 @@ import {
 	MEALS_PER_DAY,
 	mealMiss,
 	slotAt,
+	slotInstant,
 	slotsFrom,
-	toHHMM,
 	waitUntilSlot,
 	type MealName,
 	type MealSlot,
@@ -34,7 +34,7 @@ export function mealOwed(day: Day, slot: MealSlot, timezone: string): boolean {
 		...day.fixedStart.map((w) => w.startsAt?.getTime() ?? Infinity)
 	);
 	if (!Number.isFinite(departs)) return true;
-	return zonedInstant(day.date, toHHMM(slot.to), timezone).getTime() > departs;
+	return slotInstant(day.date, slot.to, timezone).getTime() > departs;
 }
 
 export type PlanPoi = {
@@ -976,8 +976,10 @@ function walkClock(
 			// traveller chose for it. (A skipped one counted as served above.)
 			const card = containers.get(slot.name) ?? null;
 
-			const opens = zonedInstant(day.date, toHHMM(slot.from), timezone).getTime();
-			const closes = zonedInstant(day.date, toHHMM(slot.to), timezone).getTime();
+			// A window that runs past midnight closes on the next date, which is
+			// still this day when the day ends after midnight.
+			const opens = slotInstant(day.date, slot.from, timezone).getTime();
+			const closes = slotInstant(day.date, slot.to, timezone).getTime();
 			if (opens > until) continue;
 
 			// The window has closed. On the last sweep a meal the day opened
