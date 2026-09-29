@@ -392,7 +392,9 @@ export function createDrag(
 		node.addEventListener('pointerdown', down);
 		return () => {
 			node.removeEventListener('pointerdown', down);
-			cleanup();
+			// Only this card's own drag is ended: cleanup is shared, and any
+			// card leaving the screen used to drop whichever card was held.
+			if (pending === id || state.id === id) cleanup();
 		};
 	}
 
