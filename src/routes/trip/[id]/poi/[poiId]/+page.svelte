@@ -167,11 +167,15 @@
 	}
 
 	async function remove() {
+		// A second tap while the first is on its way would remove twice.
+		if (saving) return;
+		saving = true;
 		try {
 			await mutate(`Removed ${poi?.name ?? 'a place'}`, tripId, (w) => removePoi(w, poiId));
 			await goto(`${base}/trip/${tripId}`, { replaceState: true });
 		} catch (e) {
 			error = (e as Error).message;
+			saving = false;
 		}
 	}
 
@@ -244,6 +248,7 @@
 			<div class="tm-skel" style="height:72px"></div>
 		</div>
 	{:else if !poi || !trip}
+		{#if error}<p class="tm-hint tm-hint--error mb-3">{error}</p>{/if}
 		<div class="tm-card" style="background: var(--tm-surface-2)">
 			<p class="tm-card__title">Not found</p>
 			<p class="tm-card__meta">This place may have been removed from the trip.</p>
@@ -592,6 +597,7 @@
 					<button
 						class="tm-btn flex-1"
 						style="background: var(--tm-danger-ink); color: var(--tm-surface)"
+						disabled={saving}
 						onclick={remove}
 					>
 						Remove

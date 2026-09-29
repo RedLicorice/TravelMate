@@ -3,7 +3,7 @@
 	import { page } from '$app/state';
 	import { base } from '$app/paths';
 	import { cityBBox, getTrip, toTrip, updateCityBBox } from '$lib/trip/repo';
-	import { mutate } from '$lib/store/store.svelte';
+	import { mutate, pullTrip } from '$lib/store/store.svelte';
 	import { tripDays } from '$lib/trip/days';
 	import { addPoi, DuplicatePoiError, listPois, sourceOf, type PoiRow } from '$lib/trip/pois';
 	import { between, listPlacements, place } from '$lib/trip/placements';
@@ -64,7 +64,13 @@
 
 	onMount(async () => {
 		try {
-			if (!trip) return;
+			// Opened by link on a phone that has never seen this trip: fetched
+			// first, as the edit page does, rather than searching a city of nothing.
+			if (!trip) await pullTrip(tripId);
+			if (!trip) {
+				error = 'Trip not found.';
+				return;
+			}
 			bbox = cityBBox(trip);
 			if (!bbox) {
 				// Trip saved before the city box was captured. Geocode the city
@@ -371,6 +377,13 @@
 	);
 </script>
 
+<!-- Escape puts the chain question away, as a dialog is expected to. -->
+<svelte:window
+	onkeydown={(e) => {
+		if (chain && e.key === 'Escape') chain = null;
+	}}
+/>
+
 <main class="flex h-dvh flex-col">
 	<div class="flex flex-col gap-3 p-4" style="border-bottom: 1px solid var(--tm-border)">
 		<div class="flex items-center justify-between">
@@ -581,7 +594,14 @@
 			style="position:fixed;inset:0;z-index:60;background:rgba(0,0,0,0.35)"
 			onclick={() => (chain = null)}
 		></div>
-		<div class="tm-sheet" style="position:fixed;z-index:61" {@attach swipeToClose(() => (chain = null))}>
+		<div
+			class="tm-sheet"
+			style="position:fixed;z-index:61"
+			role="dialog"
+			aria-modal="true"
+			aria-label="Which {chain.pick.name}?"
+			{@attach swipeToClose(() => (chain = null))}
+		>
 			<div class="tm-sheet__grip"></div>
 			<p class="tm-card__title">{chain.pick.name}</p>
 			<p class="tm-card__meta">
