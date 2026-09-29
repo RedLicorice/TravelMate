@@ -79,31 +79,43 @@
 		if (window.google?.maps?.Map) return Promise.resolve();
 		if (booting) return booting;
 
-		booting = new Promise<void>((resolve, reject) => {
+		const attempt = new Promise<void>((resolve, reject) => {
 			if (!PUBLIC_GOOGLE_MAPS_BROWSER_KEY) {
 				reject(new Error('No PUBLIC_GOOGLE_MAPS_BROWSER_KEY in this build'));
 				return;
 			}
 
+			const tag = document.createElement('script');
+			// A failed tag comes out of the page again: the retry adds its own,
+			// and a dead one left behind is one more thing to trip over.
+			const fail = (why: string) => {
+				tag.remove();
+				reject(new Error(why));
+			};
+
 			const w = window as unknown as Record<string, unknown>;
 			// A refused key is reported here, not through the script's onerror.
 			// Without listening for it, a referrer restriction is indis-
 			// tinguishable from being offline.
-			w.gm_authFailure = () => reject(new Error('Google refused the key for this address'));
+			w.gm_authFailure = () => fail('Google refused the key for this address');
 			w[READY_CALLBACK] = () => resolve();
 
-			const tag = document.createElement('script');
 			tag.src =
 				'https://maps.googleapis.com/maps/api/js' +
 				`?key=${PUBLIC_GOOGLE_MAPS_BROWSER_KEY}` +
 				'&v=weekly&loading=async&libraries=marker' +
 				`&callback=${READY_CALLBACK}`;
 			tag.async = true;
-			tag.onerror = () =>
-				reject(new Error('maps.googleapis.com did not load (offline, or blocked here)'));
+			tag.onerror = () => fail('maps.googleapis.com did not load (offline, or blocked here)');
 			document.head.appendChild(tag);
 		});
-		return booting;
+		booting = attempt;
+		// A rejection is not kept: the next start(), when the connection comes
+		// back, asks again rather than being handed the old failure.
+		attempt.catch(() => {
+			if (booting === attempt) booting = null;
+		});
+		return attempt;
 	}
 
 	/**

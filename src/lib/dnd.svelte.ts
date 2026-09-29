@@ -44,20 +44,24 @@ export function measure(ruler: HTMLElement): Ruler {
 	const box = ruler.getBoundingClientRect();
 	const from = Number(ruler.dataset.from);
 	const to = Number(ruler.dataset.to);
-	const cards = [...ruler.querySelectorAll<HTMLElement>('[data-start]')]
+	// Everything that says when it is: the cards, and the journeys drawn
+	// between them. Only the cards are cards -- a journey is never the one
+	// a dropped card goes after.
+	const marks = [...ruler.querySelectorAll<HTMLElement>('[data-start]')]
 		.map((el) => ({
-			id: el.dataset.card ?? '',
+			id: el.dataset.card,
 			r: el.getBoundingClientRect(),
 			start: Number(el.dataset.start),
 			end: Number(el.dataset.end)
 		}))
 		.sort((a, b) => a.r.top - b.r.top);
+	const cards = marks.filter((c): c is typeof c & { id: string } => c.id !== undefined);
 	const frac = (y: number) => (y - box.top) / box.height;
-	const points: [number, number][] = [[0, Math.min(from, cards[0]?.start ?? from)]];
-	for (const c of cards) {
+	const points: [number, number][] = [[0, Math.min(from, marks[0]?.start ?? from)]];
+	for (const c of marks) {
 		points.push([frac(c.r.top), c.start], [frac(c.r.bottom), c.end]);
 	}
-	points.push([1, Math.max(to, cards.at(-1)?.end ?? to)]);
+	points.push([1, Math.max(to, marks.at(-1)?.end ?? to)]);
 	// Time only runs forward down the page: a card drawn below one it starts
 	// before (an overlap) does not pull the ruler back.
 	for (let i = 1; i < points.length; i++) points[i][1] = Math.max(points[i][1], points[i - 1][1]);
@@ -96,9 +100,9 @@ function scrollParent(node: HTMLElement): HTMLElement | null {
 	let el: HTMLElement | null = node.parentElement;
 	while (el) {
 		const overflow = getComputedStyle(el).overflowY;
-		if ((overflow === 'auto' || overflow === 'scroll') && el.scrollHeight > el.clientHeight) {
-			return el;
-		}
+		// Not only when it already scrolls: a short day fits the screen until
+		// the held card opens it up, and then it has to scroll like any other.
+		if (overflow === 'auto' || overflow === 'scroll') return el;
 		el = el.parentElement;
 	}
 	return null;
@@ -158,6 +162,13 @@ export function createDrag(
 
 	let holdTimer: ReturnType<typeof setTimeout> | null = null;
 	let origin = { x: 0, y: 0 };
+	/**
+	 * How far below the held card's top edge the finger took hold of it.
+	 * Where the finger started is read back through the card, not the
+	 * screen: the day opens up and the list crawls while the card is held,
+	 * and neither is the finger moving.
+	 */
+	let grip = 0;
 	let pending: string | null = null;
 	/** Whether the finger has gone anywhere since picking the card up. */
 	let moved = false;
@@ -229,23 +240,26 @@ export function createDrag(
 			const fraction = Math.min(1, Math.max(0, (y - box.top) / box.height));
 			// Where the finger is decides the order: above a card, or on its
 			// upper half, the held card goes before it; lower down, after it.
-			// The line gives the minute -- unless the line's minute is later
-			// than the card it is going before starts (a card out of order with
-			// the one above it), and then it is that card's start, and that card
-			// and everything after it are pushed down.
+			// The line gives the minute.
 			const frac = (py: number) => Math.min(1, Math.max(0, (py - box.top) / box.height));
 			const picked = here.cards.find((c) => c.id === state.id);
-			const dy = y - origin.y;
 			let at: number;
 			if (picked) {
-				// From where the card starts: a minute per step close in, the
-				// rail's own pace further out.
-				const near = Math.max(-FINE_PX, Math.min(FINE_PX, dy));
-				at = picked.start + Math.round(near / FINE_PX_PER_MIN) * MIN_MS;
-				if (Math.abs(dy) > FINE_PX) {
-					const edge = origin.y + Math.sign(dy) * FINE_PX;
-					at = Math.round((at + timeAt(here, frac(y)) - timeAt(here, frac(edge))) / SNAP_MS) * SNAP_MS;
-				}
+				// How far the finger has gone along the day, from the point on
+				// the card it took hold of -- where that point is drawn now,
+				// after the day opened up and the list crawled past. Measured on
+				// the screen instead, a crawl moved the card hours down the day
+				// while the minute it would land at stood still.
+				const start = box.top + picked.top * box.height + grip;
+				const dy = y - start;
+				// Close in, a minute per step from where the card starts, so it
+				// can be nudged by exactly the few minutes wanted. Further out,
+				// the rail under the finger, as it is read everywhere else. It
+				// used to go on counting from the edge of the close-in stretch,
+				// and that edge sits inside the held card's own time: a
+				// two-hour card read an hour short of the rail.
+				if (Math.abs(dy) <= FINE_PX) at = picked.start + Math.round(dy / FINE_PX_PER_MIN) * MIN_MS;
+				else at = Math.round(timeAt(here, frac(y)) / SNAP_MS) * SNAP_MS;
 			} else {
 				at = Math.round(timeAt(here, fraction) / SNAP_MS) * SNAP_MS;
 			}
@@ -336,6 +350,7 @@ export function createDrag(
 			pointer = event.pointerId;
 			moved = false;
 			origin = { x: event.clientX, y: event.clientY };
+			grip = event.clientY - (node.closest('[data-start]') ?? node).getBoundingClientRect().top;
 			state.x = event.clientX;
 			state.y = event.clientY;
 
@@ -377,7 +392,9 @@ export function createDrag(
 		node.addEventListener('pointerdown', down);
 		return () => {
 			node.removeEventListener('pointerdown', down);
-			cleanup();
+			// Only this card's own drag is ended: cleanup is shared, and any
+			// card leaving the screen used to drop whichever card was held.
+			if (pending === id || state.id === id) cleanup();
 		};
 	}
 

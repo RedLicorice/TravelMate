@@ -6,6 +6,7 @@
 	import { goto } from '$app/navigation';
 	import {
 		cityBBox,
+		getPrivate,
 		getTrip,
 		hotelMissing,
 		setShareToken,
@@ -32,7 +33,6 @@
 		place,
 		placeAnchor,
 		placeMany,
-		between,
 		moveTo,
 		setFurnished,
 		setPlacementMinutes,
@@ -42,6 +42,7 @@
 		unplace as dropPlacement,
 		type PlacementRow
 	} from '$lib/trip/placements';
+	import { closingAt, minutesOf, pushDown, slotMoment, type Lengths, type Slot } from '$lib/trip/place';
 	import { tripDays, zonedInstant, type Day, type LatLng } from '$lib/trip/days';
 	import {
 		mealOwed,
@@ -62,7 +63,6 @@
 		latestPrep,
 		latestReady,
 		MEAL_LABEL,
-		MEAL_MINUTES,
 		MEAL_NAMES,
 		slotAt,
 		slotsFrom,
@@ -110,9 +110,11 @@
 		asideFor,
 		asideOn,
 		mutate,
+		pullTrip,
 		reject,
 		store,
 		upload,
+		upstream,
 		watchTrip,
 		type Mutation,
 		type Writer
@@ -169,7 +171,6 @@
 		// No clock: it is not on a day yet, and Replan is what gives it one.
 		at: '',
 		pinned: false,
-		pinnedAt: null,
 		branches: p.any_branch ? (p.branches ?? []) : null,
 		exitAt:
 			p.exit_lat !== null && p.exit_lng !== null ? { lat: p.exit_lat, lng: p.exit_lng } : null
@@ -184,10 +185,10 @@
 	 * however long it was given or whatever the trip's own allowance says, and
 	 * it is held where the traveller put it.
 	 */
-	const visitOf = (pl: PlacementRow, heldAt: string | null): PlanPoi | null => {
+	const visitOf = (pl: PlacementRow): PlanPoi | null => {
 		if (pl.kind === 'stop') {
 			const poi = pl.poi_id ? poiById.get(pl.poi_id) : null;
-			return poi ? toPlanPoi(poi, pl, heldAt) : null;
+			return poi ? toPlanPoi(poi, pl) : null;
 		}
 		if (!row) return null;
 		// A meal at a place the traveller chose is had there, for as long as
@@ -209,15 +210,11 @@
 			lat: venue?.lat ?? row.hotel_lat,
 			lng: venue?.lng ?? row.hotel_lng,
 			category: venue?.category ?? null,
-			durationMin: pl.skipped ? 0 : (pl.minutes ?? venue?.duration_min ?? allowanceFor(pl)),
+			durationMin: minutesOf(pl, lengths()),
 			priority: 3,
 			dayIndex: pl.day_index,
 			at: pl.at,
-			// Held in place by being an anchor, not by a pin. A pin would also
-			// hold the moment -- whatever the clock said last time -- and a
-			// time that is wrong once would then stay wrong for ever.
 			pinned: pl.pinned,
-			pinnedAt: pl.pinned ? heldAt : null,
 			branches: venue?.any_branch ? (venue.branches ?? []) : null,
 			exitAt:
 				venue && venue.exit_lat !== null && venue.exit_lng !== null ? { lat: venue.exit_lat, lng: venue.exit_lng } : null
@@ -225,17 +222,15 @@
 	};
 
 	/**
-	 * How long a piece of furniture takes when it has not been told.
-	 *
-	 * The trip's own sliders answer: the bags on the way in and out, and the
-	 * traveller's own getting-ready time, which is theirs across every trip.
+	 * What a card's length is read from when it has not been told: the trip's
+	 * own sliders -- the bags on the way in and out -- and the traveller's
+	 * own getting-ready time, which is theirs across every trip.
 	 */
-	function allowanceFor(pl: PlacementRow): number {
-		if (pl.kind === 'meal') return pl.meal ? MEAL_MINUTES[pl.meal] : 0;
-		if (pl.kind !== 'chore' || !row) return 0;
-		if (pl.name === 'Getting ready') return prep?.prepMin ?? 0;
-		return row.bag_drop_min;
-	}
+	const lengths = (): Lengths => ({
+		bagDropMin: row?.bag_drop_min ?? 0,
+		poi: (id) => poiById.get(id),
+		prepMin: prep?.prepMin ?? 0
+	});
 	/** Not on this device, and the server not yet asked for it. */
 	const loading = $derived(!row && !store.asked.includes(tripId));
 	let error = $state<string | null>(null);
@@ -252,21 +247,37 @@
 	/** The place whose card is open. Read from the device, so an edit shows on it at once. */
 	let cardedId = $state<string | null>(null);
 	const carded = $derived(cardedId ? (poiById.get(cardedId) ?? null) : null);
-	/** The journey whose sheet is open: tapping a leg shows it here rather than leaving for Google Maps. */
-	let legShown = $state<{
-		from: LatLng;
-		to: LatLng;
-		fromName: string;
-		toName: string;
-		mode: Mode;
-		departAt: string;
-		planned: { minutes: number; km: number; source?: 'estimate' | 'routed' };
-		/** The cards at either end, so a route chosen in the sheet can be kept on the second. */
-		fromCard: string | null;
-		toCard: string | null;
-		day: number;
-		chosen: string | null;
-	} | null>(null);
+	/**
+	 * The journey whose sheet is open: tapping a leg shows it here rather than
+	 * leaving for Google Maps. Named by the card it arrives at, and read off
+	 * the plan as drawn, so a day re-timed while the sheet is open -- a route
+	 * chosen in it, real journeys landing -- shows in the sheet too.
+	 */
+	let legShown = $state<{ day: number; into: string } | null>(null);
+	const legSheet = $derived.by(() => {
+		if (!legShown) return null;
+		const stops = drawn[legShown.day]?.stops ?? [];
+		const i = stops.findIndex((st) => st.id === legShown!.into);
+		const stop = stops[i];
+		const previous = stops[i - 1];
+		const legIn = stop?.legIn;
+		if (!stop || !previous || !legIn) return null;
+		const choice = choiceInto(stop.placementId, previous.placementId, legIn.mode);
+		return {
+			from: previous.exitAt ?? previous.at,
+			to: stop.at,
+			fromName: previous.name,
+			toName: stop.name,
+			mode: legIn.mode,
+			departAt: previous.depart.toISOString(),
+			planned: { minutes: legIn.minutes, km: legIn.km, source: legIn.source },
+			/** The cards at either end, so a route chosen in the sheet can be kept on the second. */
+			fromCard: previous.placementId ?? null,
+			toCard: stop.placementId ?? null,
+			day: legShown.day,
+			chosen: choice?.summary ?? null
+		};
+	});
 
 	/**
 	 * The route chosen for the journey into a card, when it is still that
@@ -287,7 +298,7 @@
 	}
 
 	/** Keep the route the traveller picked: its time becomes the journey's, and the day is re-timed on it. */
-	async function chooseRoute(shown: NonNullable<typeof legShown>, route: LegRoute) {
+	async function chooseRoute(shown: NonNullable<typeof legSheet>, route: LegRoute) {
 		const { fromCard, toCard, day, mode } = shown;
 		if (!fromCard || !toCard) return;
 		await edit(`Chose ${route.summary} to ${shown.toName}`, (w) => {
@@ -363,7 +374,7 @@
 			else if (change.poiId) chooseMeal(w, tripId, dayIdx, meal, change.poiId, at);
 			else addMeal(w, tripId, dayIdx, meal, at);
 			const card = mealCard(tripId, dayIdx, meal);
-			if (card) pushDown(w, card.id);
+			if (card) pushDown(w, tripId, card.id, lengths());
 			retime(w, [dayIdx]);
 		});
 	}
@@ -376,6 +387,8 @@
 	async function edit(name: string, work: (w: Writer) => void): Promise<boolean> {
 		try {
 			await mutate(name, tripId, work);
+			// An edit that landed is the answer to whatever went wrong before it.
+			error = null;
 			return true;
 		} catch (e) {
 			error = (e as Error).message;
@@ -516,7 +529,11 @@
 	 */
 	async function unplace(placementId: string) {
 		const name = carded?.name;
+		// Whichever sheet asked -- the place's card, the allowance sheet, the
+		// meal sheet -- is about a card that is about to be gone, so it closes.
 		cardedId = null;
+		allowanced = null;
+		mealed = null;
 		const card = placements.find((pl) => pl.id === placementId);
 		const night = card ? nightOf(tripId, card) : null;
 		// The hotel a day ends at, or the one the next starts at, is a night:
@@ -598,9 +615,15 @@
 		cardedId = null;
 		cardedVisit = null;
 		legShown = null;
+		error = null;
 		dayIndex = i;
 	}
 	let view = $state<'plan' | 'map' | 'wishlist'>('plan');
+	// What went wrong was about the view it was said on.
+	$effect(() => {
+		void view;
+		error = null;
+	});
 	let showDetails = $state(false);
 	/** The day with its own line drawn behind the cards. */
 	let expanded = $state(false);
@@ -608,7 +631,9 @@
 	/** Unassigned stops are their own layer on the map, not a day. */
 	let showUnassigned = $state(true);
 	let seeded = false;
-	const shareUrl = $derived(row?.share_token ? linkFor(row.share_token) : null);
+	/** The owner's alone: on anybody else's device there is none. */
+	const own = $derived(getPrivate(tripId));
+	const shareUrl = $derived(own?.share_token ? linkFor(own.share_token) : null);
 	let copied = $state(false);
 	const bbox = $derived(row ? cityBBox(row) : null);
 	const people = $derived(tripProfiles(tripId));
@@ -700,6 +725,8 @@
 		const first = row.furnished_days;
 		const wanted: Parameters<typeof placeMany>[1] = [];
 		for (let i = first; i < days.length; i++) {
+			// Furnished already, by another device the count has not caught up with.
+			if (placements.some((pl) => pl.day_index === i && pl.kind === 'hotel')) continue;
 			const last = i === days.length - 1;
 			const { start, end } = days[i];
 			if (i === 0 && row.arrival_point_name) {
@@ -758,14 +785,36 @@
 		const asked = Number(page.url.searchParams.get('day'));
 		if (Number.isInteger(asked) && asked >= 0) dayIndex = asked;
 	});
+	// Never a day the trip has not got: the link may be old, or the trip shorter now.
+	$effect(() => {
+		if (days.length && dayIndex >= days.length) dayIndex = days.length - 1;
+	});
 
 	/**
-	 * Furniture for days nobody has furnished, once per opening. Only by
-	 * someone who may edit the trip: a viewer's edit would only be refused.
+	 * The server's copy of the trip, read: set once it has answered this
+	 * opening. What this device held before then may be behind another
+	 * device's edits, and a decision taken on it is taken on stale news.
+	 */
+	let pulled = $state(false);
+	onMount(() => {
+		void pullTrip(tripId).then(() => (pulled = true), () => {});
+	});
+
+	/**
+	 * Furniture for days nobody has furnished, once per opening. This also
+	 * writes the trip's own furnished_days, and the trips table is the
+	 * owner's alone to write -- an editor's phone doing this would have the
+	 * server refuse the whole edit and "Set out the days" would retry on
+	 * every open. Only the owner's device runs it. And only on the trip as
+	 * the server has it: another device may have set the days out already,
+	 * and furnishing them from a stale copy gave a day two mornings. A trip
+	 * the server has never seen is this device's alone, so it need not wait
+	 * -- which is what keeps a trip made offline usable.
 	 */
 	let furnished = false;
 	$effect(() => {
-		if (furnished || !row || !days.length || !canEdit) return;
+		if (furnished || !row || !days.length || !isOwner) return;
+		if (!pulled && upstream('trips', { id: tripId })) return;
 		furnished = true;
 		untrack(furnish);
 	});
@@ -773,11 +822,12 @@
 	/**
 	 * Trips saved before the city box -- and before the country code -- was
 	 * captured. One geocode fills in whichever is missing, behind the screen
-	 * rather than in front of it.
+	 * rather than in front of it. This writes the trip row itself, which only
+	 * the owner may write, so only the owner's device does the filling in.
 	 */
 	let located = false;
 	$effect(() => {
-		if (located || !row || !canEdit || (bbox && row.country_code)) return;
+		if (located || !row || !isOwner || (bbox && row.country_code)) return;
 		located = true;
 		const found = row;
 		void provider.searchCities(found.city).then((matches) => {
@@ -878,7 +928,8 @@
 	/**
 	 * Every point a day's journeys run between: the tickets at either end, and
 	 * every card on the day where it is -- the hotel, a meal at its place, both
-	 * ends of a stop you leave from somewhere else. What the router is asked
+	 * ends of a stop you leave from somewhere else, every shop of a chain,
+	 * since the walk goes to whichever is nearest. What the router is asked
 	 * about is what the walk will travel between.
 	 */
 	function dayPoints(i: number): LatLng[] {
@@ -887,9 +938,13 @@
 		const anchors = [...day.fixedStart, ...day.fixedEnd].map((w) => w.at);
 		const cards = placements
 			.filter((pl) => pl.day_index === i && !pl.skipped)
-			.map((pl) => visitOf(pl, null))
+			.map((pl) => visitOf(pl))
 			.filter((v): v is PlanPoi => !!v)
-			.flatMap((v) => (v.exitAt ? [{ lat: v.lat, lng: v.lng }, v.exitAt] : [{ lat: v.lat, lng: v.lng }]));
+			.flatMap((v) => [
+				{ lat: v.lat, lng: v.lng },
+				...(v.exitAt ? [v.exitAt] : []),
+				...(v.branches ?? [])
+			]);
 		const seen = new Set<string>();
 		return [...anchors, ...cards].filter((p) => {
 			const key = `${p.lat.toFixed(5)},${p.lng.toFixed(5)}`;
@@ -928,6 +983,7 @@
 			if (points.length >= 2) tables.push(await resolveTravel(points, modes, null));
 		}
 
+		routed = tables;
 		travel = tables.length ? firstOf(tables) : undefined;
 	}
 
@@ -1044,6 +1100,10 @@
 	 * opened at; let go between two cards, halfway between them, which is a
 	 * minute both of them leave free; let go on the day itself, after the last
 	 * thing the day does and before the hotel it is slept in.
+	 *
+	 * One function for the hour on the card under the finger and the hour the
+	 * drop writes: the same number, so what the traveller sees while holding
+	 * is what they get.
 	 */
 	function momentOf(target: DropTarget, draggedId: string): string | null {
 		if (!target) return null;
@@ -1056,55 +1116,13 @@
 		// activities -- when the last of them is over, before the hotel the day
 		// is slept in, which is pushed down to make room.
 		const cards = (result?.days[target.day]?.stops ?? []).filter((st) => st.placementId !== draggedId);
-		let index = cards.length;
-		while (index > 0 && cards[index - 1].anchor) index--;
-		const last = cards[index - 1];
+		const last = cards[closingAt(cards) - 1];
 		return minute((last?.depart ?? days[target.day]?.start ?? new Date()).getTime());
 	}
 
-	/**
-	 * The minute between two cards, or beyond the one card there is.
-	 *
-	 * Halfway into the space beside it: the gap where there is one, and
-	 * otherwise between the two clocks themselves, which always leaves the
-	 * card between the pair it was put between.
-	 */
-	function spaceAt(cards: PlannedStop[], index: number, day: number): string {
-		const prev = cards[index - 1];
-		const next = cards[index];
-		if (prev && next) {
-			const from = prev.depart < next.arrive ? prev.depart : prev.arrive;
-			return between(from, next.arrive);
-		}
-		// Beyond the one card there is, wherever that falls: the day's window is
-		// the automatic plan's to respect, and a card put by hand goes where
-		// the traveller put it.
-		if (prev) return new Date(prev.depart.getTime() + 15 * 60_000).toISOString();
-		if (next) return new Date(next.arrive.getTime() - 60 * 60_000).toISOString();
-		return (days[day]?.start ?? new Date()).toISOString();
-	}
-
-	/**
-	 * When a card added from a slot happens.
-	 *
-	 * Tapped in an opened gap, the gap is drawn to scale and the tap said a
-	 * time: that is the answer. Tapped on the slot above a card, it happens in
-	 * the space before that card. With nothing named, it happens after the
-	 * last thing the day does and before the hotel it is slept in.
-	 */
-	function momentFor(target: { day: number; before: string | null; at?: string | null }): string {
-		if (target.at) return target.at;
-		const cards = result?.days[target.day]?.stops ?? [];
-		let index = target.before
-			? cards.findIndex((st) => st.poiId === target.before || st.placementId === target.before)
-			: -1;
-		if (index < 0) {
-			index = cards.length;
-			while (index > 0 && cards[index - 1].anchor) index--;
-		}
-		return spaceAt(cards, index, target.day);
-	}
-
+	/** When a card added from a slot happens: the shared rule (place.ts), on this day's cards. */
+	const momentFor = (target: Slot) =>
+		slotMoment(target, result?.days[target.day]?.stops ?? [], days[target.day]?.start);
 
 	/**
 	 * A manual move runs steps 3-5 only -- the traveller has just stated the
@@ -1116,16 +1134,11 @@
 			day: target?.day ?? null,
 			at: target?.at ?? null
 		});
-		if (draggedId.startsWith(SLOT_DRAG)) return moveSlot(draggedId, target);
-
 		if (!target) return;
 		const day = target.day;
-		const when = dropMoment(draggedId, target);
+		const when = momentOf(target, draggedId);
 		if (when === null) return;
 
-		// Its old card time is where it used to be, and it is not there any
-		// more: the walk about to run decides how the day reads around it.
-		justMoved = draggedId;
 		// Follow the stop to its new day. Without this it simply vanishes from
 		// the day on screen and the move looks like a deletion.
 		dayIndex = day;
@@ -1137,97 +1150,9 @@
 		const from = placements.find((pl) => pl.id === draggedId)?.day_index ?? day;
 		await edit(`Moved ${nameOf(draggedId) || 'a card'}`, (w) => {
 			moveTo(w, draggedId, when, day);
-			pushDown(w, draggedId);
+			pushDown(w, tripId, draggedId, lengths());
 			retime(w, [...new Set([from, day])]);
 		});
-		// It has a card of its own again, so it is held to that from here.
-		justMoved = null;
-	}
-
-	/**
-	 * Make room below a card that has just been put somewhere -- dropped,
-	 * added from a sheet, a meal said or moved: every card, however it got
-	 * there, the same way.
-	 *
-	 * The card starts when it was put and ends its own length later. What is
-	 * below it on the day and now starts before it ends is pushed down to
-	 * start when it ends, and so on down the day, each by only as much as it
-	 * has to: the traveller put this card here, and the day gives way. A pin
-	 * does not: it and everything after it stay, and the card that runs into
-	 * it is the one the walk warns.
-	 */
-	function pushDown(w: Writer, id: string) {
-		// Read as this edit has left it -- the card is new, or has just moved --
-		// and all of it before the first push: each push changes what the trip
-		// reads as.
-		const length = (pl: PlacementRow) => (visitOf(pl, null)?.durationMin ?? 0) * 60_000;
-		const card = placements.find((pl) => pl.id === id);
-		if (!card) return;
-		const start = Date.parse(card.at);
-		let end = start + length(card);
-		// Below it is what starts later, or starts at the same minute and ends
-		// later: a card that starts then and is already over -- the hotel the
-		// day wakes up in -- comes before it, and is not in its way. And a card
-		// that started earlier and is still going at this minute: the card was
-		// put before it, inside its time, so it goes after.
-		const below = placements
-			.filter(
-				(pl) =>
-					pl.day_index === card.day_index &&
-					pl.id !== id &&
-					(Date.parse(pl.at) > start ||
-						(Date.parse(pl.at) === start && Date.parse(pl.at) + length(pl) > end) ||
-						(!pl.pinned && Date.parse(pl.at) < start && Date.parse(pl.at) + length(pl) > start))
-			)
-			.sort((a, b) => a.at.localeCompare(b.at) || length(a) - length(b))
-			.map((pl) => ({ id: pl.id, at: Date.parse(pl.at), length: length(pl), pinned: pl.pinned }));
-		for (const pl of below) {
-			if (pl.pinned) break;
-			const start = Math.max(pl.at, end);
-			if (start !== pl.at) moveTo(w, pl.id, new Date(start).toISOString());
-			end = start + pl.length;
-		}
-	}
-
-	/**
-	 * A meal container is dragged as itself, not as whatever fills it: moving
-	 * a slot is moving the meal, and the place inside comes with it.
-	 *
-	 * It cannot be reordered the way a stop is -- it owns no row in the
-	 * wishlist and its whole position is the hour it is told to sit at. So a
-	 * drop takes the moment of whatever it landed on. A slot is keyed by its
-	 * day and its meal, and a day has one lunch, so it stays on its own day.
-	 */
-	async function moveSlot(draggedId: string, target: DropTarget) {
-		if (!target) return;
-		const [, rawDay, meal] = draggedId.split(':');
-		const day = Number(rawDay);
-		// Dropped in a gap, it happens at the moment it was let go; dropped on a
-		// stop, at that stop's moment. A meal is a stop like any other and lands
-		// where it was put.
-		// Let go in an opened gap it happens at the moment it was let go; let go
-		// on a card it happens when that card does. A meal is a stop like any
-		// other and lands where it was put.
-		const at = dropMoment(draggedId, target);
-		if (!at) return;
-		await sayMeal(day, meal as MealName, { at });
-	}
-
-	/**
-	 * The moment a held card would be put at, if it were let go here.
-	 *
-	 * One function for both: the hour on the card under the finger and the
-	 * hour the drop writes are the same number, so what the traveller sees
-	 * while holding is what they get.
-	 */
-	function dropMoment(draggedId: string, target: DropTarget): string | null {
-		if (!target) return null;
-		if (!draggedId.startsWith(SLOT_DRAG)) return momentOf(target, draggedId);
-		// A meal container stays on its own day, and happens at the moment on
-		// the rail where it was let go.
-		const day = Number(draggedId.split(':')[1]);
-		if (target.day !== day || !target.at) return null;
-		return new Date(Math.round(Date.parse(target.at) / 60_000) * 60_000).toISOString();
 	}
 
 	/** Where the held card would go: the moment, and the day it is on. */
@@ -1235,13 +1160,12 @@
 		const id = drag.state.id;
 		const target = drag.state.target;
 		if (!id || !target) return null;
-		const at = dropMoment(id, target);
+		const at = momentOf(target, id);
 		return at ? { at: new Date(at), day: target.day } : null;
 	});
 
-	/** What a card is called, by the id it is dragged by: its place, its meal, or its own name. */
+	/** What a card is called, by the visit it is dragged by: its place, its meal, or its own name. */
 	function nameOf(id: string): string {
-		if (id.startsWith(SLOT_DRAG)) return MEAL_LABEL[id.split(':')[2] as MealName];
 		for (const d of result?.days ?? []) {
 			const card = d.stops.find((st) => st.placementId === id);
 			if (card) return card.name;
@@ -1262,11 +1186,12 @@
 	 * places, a journey filed under the wrong pair -- was reused for ever and
 	 * never replaced by a real answer. It still covers the journeys this visit
 	 * has not asked Google about.
+	 *
+	 * Derived, not built on each ask: a held card asks on every move of the
+	 * finger, and building the tables again each time read the whole plan
+	 * for every pixel.
 	 */
-	const known = () => {
-		const tables = [chosenLegs(), ...(travel ? [travel] : []), tableFromPlan(stored)];
-		return firstOf(tables);
-	};
+	const known = $derived(firstOf([chosenLegs(), ...(travel ? [travel] : []), tableFromPlan(stored)]));
 
 	/**
 	 * The routes travellers chose (leg_choice), first of all: a journey someone
@@ -1294,29 +1219,6 @@
 			}
 		};
 	}
-
-	/**
-	 * When each stop currently happens, from the card on the plan.
-	 *
-	 * This is where a stop's time lives. A pin says Replan may not move it; the
-	 * card says what it may not be moved from.
-	 */
-	const cardAt = $derived.by(() => {
-		const at = new Map<string, string>();
-		for (const day of drawn) {
-			// Keyed by the visit, not the place: two coffees at the same cafe
-			// are two cards with two times, and keying by what they are of
-			// would hold both to whichever was written last.
-			for (const st of day.stops) if (st.placementId) at.set(st.placementId, st.arrive.toISOString());
-		}
-		return at;
-	});
-
-	/**
-	 * A stop the traveller has just dragged, whose card time is the one it had
-	 * before the drag and so must not be held to.
-	 */
-	let justMoved = $state<string | null>(null);
 
 	/** Retime Day: while it runs, what it found, and the cards it moved. */
 	let retiming = $state(false);
@@ -1369,17 +1271,9 @@
 	function planInput() {
 		if (!row || !days.length) return null;
 		return {
-			pois: placements
-				.map((pl) => {
-					// The card just put somewhere starts no earlier than the minute it
-					// was put at -- not the time its old card showed -- and, like any
-					// other card, later if the one above runs into it. Holding it at
-					// the minute, as a pin, drew it there and then let the next walk
-					// move it: the card slid a few minutes after the finger let go.
-					if (pl.id === justMoved) return visitOf(pl, pl.at);
-					return visitOf(pl, cardAt.get(pl.id) ?? null);
-				})
-				.filter((v): v is NonNullable<typeof v> => !!v),
+			// Every card from its own clock: the walk starts each one no earlier
+			// than the minute it says, and later if the one above runs into it.
+			pois: placements.map(visitOf).filter((v): v is NonNullable<typeof v> => !!v),
 			days,
 			allowedModes: row.allowed_modes as Mode[],
 			timezone: row.timezone,
@@ -1423,8 +1317,20 @@
 
 	/** Set while journeys are being worked out, so Retime Day can say when it is done. */
 	let routingNow = false;
+	/** The page is gone: nothing asked of the router after this is written anywhere. */
+	let gone = false;
+	onMount(() => () => {
+		gone = true;
+		if (routing) clearTimeout(routing);
+	});
 
+	/** One at a time: a second round asked for while one is out waits its turn. */
 	async function routeDays() {
+		routing = null;
+		if (routingNow) {
+			routing = setTimeout(routeDays, 1000);
+			return;
+		}
 		routingNow = true;
 		try {
 			await routeDaysNow();
@@ -1433,8 +1339,14 @@
 		}
 	}
 
+	/**
+	 * Every table the router has answered this visit, newest first. Kept flat
+	 * rather than folded into the last one: each fold wrapped the table before
+	 * it one layer deeper, and a long visit's lookups walked them all.
+	 */
+	let routed: TravelTable[] = [];
+
 	async function routeDaysNow() {
-		routing = null;
 		if (!row || !navigator.onLine || !toRoute.size) return;
 		if (drag.state.id || busy) {
 			routing = setTimeout(routeDays, 1000);
@@ -1449,12 +1361,16 @@
 				? resolveTravel(points, modes, days[i]?.start.toISOString() ?? null)
 				: Promise.resolve(noTravel);
 		});
-		travel = firstOf([...tables, ...(travel ? [travel] : [])]);
+		if (gone) return;
+		// ponytail: capped at 64 tables; the stored plan still remembers older journeys
+		routed = [...tables, ...routed].slice(0, 64);
+		travel = firstOf(routed);
 		// The finger may have come down while the router was answering.
 		while (drag.state.id || busy) await new Promise((r) => setTimeout(r, 300));
+		if (gone) return;
 		const input = planInput();
 		if (!input) return;
-		const next = schedule({ ...input, travel: known() }, new Set(which));
+		const next = schedule({ ...input, travel: known }, new Set(which));
 		const moved = next.days.some((d) =>
 			d.stops.some((st) => {
 				const now = drawn[d.index]?.stops.find((x) => (st.placementId ? x.placementId === st.placementId : x.name === st.name));
@@ -1481,7 +1397,7 @@
 		// Only the days the edit touched, when it says which: the rest of the
 		// trip did not change, and walking, saving and sending it again is
 		// what made every edit cost as much as the whole trip.
-		const next = schedule({ ...input, travel: known() }, days ? new Set(days) : undefined);
+		const next = schedule({ ...input, travel: known }, days ? new Set(days) : undefined);
 		savePlan(w, tripId, next, stored, days);
 		// And then, off the finger's path, the real journeys for these days.
 		routeSoon(next.days.map((d) => d.index));
@@ -1511,9 +1427,6 @@
 			}
 		}
 	}
-
-	/** What a meal container is called while it is being dragged. */
-	const SLOT_DRAG = 'meal:';
 
 	const drag = createDrag(
 		(id, target) => applyMove(id, target),
@@ -1551,7 +1464,7 @@
 		const me = drawn.flatMap((d) => d.stops).find((st) => st.placementId === id);
 		const category = pl?.poi_id ? poiById.get(pl.poi_id)?.category : null;
 		if (!me || (pl?.kind === 'meal' && !pl.poi_id) || category === BLOCK_CATEGORY) return 0;
-		return leg(above.exitAt ?? above.at, me.at, row.allowed_modes as Mode[], false, known()).minutes;
+		return leg(above.exitAt ?? above.at, me.at, row.allowed_modes as Mode[], false, known).minutes;
 	}
 
 	/**
@@ -1657,16 +1570,20 @@
 		// because the app changed underneath them is the app's problem.
 		const stale = (row.plan_version ?? 0) < PLANNER_VERSION;
 
+		// Only the days that need it: a card put on a day from another screen
+		// -- the search reached from a slot, a place's own page -- and not yet
+		// walked into the plan, and a card whose visit is gone because the
+		// place was removed from its own page. A skipped meal is never in the
+		// plan: that is what skipping it means.
 		const inPlan = new Set(stored.map((r) => r.placement_id).filter(Boolean));
-		// A skipped meal is never in the plan: that is what skipping it means.
-		const placedButUnplanned = placements.some((pl) => !pl.skipped && !inPlan.has(pl.id));
-		// A card whose visit is gone -- the place was removed from its own page.
 		const visits = new Set(placements.map((pl) => pl.id));
-		const plannedButGone = stored.some((r) => r.placement_id && !visits.has(r.placement_id));
+		const touched = new Set<number>();
+		for (const pl of placements) if (!pl.skipped && !inPlan.has(pl.id)) touched.add(pl.day_index);
+		for (const r of stored) if (r.placement_id && !visits.has(r.placement_id)) touched.add(r.day_index);
 
-		if (!stale && !placedButUnplanned && !plannedButGone) return;
+		if (!stale && !touched.size) return;
 		retimed = true;
-		untrack(() => void edit('Re-timed the days', (w) => retime(w)));
+		untrack(() => void edit('Re-timed the days', (w) => retime(w, stale ? undefined : [...touched])));
 	});
 
 	/** The put-aside edit whose sheet is open. */
@@ -1989,7 +1906,7 @@
 				name: kind === 'chore' ? 'Time to yourself' : null,
 				minutes: kind === 'chore' ? 60 : 0
 			});
-			pushDown(w, card.id);
+			pushDown(w, tripId, card.id, lengths());
 			retime(w, [target.day]);
 		});
 	}
@@ -2048,12 +1965,8 @@
 	 * or the space above the card it was put before. What it now overlaps is
 	 * pushed down, and the day is re-timed around it in the same edit.
 	 */
-	function placeInto(
-		w: Writer,
-		poiId: string,
-		target: { day: number; before: string | null; at?: string; hold?: boolean }
-	) {
-		pushDown(w, place(w, tripId, poiId, target.day, momentFor(target)).id);
+	function placeInto(w: Writer, poiId: string, target: Slot) {
+		pushDown(w, tripId, place(w, tripId, poiId, target.day, momentFor(target)).id, lengths());
 		dayIndex = target.day;
 		retime(w, [target.day]);
 	}
@@ -2063,9 +1976,7 @@
 	 * every wishlist place that has none yet.
 	 */
 	function everyVisit(): PlanPoi[] {
-		const visits = placements
-			.map((pl) => visitOf(pl, cardAt.get(pl.id) ?? null))
-			.filter((v): v is PlanPoi => !!v);
+		const visits = placements.map(visitOf).filter((v): v is PlanPoi => !!v);
 		const placedPois = new Set(placements.map((pl) => pl.poi_id));
 		return [...visits, ...pois.filter((p) => !placedPois.has(p.id)).map(draftVisit)];
 	}
@@ -2185,8 +2096,8 @@
 				// had never been anywhere, and a card drawn from one of those has
 				// no visit to name -- which is not something the stored plan can
 				// hold, and not something a later drag could move.
-				const settled = schedule({ ...input, pois: everyVisit(), travel: known() });
-				savePlan(w, tripId, settled, stored);
+				const settled = schedule({ ...input, pois: everyVisit(), travel: known });
+				savePlan(w, tripId, settled, stored, undefined, true);
 				track('plan.replan', {
 					days: settled.days.length,
 					cards: settled.days.reduce((n, d) => n + d.stops.length, 0),
@@ -2307,12 +2218,12 @@
 					describeJourney(row.arrival_legs ?? [])
 						? ['Arrival journey', describeJourney(row.arrival_legs)]
 						: null,
-					row.arrival_booking_ref ? ['Arrival booking', row.arrival_booking_ref] : null,
+					own?.arrival_refs.at(-1) ? ['Arrival booking', own.arrival_refs.at(-1)] : null,
 					['Departure', stamp(row.departure_at, row.timezone)],
 					describeJourney(row.departure_legs ?? [])
 						? ['Departure journey', describeJourney(row.departure_legs)]
 						: null,
-					row.departure_booking_ref ? ['Departure booking', row.departure_booking_ref] : null,
+					own?.departure_refs[0] ? ['Departure booking', own.departure_refs[0]] : null,
 					['Timezone', row.timezone],
 					['Getting around', (row.allowed_modes ?? []).join(', ')]
 				].filter(Boolean) as [string, string][])
@@ -2865,16 +2776,12 @@
 					</div>
 				{:else if current}
 					{#each current.stops as stop, i (stop.id ?? `${stop.name}:${i}`)}
-						<!-- A meal container drags as itself: it owns no row in the
-						     wishlist, so its name while held is its day and its meal. -->
 						<!-- A card is dragged as the visit it is, not as the place it
 						     is of: the same cafe can be on the day twice, and "the
-						     cafe" cannot say which of them is being moved. -->
-						{@const grabId = !canEdit
-							? null
-							: stop.anchorKind === 'meal' && !stop.placementId
-								? `${SLOT_DRAG}${dayIndex}:${mealFor(stop) ?? ''}`
-								: stop.placementId}
+						     cafe" cannot say which of them is being moved. A card
+						     with no visit -- a sitting on a plan stored before meals
+						     were cards -- is not dragged; Replan gives it one. -->
+						{@const grabId = canEdit ? stop.placementId : null}
 						<!-- An empty meal container is a question: what are you eating?
 						     The whole card asks it, not the four words of its name. -->
 						{@const emptyMeal = stop.anchorKind === 'meal' && !stop.poiId}
@@ -2893,31 +2800,20 @@
 							{@const legIn = stop.legIn}
 							{@const choice = choiceInto(stop.placementId, previous.placementId, legIn.mode)}
 							<LegDetail
+								from={stop.arrive.getTime() - legIn.minutes * 60_000}
+								to={stop.arrive.getTime()}
 								mode={legIn.mode}
 								estimate={{ minutes: legIn.minutes, km: legIn.km }}
 								source={legIn.source}
 								summary={choice?.summary ?? null}
-								onopen={() =>
-									(legShown = {
-										from: previous.exitAt ?? previous.at,
-										to: stop.at,
-										fromName: previous.name,
-										toName: stop.name,
-										mode: legIn.mode,
-										departAt: previous.depart.toISOString(),
-										planned: { minutes: legIn.minutes, km: legIn.km, source: legIn.source },
-										fromCard: previous.placementId ?? null,
-										toCard: stop.placementId ?? null,
-										day: dayIndex,
-										chosen: choice?.summary ?? null
-									})}
+								onopen={() => (legShown = stop.id ? { day: dayIndex, into: stop.id } : null)}
 							/>
 						{/if}
 						<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 						<div
 							class="tm-stop"
 							data-start={stop.arrive.getTime()}
-							data-card={grabId ?? stop.placementId ?? ''}
+							data-card={stop.placementId ?? ''}
 							data-end={stop.depart.getTime()}
 							class:tm-stop--anchor={stop.anchor}
 							class:tm-stop--terminal={stop.anchorKind === 'terminal'}
@@ -3158,7 +3054,9 @@
 			<div class="tm-sheet" style="position:fixed;z-index:61" {@attach swipeToClose(() => (allowanced = null))}>
 				<div class="tm-sheet__grip"></div>
 				<p class="tm-card__title">{a.name}</p>
-				<p class="tm-card__meta">{ALLOWANCE_HINT[a.kind]}</p>
+				<!-- A card of the day's own is about itself, not the trip's allowance it
+				     was drawn from: an afternoon at the hotel is not the bags. -->
+				<p class="tm-card__meta">{a.placementId ? 'How long this takes, on this day.' : ALLOWANCE_HINT[a.kind]}</p>
 				<div class="mt-3 flex flex-wrap gap-2">
 					{#each [0, 15, 30, 45, 60, 90, 120, 180] as m}
 						<button
@@ -3216,8 +3114,8 @@
 			/>
 		{/if}
 
-		{#if legShown && row}
-			{@const shown = legShown}
+		{#if legSheet && row}
+			{@const shown = legSheet}
 			<LegSheet
 				{...shown}
 				timezone={row.timezone}
@@ -3267,9 +3165,10 @@
 								onclick={() =>
 									sayMeal(target.day, meal, {
 										skipped: false,
-										// Where they tapped. Without a time a meal whose window
-										// the day never reached simply would not appear again.
-										at: (slotFrom?.depart ?? days[target.day].start).toISOString()
+										// Where they tapped, by the same rule as anything else
+										// added from this sheet. Without a time a meal whose
+										// window the day never reached would not appear again.
+										at: momentFor(target)
 									})}
 							>
 								{MEAL_LABEL[meal]}

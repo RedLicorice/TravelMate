@@ -7,18 +7,23 @@
 	import {
 		cityBBox,
 		deleteTrip,
+		getPrivate,
 		getTrip,
 		noTerminals,
 		terminalsOf,
+		toTrip,
 		updateCityBBox,
 		updateTrip,
 		type Terminals
 	} from '$lib/trip/repo';
+	import { session } from '$lib/session.svelte';
 	import JourneySide from '$lib/JourneySide.svelte';
 	import CheckIn from '$lib/CheckIn.svelte';
-	import { fromLocalInput, toLocalInput } from '$lib/trip/days';
+	import { fromLocalInput, toLocalInput, tripDays } from '$lib/trip/days';
+	import { endpointOf } from '$lib/trip/journey';
 	import { poi as provider, type City } from '$lib/poi';
 	import Autocomplete from '$lib/Autocomplete.svelte';
+	import { listPlacements, unplace } from '$lib/trip/placements';
 
 	const tripId = page.params.id!;
 	const MODES = ['walk', 'bike', 'transit', 'car', 'carshare'] as const;
@@ -33,6 +38,7 @@
 	let tab = $state<'city' | 'in' | 'out'>('city');
 
 	let cityName = $state('');
+	let countryCode = $state<string | null>(null);
 	let timezone = $state('');
 	let hotelName = $state('');
 	let hotelLat = $state(0);
@@ -49,10 +55,17 @@
 	// is the traveller's draft, and an edit arriving from someone else does
 	// not overwrite what they are typing.
 	let filled = false;
+	/** The server has been asked for the trip this visit, and answered or not. */
+	let asked = $state(false);
 	$effect(() => {
 		if (filled || !row) return;
+		// The owner's booking references go into the journey. A device that
+		// does not have them yet waits for the server rather than filling the
+		// journey without them -- and then saving it without them.
+		if (row.user_id === session.user?.id && !getPrivate(tripId) && !asked) return;
 		filled = true;
 		cityName = row.city;
+		countryCode = row.country_code;
 		timezone = row.timezone;
 		hotelName = row.hotel_name;
 		hotelLat = row.hotel_lat;
@@ -64,15 +77,51 @@
 		dayEnd = row.day_end.slice(0, 5);
 		bbox = cityBBox(row);
 		terminals = terminalsOf(row);
+		if (!bbox) {
+			// Trip saved before the city box was captured. Without it, and with
+			// no hotel to lean on, a hotel search would be worldwide. Geocoded
+			// once, and saved with the rest of the edit.
+			const name = row.city;
+			provider
+				.searchCities(name)
+				.then(([match]) => {
+					if (!bbox && match?.bbox) bbox = match.bbox;
+				})
+				.catch(() => {});
+		}
 	});
 
 	onMount(() => {
-		if (!row) pullTrip(tripId).catch((e) => (error = (e as Error).message));
+		if (row && getPrivate(tripId)) return;
+		pullTrip(tripId)
+			.catch((e) => {
+				if (!row) error = (e as Error).message;
+			})
+			.finally(() => (asked = true));
 	});
 
+	// The hotel's own spot is the bias when the city has no box: on an old trip
+	// it is the one coordinate that is certainly in the right city.
 	const city = $derived<City | null>(
-		row ? { name: cityName, label: cityName, lat: 0, lng: 0, countryCode: null, bbox } : null
+		row ? { name: cityName, label: cityName, lat: hotelLat, lng: hotelLng, countryCode, bbox } : null
 	);
+
+	/** A zone the phone does not know would throw while the times are read. */
+	const zoneKnown = $derived.by(() => {
+		try {
+			new Intl.DateTimeFormat(undefined, { timeZone: timezone });
+			return true;
+		} catch {
+			return false;
+		}
+	});
+
+	/**
+	 * Whether a journey states when it lands or leaves: then that is the
+	 * trip's time, whatever is typed in the box below (see terminalColumns).
+	 */
+	const arrivalFromJourney = $derived(!!endpointOf(terminals.arrivalLegs, 'arrival')?.local);
+	const departureFromJourney = $derived(!!endpointOf(terminals.departureLegs, 'departure')?.local);
 
 	const valid = $derived(
 		cityName.trim() !== '' &&
@@ -80,8 +129,47 @@
 			arrival !== '' &&
 			departure !== '' &&
 			departure > arrival &&
+			zoneKnown &&
 			modes.length > 0
 	);
+
+	/**
+	 * How many days the dates being typed now would give the trip -- worked
+	 * out the same way the plan itself does, so a day short here is a day
+	 * short there too.
+	 */
+	const newDayCount = $derived.by(() => {
+		if (!row || !zoneKnown || arrival === '' || departure === '') return null;
+		try {
+			return tripDays({
+				...toTrip(row),
+				timezone,
+				arrivalAt: fromLocalInput(arrival, timezone),
+				departureAt: fromLocalInput(departure, timezone)
+			}).length;
+		} catch {
+			return null;
+		}
+	});
+
+	/** Every card on this device for the trip, wherever it sits. */
+	const placements = $derived(row ? listPlacements(tripId) : []);
+
+	/** Cards on a day the shortened trip would no longer have. Shortening the
+	    trip does not delete the places themselves -- only the card that put
+	    them on a day, so they land back on the wishlist. */
+	const orphaned = $derived(
+		newDayCount === null ? [] : placements.filter((pl) => pl.day_index >= newDayCount)
+	);
+
+	/** Shortening the trip needs a second tap on Save once the warning is up,
+	    so a date typo cannot empty a day of its cards unnoticed. Re-asked
+	    whenever the dates change again. */
+	let confirmShorten = $state(false);
+	$effect(() => {
+		newDayCount;
+		confirmShorten = false;
+	});
 
 	function toggleMode(m: string) {
 		modes = modes.includes(m) ? modes.filter((x) => x !== m) : [...modes, m];
@@ -118,13 +206,23 @@
 	}
 
 	async function save() {
+		// Shortening the trip off a day with cards on it: the first tap only
+		// raises the warning above the button, the second tap is the one that
+		// actually saves.
+		if (orphaned.length && !confirmShorten) {
+			confirmShorten = true;
+			return;
+		}
 		saving = true;
 		error = null;
-		const changed = touched();
 		try {
+			// Inside the try: reading the times throws on a bad zone, and a throw
+			// out here would leave the button saying "Saving…" for good.
+			const changed = touched();
 			await mutate('Edited the trip', tripId, (w) => {
 				updateTrip(w, tripId, {
 					city: cityName,
+					countryCode,
 					timezone,
 					hotelName,
 					hotelLat,
@@ -139,6 +237,10 @@
 					terminals
 				});
 				if (bbox) updateCityBBox(w, tripId, bbox);
+				// The days themselves are gone, so the cards placed on them go too --
+				// in the same edit, so the trip is never seen shorter than its cards
+				// think it is. The places they name stay on the wishlist.
+				for (const pl of orphaned) unplace(w, pl.id);
 			});
 			await goto(`${base}/trip/${tripId}${changed ? `?retime=${changed}` : ''}`, { replaceState: true });
 		} catch (e) {
@@ -148,11 +250,15 @@
 	}
 
 	async function destroy() {
+		// A second tap while the first is on its way would delete twice.
+		if (saving) return;
+		saving = true;
 		try {
 			await mutate('Deleted the trip', tripId, (w) => deleteTrip(w, tripId));
 			await goto(`${base}/`, { replaceState: true });
 		} catch (e) {
 			error = (e as Error).message;
+			saving = false;
 		}
 	}
 </script>
@@ -166,6 +272,7 @@
 	{#if loading}
 		<div class="tm-field" style="opacity:0.4"><span class="tm-label">&nbsp;</span></div>
 	{:else if !row}
+		{#if error}<p class="tm-hint tm-hint--error mb-3">{error}</p>{/if}
 		<p class="tm-hint tm-hint--error">Trip not found.</p>
 	{:else}
 		<!-- Three things, kept apart. The city and the hotel are what the trip
@@ -192,6 +299,7 @@
 				search={(q, signal) => provider.searchCities(q, signal)}
 				onpick={(c) => {
 					cityName = c.name;
+					countryCode = c.countryCode;
 					bbox = c.bbox;
 					// A hotel from the old city is meaningless in the new one.
 					hotelName = '';
@@ -231,16 +339,25 @@
 		<div class="tm-field mb-5">
 			<label class="tm-label" for="arr">Arrival</label>
 			<input class="tm-input" id="arr" type="datetime-local" bind:value={arrival} />
+			{#if arrivalFromJourney}
+				<span class="tm-hint">The arrival journey says when you land; that time is used.</span>
+			{/if}
 		</div>
 		<div class="tm-field mb-5">
 			<label class="tm-label" for="dep">Departure</label>
 			<input class="tm-input" id="dep" type="datetime-local" bind:value={departure} />
+			{#if departureFromJourney}
+				<span class="tm-hint">The departure journey says when you leave; that time is used.</span>
+			{/if}
 			<span class="tm-hint">Times are local to {timezone}.</span>
 		</div>
 
 		<div class="tm-field mb-5">
 			<label class="tm-label" for="tz">Timezone</label>
-			<input class="tm-input" id="tz" bind:value={timezone} />
+			<input class="tm-input" id="tz" bind:value={timezone} aria-invalid={!zoneKnown} />
+			{#if !zoneKnown}
+				<span class="tm-hint tm-hint--error">Not a timezone this phone knows. Try the form Europe/Rome.</span>
+			{/if}
 		</div>
 
 		<p class="tm-label mb-2">Getting around</p>
@@ -265,10 +382,21 @@
 			<JourneySide direction="departure" bind:terminals {city} />
 		{/if}
 
+		{#if orphaned.length}
+			<p class="tm-hint tm-hint--error mb-3">
+				{orphaned.length} {orphaned.length === 1 ? 'card is' : 'cards are'} on days this trip no
+				longer has. Saving sends {orphaned.length === 1 ? 'it' : 'them'} back to the wishlist.
+			</p>
+		{/if}
+
 		{#if error}<p class="tm-hint tm-hint--error mb-3">{error}</p>{/if}
 
 		<button class="tm-btn tm-btn--primary tm-btn--block" disabled={!valid || saving} onclick={save}>
-			{saving ? 'Saving…' : 'Save changes'}
+			{saving
+				? 'Saving…'
+				: orphaned.length && confirmShorten
+					? 'Tap again to confirm'
+					: 'Save changes'}
 		</button>
 
 		<div class="mt-10" style="border-top: 1px solid var(--tm-border); padding-top: 1rem">
@@ -283,6 +411,7 @@
 					<button
 						class="tm-btn flex-1"
 						style="background: var(--tm-danger-ink); color: var(--tm-surface)"
+						disabled={saving}
 						onclick={destroy}
 					>
 						Delete trip

@@ -36,6 +36,8 @@ export type Table =
 	| 'pois'
 	| 'placements'
 	| 'trip_members'
+	/** The owner's own: booking references and the share link. Nobody else's device holds it. */
+	| 'trip_private'
 	| 'profiles'
 	| 'plan_stops';
 
@@ -61,7 +63,8 @@ export type PlanOp = {
 	trip: string;
 	rows: Row[];
 	planner_version: number;
-	generated_at: string;
+	/** When Replan decided the plan. A re-time carries the trip's stamp as it is: null when there is none yet. */
+	generated_at: string | null;
 	/** The days this plan is for; the other days' stops are left as they are. Absent: every day. */
 	days?: number[];
 };
@@ -91,7 +94,9 @@ export const keyOf = (table: Table, row: Row): Key =>
 		? { trip_id: row.trip_id, user_id: row.user_id }
 		: table === 'profiles'
 			? { user_id: row.user_id }
-			: { id: row.id };
+			: table === 'trip_private'
+				? { trip_id: row.trip_id }
+				: { id: row.id };
 
 export const rowId = (table: Table, key: Key) => `${table}:${Object.values(key).join(':')}`;
 

@@ -248,8 +248,12 @@ export type Writer = {
 	/** Change some columns of a row. Unchanged columns are not sent. */
 	update(table: Table, key: Key, values: Row): void;
 	remove(table: Table, key: Key): void;
-	/** The trip's plan, as drawn, replacing the stored one -- for the given days, or whole. */
-	plan(trip: string, rows: Row[], plannerVersion: number, days?: number[]): string;
+	/**
+	 * The trip's plan, as drawn, replacing the stored one -- for the given
+	 * days, or whole. `replanned` says Replan decided it, which is what
+	 * stamps the trip; a re-time leaves the stamp as it was.
+	 */
+	plan(trip: string, rows: Row[], plannerVersion: number, days?: number[], replanned?: boolean): string | null;
 };
 
 /** What serialises edits to a row on the server: its trip, or its person. */
@@ -332,8 +336,15 @@ export async function mutate(
 			const base = (confirmed.get(rowId(table, key))?.row.version as number | undefined) ?? null;
 			push({ op: 'delete', table, key, lock: lockOf(table, was), base, before: was });
 		},
-		plan(trip, rows, plannerVersion, days) {
-			const generated_at = new Date().toISOString();
+		plan(trip, rows, plannerVersion, days, replanned = false) {
+			// The stamp is what "changes since this plan was made" is counted
+			// against, and what says a place has never been planned. A re-time
+			// seats nothing new, so it sends the stamp the trip already has --
+			// none, for a trip Replan has never decided -- rather than a fresh
+			// one that made every edit look like a plan.
+			const generated_at = replanned
+				? new Date().toISOString()
+				: ((current('trips', { id: trip })?.plan_generated_at as string | null | undefined) ?? null);
 			push({ op: 'plan', trip, rows, planner_version: plannerVersion, generated_at, ...(days ? { days } : {}) });
 			return generated_at;
 		}
@@ -635,18 +646,21 @@ export function pullTrip(id: string): Promise<void> {
 	loaded.add(id);
 	return pull(async (signal) => {
 		if (!store.asked.includes(id)) store.asked.push(id);
-		const [trip, pois, placements, plan, members] = await Promise.all([
+		const [trip, pois, placements, plan, members, own] = await Promise.all([
 			supabase.from('trips').select('*').eq('id', id).abortSignal(signal).maybeSingle(),
 			supabase.from('pois').select('*').eq('trip_id', id).abortSignal(signal),
 			supabase.from('placements').select('*').eq('trip_id', id).abortSignal(signal),
 			supabase.from('plan_stops').select('*').eq('trip_id', id).abortSignal(signal),
-			supabase.from('trip_members').select('*').eq('trip_id', id).abortSignal(signal)
+			supabase.from('trip_members').select('*').eq('trip_id', id).abortSignal(signal),
+			// The owner's alone: anybody else is answered with nothing.
+			supabase.from('trip_private').select('*').eq('trip_id', id).abortSignal(signal).maybeSingle()
 		]);
 		const people = (must(members) as Row[]).map((m) => m.user_id as string);
 		const profiles = people.length
 			? (must(await supabase.from('profiles').select('*').in('user_id', people).abortSignal(signal)) as Row[])
 			: [];
 		const found = must(trip) as Row | null;
+		const mine = must(own) as Row | null;
 		const rows = found
 			? [
 					held('trips', found),
@@ -654,7 +668,8 @@ export function pullTrip(id: string): Promise<void> {
 					...(must(placements) as Row[]).map((r) => held('placements', r)),
 					...(must(plan) as Row[]).map((r) => held('plan_stops', r)),
 					...(must(members) as Row[]).map((r) => held('trip_members', r)),
-					...profiles.map((r) => held('profiles', r))
+					...profiles.map((r) => held('profiles', r)),
+					...(mine ? [held('trip_private', mine)] : [])
 				]
 			: [];
 		await replace((t) => eachOfTrip(t, id, (c) => c.delete()), rows);
@@ -739,7 +754,7 @@ async function received(table: Table, event: string, fresh: Row | null, old: Row
 	redrawSoon();
 }
 
-const LIVE: Table[] = ['trips', 'pois', 'placements', 'plan_stops', 'trip_members', 'profiles'];
+const LIVE: Table[] = ['trips', 'trip_private', 'pois', 'placements', 'plan_stops', 'trip_members', 'profiles'];
 
 /**
  * Keep one trip current while it is open: read it once, then take every

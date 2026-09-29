@@ -1,4 +1,5 @@
 import { formatter } from '$lib/clock';
+import { zonedInstant } from '$lib/trip/days';
 /**
  * Meal slots.
  *
@@ -8,6 +9,11 @@ import { formatter } from '$lib/clock';
  * second.
  */
 export type MealName = 'breakfast' | 'lunch' | 'dinner';
+/**
+ * `from` and `to` in decimal hours of the day. A window that runs past
+ * midnight -- dinner from 23:00 to 01:00 -- ends past 24, so that its end is
+ * still after its start: 25 is one in the morning of the next date.
+ */
 export type MealSlot = { name: MealName; from: number; to: number };
 
 /** Local wall-clock 'HH:MM' pairs, as stored per person. */
@@ -36,11 +42,23 @@ export const toHHMM = (hours: number) => {
 };
 
 export function slotsFrom(windows: MealWindows): MealSlot[] {
-	return MEAL_NAMES.map((name) => ({
-		name,
-		from: toHours(windows[name].from),
-		to: toHours(windows[name].to)
-	}));
+	return MEAL_NAMES.map((name) => {
+		const from = toHours(windows[name].from);
+		const to = toHours(windows[name].to);
+		return { name, from, to: to <= from ? to + 24 : to };
+	});
+}
+
+/**
+ * The instant a slot's hour falls on, on this date -- or on the next, for the
+ * end of a window that runs past midnight.
+ * ponytail: the next date is this one plus 24 hours, so on the night the
+ * clocks change a late dinner closes an hour off. Nobody eats at 01:00 twice
+ * a year.
+ */
+export function slotInstant(date: string, hours: number, tz: string): Date {
+	const at = zonedInstant(date, toHHMM(hours % 24), tz);
+	return hours >= 24 ? new Date(at.getTime() + 24 * 3_600_000) : at;
 }
 
 /** The shortest window that suits everyone. */
@@ -137,10 +155,16 @@ export const MEALS_PER_DAY = MEAL_NAMES.length;
 
 /**
  * The earliest a traveller can be out of the door: awake, plus however long
- * they take to get going.
+ * they take to get going. In hours, and past 24 when that is past midnight.
+ */
+const readyHours = (wakeAt: string, prepMin: number) => toHours(wakeAt) + Math.max(0, prepMin) / 60;
+
+/**
+ * The same, as a wall clock: someone up at 23:30 who takes an hour is out of
+ * the door at 00:30, not at 23:59.
  */
 export function readyAt(wakeAt: string, prepMin: number): string {
-	return toHHMM(toHours(wakeAt) + Math.max(0, prepMin) / 60);
+	return toHHMM(readyHours(wakeAt, prepMin) % 24);
 }
 
 /**
@@ -149,9 +173,10 @@ export function readyAt(wakeAt: string, prepMin: number): string {
  */
 export function latestReady(people: { wakeAt: string; prepMin: number }[]): string | null {
 	if (!people.length) return null;
-	return people
-		.map((p) => readyAt(p.wakeAt, p.prepMin))
-		.reduce((latest, at) => (toHours(at) > toHours(latest) ? at : latest));
+	const last = people.reduce((a, b) =>
+		readyHours(b.wakeAt, b.prepMin) > readyHours(a.wakeAt, a.prepMin) ? b : a
+	);
+	return readyAt(last.wakeAt, last.prepMin);
 }
 
 /**
@@ -164,7 +189,7 @@ export function latestPrep<T extends { wakeAt: string; prepMin: number }>(
 ): { wakeAt: string; prepMin: number } | null {
 	if (!people.length) return null;
 	const last = people.reduce((a, b) =>
-		toHours(readyAt(b.wakeAt, b.prepMin)) > toHours(readyAt(a.wakeAt, a.prepMin)) ? b : a
+		readyHours(b.wakeAt, b.prepMin) > readyHours(a.wakeAt, a.prepMin) ? b : a
 	);
 	return { wakeAt: last.wakeAt, prepMin: last.prepMin };
 }
@@ -197,7 +222,18 @@ function hourIn(at: Date, tz: string): number {
 export function mealMiss(at: Date, tz: string, slots: MealSlot[]): number {
 	const h = hourIn(at, tz);
 	if (!slots.length) return 0;
-	return Math.min(...slots.map((s) => (h < s.from ? s.from - h : h > s.to ? h - s.to : 0)));
+	return Math.min(...slots.map((s) => missOf(h, s)));
+}
+
+/**
+ * Hours by which a local hour misses a slot, zero inside it. A slot that runs
+ * past midnight also reads the small hours as the end of the same evening:
+ * half past midnight is inside a dinner that closes at one, not twenty-two
+ * hours before it opens.
+ */
+function missOf(h: number, s: MealSlot): number {
+	const off = (x: number) => (x < s.from ? s.from - x : x > s.to ? x - s.to : 0);
+	return s.to >= 24 ? Math.min(off(h), off(h + 24)) : off(h);
 }
 
 /**
@@ -212,12 +248,16 @@ export function mealMiss(at: Date, tz: string, slots: MealSlot[]): number {
  */
 export function waitUntilSlot(at: Date, tz: string, slots: MealSlot[]): Date | null {
 	const h = hourIn(at, tz);
-	const next = slots.filter((s) => s.from > h).sort((a, b) => a.from - b.from)[0];
+	// Only a slot this hour is before -- not one it is inside of, or past, by
+	// the reading that runs over midnight.
+	const next = slots
+		.filter((s) => s.from > h && missOf(h, s) === s.from - h)
+		.sort((a, b) => a.from - b.from)[0];
 	return next ? new Date(at.getTime() + (next.from - h) * 3_600_000) : null;
 }
 
 /** The slot a given time falls in, or null between meals. */
 export function slotAt(at: Date, tz: string, slots: MealSlot[]): MealName | null {
 	const h = hourIn(at, tz);
-	return slots.find((s) => h >= s.from && h <= s.to)?.name ?? null;
+	return slots.find((s) => missOf(h, s) === 0)?.name ?? null;
 }

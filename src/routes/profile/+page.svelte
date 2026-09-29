@@ -81,7 +81,11 @@
 		uploading = true;
 		error = null;
 		try {
-			const ext = file.name.split('.').pop()?.toLowerCase() ?? 'png';
+			// What the file is, not what it is called: the name is the picker's
+			// and the storage rule reads the type.
+			if (!file.type.startsWith('image/')) throw new Error('That is not a picture.');
+			if (file.size > 5 * 1024 * 1024) throw new Error('A picture can be up to 5 MB.');
+			const ext = file.type.slice('image/'.length).split('+')[0].replace('jpeg', 'jpg');
 			// Keyed by user id so the storage policy can check ownership, with a
 			// fresh name each time so a cached old picture cannot linger.
 			const path = `${session.user.id}/${newSeed()}.${ext}`;

@@ -3,10 +3,14 @@
 	import { page } from '$app/state';
 	import { base } from '$app/paths';
 	import { cityBBox, getTrip, toTrip, updateCityBBox } from '$lib/trip/repo';
-	import { mutate } from '$lib/store/store.svelte';
+	import { mutate, pullTrip } from '$lib/store/store.svelte';
 	import { tripDays } from '$lib/trip/days';
 	import { addPoi, DuplicatePoiError, listPois, sourceOf, type PoiRow } from '$lib/trip/pois';
-	import { between, listPlacements, place } from '$lib/trip/placements';
+	import { listPlacements, place } from '$lib/trip/placements';
+	import { pushDown, slotMoment } from '$lib/trip/place';
+	import { loadPlan, toPlannedDays } from '$lib/trip/plan';
+	import { latestPrep } from '$lib/plan/meals';
+	import { tripProfiles } from '$lib/profile.svelte';
 	import { goto } from '$app/navigation';
 	import { poi as provider, type City, type Poi } from '$lib/poi';
 	import { durationFor } from '$lib/poi/photon';
@@ -42,6 +46,12 @@
 	const trip = $derived(getTrip(tripId));
 	const saved = $derived(listPois(tripId));
 	const placements = $derived(listPlacements(tripId));
+	/** The plan as the trip page draws it: where a slot's card lands is read off its cards. */
+	const plan = $derived(trip ? toPlannedDays(loadPlan(tripId), tripDays(toTrip(trip))) : []);
+	/** What the cards below a new one are measured by when they give way to it. */
+	const prepMin = $derived(
+		latestPrep(tripProfiles(tripId).map((p) => ({ wakeAt: p.wakeAt, prepMin: p.prepMin })))?.prepMin ?? 0
+	);
 	/** The centre of the day being added to (see dayCentre), measured before anything is added. */
 	const dayMiddle = $derived.by(() => {
 		if (!slot) return null;
@@ -64,7 +74,13 @@
 
 	onMount(async () => {
 		try {
-			if (!trip) return;
+			// Opened by link on a phone that has never seen this trip: fetched
+			// first, as the edit page does, rather than searching a city of nothing.
+			if (!trip) await pullTrip(tripId);
+			if (!trip) {
+				error = 'Trip not found.';
+				return;
+			}
 			bbox = cityBBox(trip);
 			if (!bbox) {
 				// Trip saved before the city box was captured. Geocode the city
@@ -291,30 +307,11 @@
 		void add({ ...chosen.pick, branches: chosen.branches, anyBranch: everyBranch });
 	}
 
-	/** When a place put into the slot happens: the space above `before`, or the end of the day. */
-	function slotMoment(day: number, before: string | null): string {
-		// Asking for a slot is asking for a time: above `before` means in the
-		// space between `before` and whatever comes before it. Nothing else on
-		// the day moves -- a card is where its clock says, so making room is a
-		// matter of picking a free minute, not of renumbering the neighbours.
-		// `before` still names a place on the trip page for now, so a placement
-		// of that place is accepted too.
-		const cards = placements.filter((x) => x.day_index === day);
-		const i = cards.findIndex((x) => x.id === before || x.poi_id === before);
-		const next = i < 0 ? undefined : cards[i];
-		const prev = i < 0 ? cards.at(-1) : cards[i - 1];
-		return prev && next
-			? between(prev.at, next.at)
-			: next
-				? new Date(Date.parse(next.at) - 60 * 60_000).toISOString()
-				: prev
-					? new Date(Date.parse(prev.at) + 60 * 60_000).toISOString()
-					: (dayStart(day) ?? new Date()).toISOString();
-	}
-
 	/**
 	 * Onto the wishlist, unless it is there already -- and, from a slot, onto
-	 * the day as well, in the same edit: one tap, one thing done.
+	 * the day as well, in the same edit: one tap, one thing done. Where on
+	 * the day is the same rule as the slot sheet's (place.ts), and what is
+	 * below gives way the same way; the trip page walks the day when it opens.
 	 */
 	async function add(p: Poi) {
 		if (!canAdd(p)) return;
@@ -322,7 +319,14 @@
 			const target = slot;
 			await mutate(`Added ${p.name}`, tripId, (w) => {
 				const row = onWishlist(p) ?? addPoi(w, tripId, p);
-				if (target) place(w, tripId, row.id, target.day, slotMoment(target.day, target.before));
+				if (!target) return;
+				const when = slotMoment(target, plan[target.day]?.stops ?? [], dayStart(target.day));
+				const made = place(w, tripId, row.id, target.day, when);
+				pushDown(w, tripId, made.id, {
+					bagDropMin: trip?.bag_drop_min ?? 0,
+					poi: (id) => saved.find((s) => s.id === id),
+					prepMin
+				});
 			});
 
 			if (target) {
@@ -370,6 +374,13 @@
 		selectedId?.startsWith('result:') ? results.filter(canAdd)[Number(selectedId.split(':')[1])] : null
 	);
 </script>
+
+<!-- Escape puts the chain question away, as a dialog is expected to. -->
+<svelte:window
+	onkeydown={(e) => {
+		if (chain && e.key === 'Escape') chain = null;
+	}}
+/>
 
 <main class="flex h-dvh flex-col">
 	<div class="flex flex-col gap-3 p-4" style="border-bottom: 1px solid var(--tm-border)">
@@ -581,7 +592,14 @@
 			style="position:fixed;inset:0;z-index:60;background:rgba(0,0,0,0.35)"
 			onclick={() => (chain = null)}
 		></div>
-		<div class="tm-sheet" style="position:fixed;z-index:61" {@attach swipeToClose(() => (chain = null))}>
+		<div
+			class="tm-sheet"
+			style="position:fixed;z-index:61"
+			role="dialog"
+			aria-modal="true"
+			aria-label="Which {chain.pick.name}?"
+			{@attach swipeToClose(() => (chain = null))}
+		>
 			<div class="tm-sheet__grip"></div>
 			<p class="tm-card__title">{chain.pick.name}</p>
 			<p class="tm-card__meta">

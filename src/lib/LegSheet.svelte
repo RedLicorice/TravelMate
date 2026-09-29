@@ -186,7 +186,9 @@
 					     journey's time, and is the one on the map. -->
 					<span class="tm-hint" style="display:block;margin-bottom:6px">Pick the route to plan with</span>
 					<ul style="list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px">
-						{#each routes as r (r.summary + r.minutes)}
+						<!-- Keyed by position: two of Google's routes can share a
+						     summary and a time, and a repeated key is a crash. -->
+						{#each routes as r, i (i)}
 							{@const on = r === route}
 							<li>
 								<button

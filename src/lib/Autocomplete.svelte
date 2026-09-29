@@ -99,6 +99,10 @@
 	}
 
 	function choose(item: T) {
+		// A search still waiting, or still out, would bring the list back over
+		// the pick.
+		clearTimeout(timer);
+		inflight?.abort();
 		track('search.picked', { label, name: item.name });
 		onpick(item);
 		query = item.name;
