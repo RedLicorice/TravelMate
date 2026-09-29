@@ -931,7 +931,7 @@
 		const anchors = [...day.fixedStart, ...day.fixedEnd].map((w) => w.at);
 		const cards = placements
 			.filter((pl) => pl.day_index === i && !pl.skipped)
-			.map((pl) => visitOf(pl, null))
+			.map((pl) => visitOf(pl))
 			.filter((v): v is PlanPoi => !!v)
 			.flatMap((v) => [
 				{ lat: v.lat, lng: v.lng },
