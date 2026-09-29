@@ -17,6 +17,7 @@
 	import JourneySide from '$lib/JourneySide.svelte';
 	import CheckIn from '$lib/CheckIn.svelte';
 	import { fromLocalInput, toLocalInput } from '$lib/trip/days';
+	import { endpointOf } from '$lib/trip/journey';
 	import { poi as provider, type City } from '$lib/poi';
 	import Autocomplete from '$lib/Autocomplete.svelte';
 
@@ -33,6 +34,7 @@
 	let tab = $state<'city' | 'in' | 'out'>('city');
 
 	let cityName = $state('');
+	let countryCode = $state<string | null>(null);
 	let timezone = $state('');
 	let hotelName = $state('');
 	let hotelLat = $state(0);
@@ -53,6 +55,7 @@
 		if (filled || !row) return;
 		filled = true;
 		cityName = row.city;
+		countryCode = row.country_code;
 		timezone = row.timezone;
 		hotelName = row.hotel_name;
 		hotelLat = row.hotel_lat;
@@ -64,15 +67,46 @@
 		dayEnd = row.day_end.slice(0, 5);
 		bbox = cityBBox(row);
 		terminals = terminalsOf(row);
+		if (!bbox) {
+			// Trip saved before the city box was captured. Without it, and with
+			// no hotel to lean on, a hotel search would be worldwide. Geocoded
+			// once, and saved with the rest of the edit.
+			const name = row.city;
+			provider
+				.searchCities(name)
+				.then(([match]) => {
+					if (!bbox && match?.bbox) bbox = match.bbox;
+				})
+				.catch(() => {});
+		}
 	});
 
 	onMount(() => {
 		if (!row) pullTrip(tripId).catch((e) => (error = (e as Error).message));
 	});
 
+	// The hotel's own spot is the bias when the city has no box: on an old trip
+	// it is the one coordinate that is certainly in the right city.
 	const city = $derived<City | null>(
-		row ? { name: cityName, label: cityName, lat: 0, lng: 0, countryCode: null, bbox } : null
+		row ? { name: cityName, label: cityName, lat: hotelLat, lng: hotelLng, countryCode, bbox } : null
 	);
+
+	/** A zone the phone does not know would throw while the times are read. */
+	const zoneKnown = $derived.by(() => {
+		try {
+			new Intl.DateTimeFormat(undefined, { timeZone: timezone });
+			return true;
+		} catch {
+			return false;
+		}
+	});
+
+	/**
+	 * Whether a journey states when it lands or leaves: then that is the
+	 * trip's time, whatever is typed in the box below (see terminalColumns).
+	 */
+	const arrivalFromJourney = $derived(!!endpointOf(terminals.arrivalLegs, 'arrival')?.local);
+	const departureFromJourney = $derived(!!endpointOf(terminals.departureLegs, 'departure')?.local);
 
 	const valid = $derived(
 		cityName.trim() !== '' &&
@@ -80,6 +114,7 @@
 			arrival !== '' &&
 			departure !== '' &&
 			departure > arrival &&
+			zoneKnown &&
 			modes.length > 0
 	);
 
@@ -120,11 +155,14 @@
 	async function save() {
 		saving = true;
 		error = null;
-		const changed = touched();
 		try {
+			// Inside the try: reading the times throws on a bad zone, and a throw
+			// out here would leave the button saying "Saving…" for good.
+			const changed = touched();
 			await mutate('Edited the trip', tripId, (w) => {
 				updateTrip(w, tripId, {
 					city: cityName,
+					countryCode,
 					timezone,
 					hotelName,
 					hotelLat,
@@ -148,11 +186,15 @@
 	}
 
 	async function destroy() {
+		// A second tap while the first is on its way would delete twice.
+		if (saving) return;
+		saving = true;
 		try {
 			await mutate('Deleted the trip', tripId, (w) => deleteTrip(w, tripId));
 			await goto(`${base}/`, { replaceState: true });
 		} catch (e) {
 			error = (e as Error).message;
+			saving = false;
 		}
 	}
 </script>
@@ -166,6 +208,7 @@
 	{#if loading}
 		<div class="tm-field" style="opacity:0.4"><span class="tm-label">&nbsp;</span></div>
 	{:else if !row}
+		{#if error}<p class="tm-hint tm-hint--error mb-3">{error}</p>{/if}
 		<p class="tm-hint tm-hint--error">Trip not found.</p>
 	{:else}
 		<!-- Three things, kept apart. The city and the hotel are what the trip
@@ -192,6 +235,7 @@
 				search={(q, signal) => provider.searchCities(q, signal)}
 				onpick={(c) => {
 					cityName = c.name;
+					countryCode = c.countryCode;
 					bbox = c.bbox;
 					// A hotel from the old city is meaningless in the new one.
 					hotelName = '';
@@ -231,16 +275,25 @@
 		<div class="tm-field mb-5">
 			<label class="tm-label" for="arr">Arrival</label>
 			<input class="tm-input" id="arr" type="datetime-local" bind:value={arrival} />
+			{#if arrivalFromJourney}
+				<span class="tm-hint">The arrival journey says when you land; that time is used.</span>
+			{/if}
 		</div>
 		<div class="tm-field mb-5">
 			<label class="tm-label" for="dep">Departure</label>
 			<input class="tm-input" id="dep" type="datetime-local" bind:value={departure} />
+			{#if departureFromJourney}
+				<span class="tm-hint">The departure journey says when you leave; that time is used.</span>
+			{/if}
 			<span class="tm-hint">Times are local to {timezone}.</span>
 		</div>
 
 		<div class="tm-field mb-5">
 			<label class="tm-label" for="tz">Timezone</label>
-			<input class="tm-input" id="tz" bind:value={timezone} />
+			<input class="tm-input" id="tz" bind:value={timezone} aria-invalid={!zoneKnown} />
+			{#if !zoneKnown}
+				<span class="tm-hint tm-hint--error">Not a timezone this phone knows. Try the form Europe/Rome.</span>
+			{/if}
 		</div>
 
 		<p class="tm-label mb-2">Getting around</p>
@@ -283,6 +336,7 @@
 					<button
 						class="tm-btn flex-1"
 						style="background: var(--tm-danger-ink); color: var(--tm-surface)"
+						disabled={saving}
 						onclick={destroy}
 					>
 						Delete trip

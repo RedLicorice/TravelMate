@@ -308,6 +308,7 @@ export const updateCityBBox = (w: Writer, id: string, bbox: BBox) =>
 
 export type TripEdit = {
 	city: string;
+	countryCode: string | null;
 	timezone: string;
 	hotelName: string;
 	hotelLat: number;
@@ -325,6 +326,9 @@ export const updateTrip = (w: Writer, id: string, edit: TripEdit) =>
 	w.update('trips', { id }, {
 		name: edit.city,
 		city: edit.city,
+		// The flag goes with the city: a trip moved to another country kept
+		// the old one's.
+		country_code: edit.countryCode,
 		timezone: edit.timezone,
 		hotel_name: edit.hotelName,
 		hotel_lat: edit.hotelLat,
