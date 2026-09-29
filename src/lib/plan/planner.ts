@@ -532,6 +532,12 @@ function centroid(list: PlanPoi[]): LatLng | null {
 type Rest = {
 	diners?: PlanPoi[];
 	containers?: Map<string, PlanPoi>;
+	/**
+	 * Where the traveller is when the day begins, when that is not the hotel:
+	 * after a night away, wherever the last day left them. The first leg is
+	 * priced from here, on every walk of the day.
+	 */
+	from?: LatLng | null;
 };
 
 const NO_POIS: Map<string, PlanPoi> = new Map();
@@ -556,19 +562,18 @@ export function orderDay(
 	curves: CrowdCurves,
 	slots: MealSlot[],
 	travel: TravelTable,
-	rest: Rest = {},
-	/** Where the traveller is when the day begins, when that is not the hotel. */
-	from: LatLng | null = null
+	rest: Rest = {}
 ): PlanPoi[] {
 	const skipped = pois.filter(isSkipped);
 	pois = pois.filter((p) => !isSkipped(p));
 	if (pois.length < 2) return [...pois, ...skipped];
 
 	// Where the day is when the route begins: the last journey card, on a day
-	// that has one. On any other day there is nowhere to measure from until
-	// the first placement -- usually the hotel -- and the nearest neighbour to
-	// nowhere is simply the first stop offered, which is the most wanted.
-	const start = day.fixedStart.at(-1)?.at ?? from;
+	// that has one, or wherever a night away left the traveller. On any other
+	// day there is nowhere to measure from until the first placement --
+	// usually the hotel -- and the nearest neighbour to nowhere is simply the
+	// first stop offered, which is the most wanted.
+	const start = day.fixedStart.at(-1)?.at ?? rest.from ?? null;
 	// Held placements come out in the order their clocks say, whatever else is
 	// true of them; only the free stops are ordered, and they are threaded
 	// between the held ones by time. A held card's clock is when it happens.
@@ -724,7 +729,7 @@ function walkClock(
 	let waitedMin = 0;
 	const dayEndMs = day.end.getTime();
 	let clock = day.start.getTime();
-	let cursor: LatLng | null = null;
+	let cursor: LatLng | null = rest.from ?? null;
 	let cursorTerminal = false;
 	const diners = rest.diners ?? [];
 	const containers = rest.containers ?? NO_POIS;
@@ -1510,8 +1515,6 @@ export function replan(input: PlanInput): PlanResult {
 			route[route.indexOf(last)] = { ...last, at: day.end.toISOString(), closing: true };
 		}
 
-		const rest: Rest = { diners: seatable, containers };
-		rests.set(dayIndex, rest);
 		// After a night away the day starts where the last one ended, not at
 		// the hotel: the traveller wakes up wherever they were.
 		const before = dayIndex > 0 ? routes.get(dayIndex - 1) : undefined;
@@ -1519,6 +1522,12 @@ export function replan(input: PlanInput): PlanResult {
 			before && nightAway(before, input.days[dayIndex - 1])
 				? (before.filter((p) => !isSkipped(p)).at(-1) ?? null)
 				: null;
+		const rest: Rest = {
+			diners: seatable,
+			containers,
+			from: awake ? at(awake.exitAt ?? awake) : null
+		};
+		rests.set(dayIndex, rest);
 		routes.set(
 			dayIndex,
 			orderDay(
@@ -1529,8 +1538,7 @@ export function replan(input: PlanInput): PlanResult {
 				curves,
 				slots,
 				travel,
-				rest,
-				awake ? at(awake.exitAt ?? awake) : null
+				rest
 			)
 		);
 	});
