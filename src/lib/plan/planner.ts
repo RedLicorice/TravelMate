@@ -97,6 +97,15 @@ export type PlanPoi = {
 	/** Not read. A pin holds `at`; there is no second moment to hold. */
 	pinnedAt?: string | null;
 	/**
+	 * The hotel that closes the day, whose clock is the walk's to give: the
+	 * traveller gets home after the last stop, whenever that turns out to be.
+	 * Replan draws one on a day without, and takes the day's last unpinned
+	 * hotel for one on a day that has it -- keeping its id, so what is stored
+	 * is updated rather than a second hotel drawn. Without this the time the
+	 * last Replan gave it came back as a wall the next one built against.
+	 */
+	closing?: boolean;
+	/**
 	 * Where this stop lets you out, when that is not where you got on. A cable
 	 * car, a ferry, a funicular. Null is the ordinary case, and is also what a
 	 * return trip amounts to -- you end up back where you started.
@@ -244,10 +253,10 @@ const stays = (p: PlanPoi) => !!p.pinned || isAnchor(p) || p.kind === 'meal';
  * Whether a card's clock is already decided: a pin, or furniture the traveller
  * placed -- the hotel, a chore, a meal container. Replan arranges the free
  * stops around such a card and never rewrites its time. The one card whose
- * clock is the walk's to give is the closing hotel Replan draws itself, which
- * has no stored row and so no stated time.
+ * clock is the walk's to give is the hotel that closes the day, whether
+ * Replan drew it or is re-timing the one it drew last time.
  */
-const holdsClock = (p: PlanPoi) => !!p.pinned || ((isAnchor(p) || p.kind === 'meal') && p.id !== '');
+const holdsClock = (p: PlanPoi) => !!p.pinned || ((isAnchor(p) || p.kind === 'meal') && !p.closing);
 
 /**
  * The visits as places, for the crowd table. Busyness belongs to the venue:
@@ -1384,7 +1393,8 @@ const closingHotel = (
 	durationMin: 0,
 	priority: NEUTRAL_PRIORITY,
 	dayIndex,
-	at: day.end.toISOString()
+	at: day.end.toISOString(),
+	closing: true
 });
 
 /** Steps 1-5. A full reshuffle -- what the Replan control runs. */
@@ -1490,6 +1500,14 @@ export function replan(input: PlanInput): PlanResult {
 		// Not on a night the traveller has said they spend away from it.
 		if (input.hotel && !day.fixedEnd.length && !nightAway(route, day) && (last?.kind !== 'hotel' || anchors.length < 2)) {
 			route.push(closingHotel(input.hotel, day, dayIndex));
+		} else if (last?.kind === 'hotel' && !last.pinned && !isSkipped(last)) {
+			// The day already closes on a hotel -- the one the last Replan drew
+			// and the page stored. Its time is that walk's answer, not the
+			// traveller's: held to it, the stops would have been fitted before
+			// getting home at the hour a shorter day happened to end, and
+			// spilled with hours to spare. It closes this day the same way,
+			// wherever the day now ends, under the id it already has.
+			route[route.indexOf(last)] = { ...last, at: day.end.toISOString(), closing: true };
 		}
 
 		const rest: Rest = { diners: seatable, containers };
