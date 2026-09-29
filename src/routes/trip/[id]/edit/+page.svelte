@@ -10,16 +10,18 @@
 		getTrip,
 		noTerminals,
 		terminalsOf,
+		toTrip,
 		updateCityBBox,
 		updateTrip,
 		type Terminals
 	} from '$lib/trip/repo';
 	import JourneySide from '$lib/JourneySide.svelte';
 	import CheckIn from '$lib/CheckIn.svelte';
-	import { fromLocalInput, toLocalInput } from '$lib/trip/days';
+	import { fromLocalInput, toLocalInput, tripDays } from '$lib/trip/days';
 	import { endpointOf } from '$lib/trip/journey';
 	import { poi as provider, type City } from '$lib/poi';
 	import Autocomplete from '$lib/Autocomplete.svelte';
+	import { listPlacements, unplace } from '$lib/trip/placements';
 
 	const tripId = page.params.id!;
 	const MODES = ['walk', 'bike', 'transit', 'car', 'carshare'] as const;
@@ -118,6 +120,44 @@
 			modes.length > 0
 	);
 
+	/**
+	 * How many days the dates being typed now would give the trip -- worked
+	 * out the same way the plan itself does, so a day short here is a day
+	 * short there too.
+	 */
+	const newDayCount = $derived.by(() => {
+		if (!row || !zoneKnown || arrival === '' || departure === '') return null;
+		try {
+			return tripDays({
+				...toTrip(row),
+				timezone,
+				arrivalAt: fromLocalInput(arrival, timezone),
+				departureAt: fromLocalInput(departure, timezone)
+			}).length;
+		} catch {
+			return null;
+		}
+	});
+
+	/** Every card on this device for the trip, wherever it sits. */
+	const placements = $derived(row ? listPlacements(tripId) : []);
+
+	/** Cards on a day the shortened trip would no longer have. Shortening the
+	    trip does not delete the places themselves -- only the card that put
+	    them on a day, so they land back on the wishlist. */
+	const orphaned = $derived(
+		newDayCount === null ? [] : placements.filter((pl) => pl.day_index >= newDayCount)
+	);
+
+	/** Shortening the trip needs a second tap on Save once the warning is up,
+	    so a date typo cannot empty a day of its cards unnoticed. Re-asked
+	    whenever the dates change again. */
+	let confirmShorten = $state(false);
+	$effect(() => {
+		newDayCount;
+		confirmShorten = false;
+	});
+
 	function toggleMode(m: string) {
 		modes = modes.includes(m) ? modes.filter((x) => x !== m) : [...modes, m];
 	}
@@ -153,6 +193,13 @@
 	}
 
 	async function save() {
+		// Shortening the trip off a day with cards on it: the first tap only
+		// raises the warning above the button, the second tap is the one that
+		// actually saves.
+		if (orphaned.length && !confirmShorten) {
+			confirmShorten = true;
+			return;
+		}
 		saving = true;
 		error = null;
 		try {
@@ -177,6 +224,10 @@
 					terminals
 				});
 				if (bbox) updateCityBBox(w, tripId, bbox);
+				// The days themselves are gone, so the cards placed on them go too --
+				// in the same edit, so the trip is never seen shorter than its cards
+				// think it is. The places they name stay on the wishlist.
+				for (const pl of orphaned) unplace(w, pl.id);
 			});
 			await goto(`${base}/trip/${tripId}${changed ? `?retime=${changed}` : ''}`, { replaceState: true });
 		} catch (e) {
@@ -318,10 +369,21 @@
 			<JourneySide direction="departure" bind:terminals {city} />
 		{/if}
 
+		{#if orphaned.length}
+			<p class="tm-hint tm-hint--error mb-3">
+				{orphaned.length} {orphaned.length === 1 ? 'card is' : 'cards are'} on days this trip no
+				longer has. Saving sends {orphaned.length === 1 ? 'it' : 'them'} back to the wishlist.
+			</p>
+		{/if}
+
 		{#if error}<p class="tm-hint tm-hint--error mb-3">{error}</p>{/if}
 
 		<button class="tm-btn tm-btn--primary tm-btn--block" disabled={!valid || saving} onclick={save}>
-			{saving ? 'Saving…' : 'Save changes'}
+			{saving
+				? 'Saving…'
+				: orphaned.length && confirmShorten
+					? 'Tap again to confirm'
+					: 'Save changes'}
 		</button>
 
 		<div class="mt-10" style="border-top: 1px solid var(--tm-border); padding-top: 1rem">
