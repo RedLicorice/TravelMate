@@ -2,7 +2,7 @@
 	import { formatter } from '$lib/clock';
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
-	import type { PoiRow } from '$lib/trip/pois';
+	import { poi } from '$lib/poi';
 	import { toTrip, type TripRow } from '$lib/trip/repo';
 	import { joinTrip, sharedTrip } from '$lib/store/store.svelte';
 	import { goto } from '$app/navigation';
@@ -16,7 +16,6 @@
 
 
 	let row = $state<TripRow | null>(null);
-	let pois = $state<PoiRow[]>([]);
 	let loading = $state(true);
 	let gone = $state(false);
 	let error = $state<string | null>(null);
@@ -33,7 +32,6 @@
 				return;
 			}
 			row = shared.trip as TripRow;
-			pois = (shared.pois ?? []) as PoiRow[];
 			stored = (shared.plan ?? []) as PlanStopRow[];
 		} catch (e) {
 			error = (e as Error).message;
@@ -166,6 +164,6 @@
 				</a>
 			</div>
 		{/if}
-		<p class="tm-attrib mt-4">© OpenStreetMap contributors</p>
+		<p class="tm-attrib mt-4">{poi.attribution}</p>
 	{/if}
 </main>

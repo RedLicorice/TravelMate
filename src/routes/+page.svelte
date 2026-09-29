@@ -45,8 +45,10 @@
 	const dots = (row: TripRow) => Math.min(tripDays(toTrip(row)).length, 8);
 	const dayCount = (row: TripRow) => tripDays(toTrip(row)).length;
 
+	// In the trip's own zone: a late flight in read as the day before it from
+	// a phone further west.
 	const range = (row: TripRow) =>
-		formatter(undefined, { day: 'numeric', month: 'short' }).formatRange(
+		formatter(undefined, { timeZone: row.timezone, day: 'numeric', month: 'short' }).formatRange(
 			new Date(row.arrival_at),
 			new Date(row.departure_at)
 		);
