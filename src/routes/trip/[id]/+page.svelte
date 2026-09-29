@@ -878,7 +878,8 @@
 	/**
 	 * Every point a day's journeys run between: the tickets at either end, and
 	 * every card on the day where it is -- the hotel, a meal at its place, both
-	 * ends of a stop you leave from somewhere else. What the router is asked
+	 * ends of a stop you leave from somewhere else, every shop of a chain,
+	 * since the walk goes to whichever is nearest. What the router is asked
 	 * about is what the walk will travel between.
 	 */
 	function dayPoints(i: number): LatLng[] {
@@ -889,7 +890,11 @@
 			.filter((pl) => pl.day_index === i && !pl.skipped)
 			.map((pl) => visitOf(pl, null))
 			.filter((v): v is PlanPoi => !!v)
-			.flatMap((v) => (v.exitAt ? [{ lat: v.lat, lng: v.lng }, v.exitAt] : [{ lat: v.lat, lng: v.lng }]));
+			.flatMap((v) => [
+				{ lat: v.lat, lng: v.lng },
+				...(v.exitAt ? [v.exitAt] : []),
+				...(v.branches ?? [])
+			]);
 		const seen = new Set<string>();
 		return [...anchors, ...cards].filter((p) => {
 			const key = `${p.lat.toFixed(5)},${p.lng.toFixed(5)}`;

@@ -1,4 +1,4 @@
-import { zonedInstant, type Day, type LatLng } from '$lib/trip/days';
+import type { Day, LatLng } from '$lib/trip/days';
 import { haversineKm } from './geo';
 import { nearestBranch } from '$lib/poi/branches';
 import { leg, type Leg, type Mode } from './modes';
@@ -15,8 +15,8 @@ import {
 	MEALS_PER_DAY,
 	mealMiss,
 	slotAt,
+	slotInstant,
 	slotsFrom,
-	toHHMM,
 	waitUntilSlot,
 	type MealName,
 	type MealSlot,
@@ -34,7 +34,7 @@ export function mealOwed(day: Day, slot: MealSlot, timezone: string): boolean {
 		...day.fixedStart.map((w) => w.startsAt?.getTime() ?? Infinity)
 	);
 	if (!Number.isFinite(departs)) return true;
-	return zonedInstant(day.date, toHHMM(slot.to), timezone).getTime() > departs;
+	return slotInstant(day.date, slot.to, timezone).getTime() > departs;
 }
 
 export type PlanPoi = {
@@ -87,15 +87,20 @@ export type PlanPoi = {
 	 * writes new ones onto everything it is allowed to move.
 	 */
 	at: string;
-	/** Not read. Position is no longer a concept; the clock orders the day. */
-	orderIndex?: number | null;
 	/**
 	 * Held where the traveller put it -- its day and its clock. Regenerate
 	 * reshuffles everything around it rather than moving it.
 	 */
 	pinned?: boolean;
-	/** Not read. A pin holds `at`; there is no second moment to hold. */
-	pinnedAt?: string | null;
+	/**
+	 * The hotel that closes the day, whose clock is the walk's to give: the
+	 * traveller gets home after the last stop, whenever that turns out to be.
+	 * Replan draws one on a day without, and takes the day's last unpinned
+	 * hotel for one on a day that has it -- keeping its id, so what is stored
+	 * is updated rather than a second hotel drawn. Without this the time the
+	 * last Replan gave it came back as a wall the next one built against.
+	 */
+	closing?: boolean;
 	/**
 	 * Where this stop lets you out, when that is not where you got on. A cable
 	 * car, a ferry, a funicular. Null is the ordinary case, and is also what a
@@ -244,10 +249,10 @@ const stays = (p: PlanPoi) => !!p.pinned || isAnchor(p) || p.kind === 'meal';
  * Whether a card's clock is already decided: a pin, or furniture the traveller
  * placed -- the hotel, a chore, a meal container. Replan arranges the free
  * stops around such a card and never rewrites its time. The one card whose
- * clock is the walk's to give is the closing hotel Replan draws itself, which
- * has no stored row and so no stated time.
+ * clock is the walk's to give is the hotel that closes the day, whether
+ * Replan drew it or is re-timing the one it drew last time.
  */
-const holdsClock = (p: PlanPoi) => !!p.pinned || ((isAnchor(p) || p.kind === 'meal') && p.id !== '');
+const holdsClock = (p: PlanPoi) => !!p.pinned || ((isAnchor(p) || p.kind === 'meal') && !p.closing);
 
 /**
  * The visits as places, for the crowd table. Busyness belongs to the venue:
@@ -322,7 +327,7 @@ export const BLOCK_CATEGORY = 'block';
  * trip. A stored plan older than this re-times itself when the trip is opened,
  * so the traveller never has to tap Replan because the app changed.
  */
-export const PLANNER_VERSION = 5;
+export const PLANNER_VERSION = 6;
 
 /** The default when nobody has rated a stop: wanting it averagely. */
 const NEUTRAL_PRIORITY = 3;
@@ -523,6 +528,12 @@ function centroid(list: PlanPoi[]): LatLng | null {
 type Rest = {
 	diners?: PlanPoi[];
 	containers?: Map<string, PlanPoi>;
+	/**
+	 * Where the traveller is when the day begins, when that is not the hotel:
+	 * after a night away, wherever the last day left them. The first leg is
+	 * priced from here, on every walk of the day.
+	 */
+	from?: LatLng | null;
 };
 
 const NO_POIS: Map<string, PlanPoi> = new Map();
@@ -547,19 +558,18 @@ export function orderDay(
 	curves: CrowdCurves,
 	slots: MealSlot[],
 	travel: TravelTable,
-	rest: Rest = {},
-	/** Where the traveller is when the day begins, when that is not the hotel. */
-	from: LatLng | null = null
+	rest: Rest = {}
 ): PlanPoi[] {
 	const skipped = pois.filter(isSkipped);
 	pois = pois.filter((p) => !isSkipped(p));
 	if (pois.length < 2) return [...pois, ...skipped];
 
 	// Where the day is when the route begins: the last journey card, on a day
-	// that has one. On any other day there is nowhere to measure from until
-	// the first placement -- usually the hotel -- and the nearest neighbour to
-	// nowhere is simply the first stop offered, which is the most wanted.
-	const start = day.fixedStart.at(-1)?.at ?? from;
+	// that has one, or wherever a night away left the traveller. On any other
+	// day there is nowhere to measure from until the first placement --
+	// usually the hotel -- and the nearest neighbour to nowhere is simply the
+	// first stop offered, which is the most wanted.
+	const start = day.fixedStart.at(-1)?.at ?? rest.from ?? null;
 	// Held placements come out in the order their clocks say, whatever else is
 	// true of them; only the free stops are ordered, and they are threaded
 	// between the held ones by time. A held card's clock is when it happens.
@@ -570,6 +580,12 @@ export function orderDay(
 	let cursor = start;
 	let clock = day.start.getTime();
 	/**
+	 * Where a card is reached from here: a chain answers with whichever of
+	 * its shops is nearest, the same one the walk will go to.
+	 */
+	const reach = (p: PlanPoi, from: LatLng | null) =>
+		from ? nearestBranch(p, from, haversineKm) : at(p);
+	/**
 	 * Nearest neighbour from wherever the day stands, for as long as the next
 	 * stop and the way on to `next` would be done before `until`.
 	 */
@@ -578,22 +594,24 @@ export function orderDay(
 			let bestI = 0;
 			let bestD = Infinity;
 			remaining.forEach((p, i) => {
-				const d = cursor ? haversineKm(cursor, at(p)) : 0;
+				const d = cursor ? haversineKm(cursor, reach(p, cursor)) : 0;
 				if (d < bestD) {
 					bestD = d;
 					bestI = i;
 				}
 			});
 			const p = remaining[bestI];
+			const where = reach(p, cursor);
 			const done =
 				clock +
-				((cursor ? leg(cursor, p, allowedModes, false, travel).minutes : 0) + p.durationMin) *
+				((cursor ? leg(cursor, where, allowedModes, false, travel).minutes : 0) + p.durationMin) *
 					60_000;
-			const onward = next ? leg(p.exitAt ?? p, next, allowedModes, false, travel).minutes : 0;
+			const leaves = p.exitAt ?? where;
+			const onward = next ? leg(leaves, reach(next, leaves), allowedModes, false, travel).minutes : 0;
 			if (done + onward * 60_000 > until) break;
 			remaining.splice(bestI, 1);
 			route.push(p);
-			cursor = p.exitAt ?? at(p);
+			cursor = leaves;
 			clock = done;
 		}
 	};
@@ -604,10 +622,11 @@ export function orderDay(
 	for (const h of held) {
 		thread(holdsClock(h) ? Date.parse(h.at) : Infinity, h);
 		route.push(h);
-		const reach =
-			clock + (cursor ? leg(cursor, h, allowedModes, false, travel).minutes : 0) * 60_000;
-		clock = (holdsClock(h) ? Math.max(reach, Date.parse(h.at)) : reach) + h.durationMin * 60_000;
-		cursor = at(h);
+		const where = reach(h, cursor);
+		const got =
+			clock + (cursor ? leg(cursor, where, allowedModes, false, travel).minutes : 0) * 60_000;
+		clock = (holdsClock(h) ? Math.max(got, Date.parse(h.at)) : got) + h.durationMin * 60_000;
+		cursor = h.exitAt ?? where;
 	}
 	thread(Infinity, null);
 
@@ -715,7 +734,7 @@ function walkClock(
 	let waitedMin = 0;
 	const dayEndMs = day.end.getTime();
 	let clock = day.start.getTime();
-	let cursor: LatLng | null = null;
+	let cursor: LatLng | null = rest.from ?? null;
 	let cursorTerminal = false;
 	const diners = rest.diners ?? [];
 	const containers = rest.containers ?? NO_POIS;
@@ -842,37 +861,17 @@ function walkClock(
 		const dayIsOver = dayEndMs <= day.start.getTime();
 
 		const warnings: Warning[] = [];
-		// One overflow warning, not two. A card can both be one the traveller
-		// cannot reach in time and run past the end of the day, and saying so
-		// twice told the traveller nothing they did not know -- while the
-		// screen, which draws warnings keyed by kind, refused to render the
-		// trip at all. Not being able to get there is the more particular
-		// fact, so it wins.
 		// Running past the end is not said on the furniture. The hotel at the
 		// end of a day cannot run past the end of the day -- it is where the
 		// day ends, and the traveller is asleep in it. Getting back late is
 		// something the stops did; the cards that say so are the stops.
-		// The journey is not something the traveller can be late for by
-		// planning badly: it is the ticket they hold, and its cards read what
-		// the ticket reads whatever the day around them does.
-		// Nor is furniture ever told that it cannot be reached: the traveller
-		// said when it happens, and a plan that cannot make it says so on the
-		// stop that runs into it. The caller puts the warning there.
-		const ticketed = anchorKind === 'terminal' || anchorKind === 'service';
-		// Never on the day's own furniture. Where the hotel is and when the
-		// traveller checks in is something they stated, not something the plan
-		// worked out, and telling them they cannot reach their own hotel is
-		// noise on every card of every day.
-		// A pin that cannot be reached is not told so itself: it is where the
-		// traveller put it. The card that runs into it is (see below).
-		if (late && !dayIsOver && !ticketed && !anchor && !pinned) {
-			warnings.push({
-				kind: pinned ? 'blocked' : 'overflow',
-				message: pinned
-					? 'You cannot get here by then. Replan, or move something.'
-					: 'You cannot get here by then'
-			});
-		} else if (runsLate && !dayIsOver && !anchor) {
+		// Nor is a pin or the furniture ever told that it cannot be reached:
+		// the traveller said when it happens, and a plan that cannot make it
+		// says so on the stop that runs into it. The caller puts the warning
+		// there, off what this returns. The only cards whose clock holds are
+		// those, so a free stop is never late -- it happens when the walk gets
+		// there, and can only run over.
+		if (runsLate && !dayIsOver && !anchor) {
 			warnings.push({ kind: 'overflow', message: 'Runs past the end of the day' });
 		}
 		if (note) warnings.push(note);
@@ -953,8 +952,10 @@ function walkClock(
 			// traveller chose for it. (A skipped one counted as served above.)
 			const card = containers.get(slot.name) ?? null;
 
-			const opens = zonedInstant(day.date, toHHMM(slot.from), timezone).getTime();
-			const closes = zonedInstant(day.date, toHHMM(slot.to), timezone).getTime();
+			// A window that runs past midnight closes on the next date, which is
+			// still this day when the day ends after midnight.
+			const opens = slotInstant(day.date, slot.from, timezone).getTime();
+			const closes = slotInstant(day.date, slot.to, timezone).getTime();
 			if (opens > until) continue;
 
 			// The window has closed. On the last sweep a meal the day opened
@@ -1066,6 +1067,12 @@ function walkClock(
 	 * then spend ninety minutes getting to Stansted, arriving after the desk
 	 * had closed. The hotel and the bags are placements now, which is why the
 	 * anchors are walked here before the journey is: they are the way home.
+	 *
+	 * Only the legs of the journey out, not its dwell. The day already ends
+	 * where checking in begins -- the terminal card's clock is the flight less
+	 * the check-in allowance -- so counting that allowance here as well
+	 * charged it twice, and a stop done two hours before check-in was told it
+	 * ran past the end of the day.
 	 */
 	const tailCost = (from: LatLng, next: number) => {
 		let point = from;
@@ -1079,7 +1086,7 @@ function walkClock(
 		}
 		for (const w of day.fixedEnd) {
 			const terminal = w.kind === 'terminal' || fromTerminal;
-			total += leg(point, w.at, allowedModes, terminal, travel).minutes + w.dwellMin;
+			total += leg(point, w.at, allowedModes, terminal, travel).minutes;
 			point = w.at;
 			fromTerminal = w.kind === 'terminal';
 		}
@@ -1193,7 +1200,10 @@ function walkClock(
 			while (next < pois.length && !holdsClock(pois[next])) next++;
 			const missesNext =
 				next < pois.length &&
-				finish + leg(leaves, pois[next], allowedModes, false, travel).minutes * 60_000 >
+				finish +
+					leg(leaves, nearestBranch(pois[next], leaves, haversineKm), allowedModes, false, travel)
+						.minutes *
+						60_000 >
 					Date.parse(pois[next].at);
 			if (runsLate || missesNext) {
 				overflowed.push(p);
@@ -1378,7 +1388,8 @@ const closingHotel = (
 	durationMin: 0,
 	priority: NEUTRAL_PRIORITY,
 	dayIndex,
-	at: day.end.toISOString()
+	at: day.end.toISOString(),
+	closing: true
 });
 
 /** Steps 1-5. A full reshuffle -- what the Replan control runs. */
@@ -1425,10 +1436,25 @@ export function replan(input: PlanInput): PlanResult {
 	// rebalancing never ran at all, and a full day never shed anything to an
 	// empty one. Every test fixture ends at 19:00, where dinner does not fit,
 	// which is why nothing caught it.
+	//
+	// Only what falls inside the day's window. The journey cards sit at the
+	// times their tickets say, and most of a journey is outside the day: the
+	// flight home lands hours after the day ended at check-in. Measuring the
+	// day as "start to the last card" counted all of that against it, and the
+	// departure day was priced as having no room for anything.
 	const anchorMin = input.days.map((day) => {
 		const stops = walkClock([], day, input.allowedModes, input.timezone, curves, [], travel).stops;
-		const last = stops[stops.length - 1];
-		return last ? Math.max(0, (last.depart.getTime() - day.start.getTime()) / 60_000) : 0;
+		return stops.reduce(
+			(sum, s) =>
+				sum +
+				Math.max(
+					0,
+					Math.min(s.depart.getTime(), day.end.getTime()) -
+						Math.max(s.arrive.getTime(), day.start.getTime())
+				) /
+					60_000,
+			0
+		);
 	});
 
 	const buckets = assignDays(input.pois, input.days, anchorMin);
@@ -1469,10 +1495,16 @@ export function replan(input: PlanInput): PlanResult {
 		// Not on a night the traveller has said they spend away from it.
 		if (input.hotel && !day.fixedEnd.length && !nightAway(route, day) && (last?.kind !== 'hotel' || anchors.length < 2)) {
 			route.push(closingHotel(input.hotel, day, dayIndex));
+		} else if (last?.kind === 'hotel' && !last.pinned && !isSkipped(last)) {
+			// The day already closes on a hotel -- the one the last Replan drew
+			// and the page stored. Its time is that walk's answer, not the
+			// traveller's: held to it, the stops would have been fitted before
+			// getting home at the hour a shorter day happened to end, and
+			// spilled with hours to spare. It closes this day the same way,
+			// wherever the day now ends, under the id it already has.
+			route[route.indexOf(last)] = { ...last, at: day.end.toISOString(), closing: true };
 		}
 
-		const rest: Rest = { diners: seatable, containers };
-		rests.set(dayIndex, rest);
 		// After a night away the day starts where the last one ended, not at
 		// the hotel: the traveller wakes up wherever they were.
 		const before = dayIndex > 0 ? routes.get(dayIndex - 1) : undefined;
@@ -1480,6 +1512,12 @@ export function replan(input: PlanInput): PlanResult {
 			before && nightAway(before, input.days[dayIndex - 1])
 				? (before.filter((p) => !isSkipped(p)).at(-1) ?? null)
 				: null;
+		const rest: Rest = {
+			diners: seatable,
+			containers,
+			from: awake ? at(awake.exitAt ?? awake) : null
+		};
+		rests.set(dayIndex, rest);
 		routes.set(
 			dayIndex,
 			orderDay(
@@ -1490,8 +1528,7 @@ export function replan(input: PlanInput): PlanResult {
 				curves,
 				slots,
 				travel,
-				rest,
-				awake ? at(awake.exitAt ?? awake) : null
+				rest
 			)
 		);
 	});
@@ -1540,9 +1577,16 @@ export function replan(input: PlanInput): PlanResult {
 		const dropped = result.unplaced.filter((u) => u.reason === 'day-full' && !u.poi.pinned);
 		if (!dropped.length) break;
 
+		// How much of the day is spent, up to its last card in the city. The
+		// journey out is not in the city: its cards run to the flight landing,
+		// which is hours past the end of the day, and would count the day as
+		// overdrawn before a stop was put on it.
 		const used = new Map<number, number>();
 		for (const day of result.days) {
-			const end = day.stops[day.stops.length - 1]?.depart.getTime();
+			const end = day.stops
+				.filter((s) => s.anchorKind !== 'terminal' && s.anchorKind !== 'service')
+				.at(-1)
+				?.depart.getTime();
 			used.set(day.index, end ? end - input.days[day.index].start.getTime() : 0);
 		}
 		const roomOn = (i: number) =>

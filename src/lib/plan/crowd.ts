@@ -144,19 +144,27 @@ const fromTable = (table: Map<CrowdKey, Busyness>): CrowdCurves => ({
 });
 
 type PoiLike = { id: string; category: string | null };
-type DayLike = { date: string };
+/** A date, and when the day on it is over -- which may be on the next date. */
+type DayLike = { date: string; end?: Date };
 
 /** Every venue-hour the planner could possibly ask about. */
 function requestsFor(pois: PoiLike[], days: DayLike[], tz: string): CrowdRequest[] {
 	const out: CrowdRequest[] = [];
 	for (const day of days) {
-		for (let hour = 0; hour < 24; hour++) {
-			// The instant at which this LOCAL hour happens. Building it as UTC
-			// instead keys every cell by one hour and fills it with another:
-			// in Europe/Rome the table would be two hours out of step.
-			const at = zonedInstant(day.date, `${String(hour).padStart(2, '0')}:30`, tz);
-			for (const p of pois) {
-				out.push({ poiId: p.id, category: p.category, date: day.date, hour, at });
+		// A day that runs past midnight has stops on the next date, and a
+		// table keyed by this one alone answered them with the baseline.
+		const over = day.end ? localParts(day.end, tz) : null;
+		const dates: [string, number][] =
+			over && over.date > day.date ? [[day.date, 24], [over.date, over.hour + 1]] : [[day.date, 24]];
+		for (const [date, hours] of dates) {
+			for (let hour = 0; hour < hours; hour++) {
+				// The instant at which this LOCAL hour happens. Building it as UTC
+				// instead keys every cell by one hour and fills it with another:
+				// in Europe/Rome the table would be two hours out of step.
+				const at = zonedInstant(date, `${String(hour).padStart(2, '0')}:30`, tz);
+				for (const p of pois) {
+					out.push({ poiId: p.id, category: p.category, date, hour, at });
+				}
 			}
 		}
 	}

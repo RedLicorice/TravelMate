@@ -53,17 +53,10 @@ export type PoiRow = {
  * whether it is held there. The planner works in visits, so the id it gets is
  * the placement's, and the same place on two days is two of these.
  *
- * `heldAt` is the moment the stop already happens at, taken from the card on
- * the plan -- because that is where a stop's time lives. A pin carries no time
- * of its own: it says Replan may not move this one, and the card says when it
- * is. Passing nothing means the planner decides, which is what it does for
- * anything unpinned and for a stop that has just been dragged somewhere new.
+ * A pin carries no time of its own: it says Replan may not move this one, and
+ * the card's own clock, `at`, says when it is.
  */
-export const toPlanPoi = (
-	row: PoiRow,
-	placement: PlacementRow,
-	heldAt: string | null = null
-): PlanPoi => ({
+export const toPlanPoi = (row: PoiRow, placement: PlacementRow): PlanPoi => ({
 	id: placement.id,
 	poiId: row.id,
 	name: row.name,
@@ -76,7 +69,6 @@ export const toPlanPoi = (
 	dayIndex: placement.day_index,
 	at: placement.at,
 	pinned: placement.pinned,
-	pinnedAt: placement.pinned ? heldAt : null,
 	branches: row.any_branch ? (row.branches ?? []) : null,
 	exitAt: row.exit_lat !== null && row.exit_lng !== null ? { lat: row.exit_lat, lng: row.exit_lng } : null
 });
