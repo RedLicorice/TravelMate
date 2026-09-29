@@ -61,7 +61,8 @@ export type PlanOp = {
 	trip: string;
 	rows: Row[];
 	planner_version: number;
-	generated_at: string;
+	/** When Replan decided the plan. A re-time carries the trip's stamp as it is: null when there is none yet. */
+	generated_at: string | null;
 	/** The days this plan is for; the other days' stops are left as they are. Absent: every day. */
 	days?: number[];
 };

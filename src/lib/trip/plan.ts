@@ -145,6 +145,8 @@ const toRow = (
  * Returns when the plan was made. Everything the traveller changed before
  * this moment is reflected in it, and anything stamped after it is genuinely
  * newer than the plan -- which is exactly what staleCount goes on to measure.
+ * Only a Replan makes a plan; a re-time keeps the stamp the trip has, and a
+ * trip never replanned has none.
  */
 export function savePlan(
 	w: Writer,
@@ -152,8 +154,10 @@ export function savePlan(
 	result: PlanResult,
 	known: PlanStopRow[] = [],
 	/** The days the result is for, when it is not the whole trip. */
-	days?: number[]
-): string {
+	days?: number[],
+	/** Replan decided this, rather than a re-time of what was decided. */
+	replanned = false
+): string | null {
 	const ids = new Map<string, string>();
 	const byDay = new Map<number, PlanStopRow[]>();
 	for (const r of known) byDay.set(r.day_index, [...(byDay.get(r.day_index) ?? []), r]);
@@ -190,7 +194,8 @@ export function savePlan(
 		tripId,
 		rows.map(({ trip_id: _ignored, ...rest }) => rest),
 		PLANNER_VERSION,
-		days
+		days,
+		replanned
 	);
 }
 
