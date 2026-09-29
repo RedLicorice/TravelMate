@@ -58,9 +58,9 @@ export type TravelCell = {
 
 /** Two tables consulted in order; the first with an answer wins. */
 export const firstOf = (tables: TravelTable[]): TravelTable => ({
-	get(from, to, mode) {
+	get(from, to, mode, departAt) {
 		for (const table of tables) {
-			const answer = table.get(from, to, mode);
+			const answer = table.get(from, to, mode, departAt);
 			if (answer) return answer;
 		}
 		return null;
