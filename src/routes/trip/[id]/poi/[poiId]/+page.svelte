@@ -7,13 +7,14 @@
 	import { goto } from '$app/navigation';
 	import { getTrip, hotelMissing, toTrip } from '$lib/trip/repo';
 	import { getPoi, removePoi, updatePoi } from '$lib/trip/pois';
-	import { between, listPlacements, place, unplace } from '$lib/trip/placements';
+	import { listPlacements, place, unplace } from '$lib/trip/placements';
+	import { pushDown, slotMoment } from '$lib/trip/place';
 	import { mutate, pullTrip } from '$lib/store/store.svelte';
 	import { tripDays } from '$lib/trip/days';
 	import { REASON_TEXT, type UnplacedReason } from '$lib/plan/planner';
 	import { loadPlan, toPlannedDays } from '$lib/trip/plan';
 	import { busyWindows, categoryBusyness, hourLabel } from '$lib/plan/crowd';
-	import { effectiveDayStart, isMeal, latestReady } from '$lib/plan/meals';
+	import { effectiveDayStart, isMeal, latestPrep, latestReady } from '$lib/plan/meals';
 	import { haversineKm } from '$lib/plan/geo';
 	import { isShortMapLink, parseLatLng } from '$lib/poi/manual';
 	import { displayName, tripProfiles } from '$lib/profile.svelte';
@@ -32,6 +33,8 @@
 	const placements = $derived(listPlacements(tripId).filter((v) => v.poi_id === poiId));
 	const people = $derived(tripProfiles(tripId));
 	const ready = $derived(latestReady(people.map((x) => ({ wakeAt: x.wakeAt, prepMin: x.prepMin }))));
+	/** What the cards below a new one are measured by when they give way to it. */
+	const prepMin = $derived(latestPrep(people.map((x) => ({ wakeAt: x.wakeAt, prepMin: x.prepMin })))?.prepMin ?? 0);
 	const stored = $derived(loadPlan(tripId));
 	/** Not on this device yet: the page draws its shape until the trip arrives. */
 	let loading = $state(!getPoi(poiId));
@@ -184,29 +187,20 @@
 	 * Lands at the end of the day's sightseeing, which is not the end of the
 	 * day: the day ends at the hotel it is slept in, and a visit put after
 	 * that one is a visit made in the traveller's sleep. It goes in the space
-	 * before whatever furniture closes the day out.
+	 * before whatever furniture closes the day out -- the same rule as the
+	 * slot sheet's (place.ts), and what is below gives way the same way. The
+	 * trip page walks the day when it is next opened.
 	 */
 	async function addToDay(index: number) {
 		saving = true;
 		error = null;
 		try {
 			const stops = plan?.find((d) => d.index === index)?.stops ?? [];
-			// Back past the furniture the day finishes on.
-			let i = stops.length;
-			while (i > 0 && stops[i - 1].anchor) i--;
-			const prev = stops[i - 1];
-			const next = stops[i];
-			const when =
-				prev && next
-					? between(prev.depart, next.arrive)
-					: prev
-						? new Date(prev.depart.getTime() + 15 * 60_000).toISOString()
-						: next
-							? new Date(next.arrive.getTime() - 60 * 60_000).toISOString()
-							: (days[index]?.start ?? new Date()).toISOString();
-			await mutate(`Put ${poi?.name ?? 'a place'} on a day`, tripId, (w) =>
-				place(w, tripId, poiId, index, when)
-			);
+			const when = slotMoment({ day: index, before: null }, stops, days[index]?.start);
+			await mutate(`Put ${poi?.name ?? 'a place'} on a day`, tripId, (w) => {
+				const made = place(w, tripId, poiId, index, when);
+				pushDown(w, tripId, made.id, { bagDropMin: trip?.bag_drop_min ?? 0, poi: getPoi, prepMin });
+			});
 		} catch (e) {
 			error = (e as Error).message;
 		} finally {
